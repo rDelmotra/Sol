@@ -48,6 +48,7 @@ export const DSO_REGISTRY = [
     mission: 'JWST',
     description: 'Infrared observatory operating near the Sun-Earth L2 region.',
     launchDate: '2021-12-25',
+    noradId: 50463,
     searchAliases: ['webb', 'james webb', 'jwst'],
   }),
   createRegistryEntry({
@@ -62,6 +63,7 @@ export const DSO_REGISTRY = [
     mission: 'DSCOVR',
     description: 'Space weather and Earth observation mission near the Sun-Earth L1 region.',
     launchDate: '2015-02-11',
+    noradId: 40390,
     searchAliases: ['dscovr', 'deep space climate observatory'],
   }),
   createRegistryEntry({
@@ -76,6 +78,7 @@ export const DSO_REGISTRY = [
     mission: 'LRO',
     description: 'NASA lunar orbiter mapping the Moon from polar orbit.',
     launchDate: '2009-06-18',
+    noradId: 35315,
     searchAliases: ['lro', 'lunar reconnaissance orbiter'],
   }),
   createRegistryEntry({
@@ -90,6 +93,7 @@ export const DSO_REGISTRY = [
     mission: 'Artemis II',
     description: 'Crewed lunar mission entry kept disabled until Horizons coverage is verified.',
     launchDate: null,
+    noradId: null,
     searchAliases: ['artemis', 'artemis ii'],
   }),
   createRegistryEntry({
@@ -104,13 +108,24 @@ export const DSO_REGISTRY = [
     mission: 'Chandrayaan-3',
     description: 'Lunar mission entry kept disabled until Horizons coverage is explicitly confirmed.',
     launchDate: '2023-07-14',
+    noradId: 57320,
     searchAliases: ['chandrayaan', 'chandrayaan 3', 'chandrayaan-3'],
   }),
 ] as const satisfies readonly DsoRegistryEntry[];
 
-export const dsoRegistryById = new Map<DsoId, DsoRegistryEntry>(
-  DSO_REGISTRY.map((entry) => [entry.dsoId, entry]),
-);
+export const dsoRegistryById = new Map<DsoId, DsoRegistryEntry>();
+const seenNoradIds = new Set<number>();
+
+for (const entry of DSO_REGISTRY) {
+  dsoRegistryById.set(entry.dsoId, entry);
+
+  if (entry.noradId != null) {
+    if (seenNoradIds.has(entry.noradId)) {
+      throw new Error(`Startup Error: duplicate DSO noradId ${entry.noradId} found in registry`);
+    }
+    seenNoradIds.add(entry.noradId);
+  }
+}
 
 export function getDsoRegistryEntry(dsoId: DsoId): DsoRegistryEntry | undefined {
   return dsoRegistryById.get(dsoId);

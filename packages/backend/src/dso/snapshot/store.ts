@@ -155,6 +155,7 @@ export function buildDsoCatalog(
       validFrom: status.validFrom,
       validTo: status.validTo,
       searchAliases: entry.searchAliases,
+      noradId: entry.noradId ?? null,
     };
   });
 

@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { readCache, readVersion } from '../cache/file-cache.js';
+import { readDsoManifest } from '../dso/snapshot/index.js';
+import { getEnabledDsoRegistryEntries } from '../dso/registry/index.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -18,7 +20,7 @@ const router = Router();
 // 503 is returned when no cache exists yet (first boot before the initial
 // fetch cycle completes).
 // ============================================================
-router.get('/all', (req: Request, res: Response) => {
+router.get('/all', async (req: Request, res: Response) => {
   const version = readVersion();
   if (!version) {
     logger.warn('GET /api/tle/all: no cache available yet');
@@ -40,9 +42,42 @@ router.get('/all', (req: Request, res: Response) => {
     return;
   }
 
+  // Intercept and deduplicate: "Resolve-at-merge"
+  // If a DSO is enabled and has valid high-precision ephemeris (fresh/stale),
+  // suppress the lower-accuracy TLE equivalent from this payload so the
+  // frontend never draws two versions of the same object.
+  const manifest = await readDsoManifest();
+  let finalData = data;
+  let suppressedByDsoCount = 0;
+
+  if (manifest) {
+    const suppressedIds = new Set<number>();
+    const enabledEntries = getEnabledDsoRegistryEntries();
+
+    for (const entry of enabledEntries) {
+      if (entry.noradId != null) {
+        const state = manifest.objects[entry.dsoId]?.freshnessState;
+        if (state === 'fresh' || state === 'stale') {
+          suppressedIds.add(entry.noradId);
+        }
+      }
+    }
+
+    if (suppressedIds.size > 0) {
+      // Data is an array of EnrichedTLEObject which has `noradId`
+      finalData = data.filter((tle: any) => !suppressedIds.has(tle.noradId));
+      suppressedByDsoCount = data.length - finalData.length;
+    }
+  }
+
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.setHeader('ETag', etag);
-  res.json({ version: version.version, count: data.length, data });
+  res.json({ 
+    version: version.version, 
+    count: finalData.length, 
+    suppressedByDsoCount,
+    data: finalData 
+  });
 });
 
 // ============================================================

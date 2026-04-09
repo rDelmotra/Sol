@@ -37,4 +37,5 @@ export interface DsoRegistryEntry {
   description: string | null;
   searchAliases: string[];
   launchDate?: string | null;
+  noradId?: number | null;
 }

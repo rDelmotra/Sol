@@ -54,6 +54,7 @@ export interface DsoCatalogEntry {
   validFrom: string | null;
   validTo: string | null;
   searchAliases: string[];
+  noradId: number | null;
 }
 
 export interface DsoObjectStatus {
