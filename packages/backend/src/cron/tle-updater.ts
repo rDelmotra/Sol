@@ -1,14 +1,14 @@
 import cron from 'node-cron';
 import { fetchFromSpaceTrack } from '../services/spacetrack.js';
 import { fetchCelesTrakTLEs } from '../services/celestrak.js';
-import { classifyObject } from '../services/classifier.js';
+import { classifyObject, classifyObjectType } from '../services/classifier.js';
+import { getInlineFacets } from '../enrichment/store.js';
 import { buildOmm } from '../utils/omm.js';
 import { writeCache, readCache, isCacheFresh } from '../cache/file-cache.js';
 import { primeTlePayload } from '../cache/tle-payload-cache.js';
 import {
   EnrichedTLEObject,
   SpaceTrackGPElement,
-  SpaceTrackSatCatEntry,
   CelesTrakGPElement,
   ClassifiableObject,
 } from '../types/index.js';
@@ -37,13 +37,7 @@ function normaliseEpoch(epoch: string): string {
 
 function buildFromSpaceTrack(
   gpElements: SpaceTrackGPElement[],
-  satcatEntries: SpaceTrackSatCatEntry[],
 ): EnrichedTLEObject[] {
-  // Build O(1) lookup from SATCAT by NORAD_CAT_ID
-  const satcatMap = new Map<string, SpaceTrackSatCatEntry>(
-    satcatEntries.map((s) => [s.NORAD_CAT_ID, s]),
-  );
-
   const enriched: EnrichedTLEObject[] = [];
 
   for (const gp of gpElements) {
@@ -62,26 +56,25 @@ function buildFromSpaceTrack(
     // Malformed elements occasionally appear — skip them.
     if (isNaN(period) || isNaN(eccentricity)) continue;
 
-    const satcat = satcatMap.get(gp.NORAD_CAT_ID);
-
     const classifiable: ClassifiableObject = {
       period,
       eccentricity,
-      objectType:    gp.OBJECT_TYPE,
-      opsStatusCode: satcat?.OPS_STATUS_CODE,  // undefined if no SATCAT entry
+      objectType: gp.OBJECT_TYPE,
     };
 
     const { category, regime } = classifyObject(classifiable);
 
-    // Derive ObjectType from category (avoids re-parsing OBJECT_TYPE)
-    const objectType =
-      category === 'active_satellite' || category === 'inactive_satellite' ? 'satellite'
-      : category === 'rocket_body'  ? 'rocket_body'
-      : category === 'debris'       ? 'debris'
-      : 'unknown';
+    // ObjectType straight from the LIVE GP OBJECT_TYPE — it's correct and current
+    // (the old category-derived path collapsed every payload to 'unknown' once the
+    // Space-Track ops-status field disappeared).
+    const objectType = classifyObjectType(gp.OBJECT_TYPE);
+
+    // Inline metadata facets: orbital status from satcat.csv; sectors/purpose from UCS.
+    const noradId = parseInt(gp.NORAD_CAT_ID, 10);
+    const facets = getInlineFacets(noradId);
 
     enriched.push({
-      noradId:     parseInt(gp.NORAD_CAT_ID, 10),
+      noradId,
       name:        gp.OBJECT_NAME.trim(),
       omm,
       objectType,
@@ -95,6 +88,9 @@ function buildFromSpaceTrack(
       inclination:  isNaN(inclination) ? 0 : inclination,
       rcsSize:      gp.RCS_SIZE     || null,
       epoch:        normEpoch,
+      sectors:      facets.sectors,
+      purpose:      facets.purpose,
+      status:       facets.status,
     });
   }
 
@@ -125,11 +121,10 @@ function buildFromCelesTrak(gpElements: CelesTrakGPElement[]): EnrichedTLEObject
 
     const { category, regime } = classifyObject(classifiable);
 
-    const objectType =
-      category === 'active_satellite' || category === 'inactive_satellite' ? 'satellite'
-      : category === 'rocket_body'  ? 'rocket_body'
-      : category === 'debris'       ? 'debris'
-      : 'unknown';
+    // ObjectType straight from the GP OBJECT_TYPE (current); status + sectors/purpose
+    // from the enrichment join (satcat.csv orbital status, UCS sector/purpose).
+    const objectType = classifyObjectType(gp.OBJECT_TYPE);
+    const facets = getInlineFacets(gp.NORAD_CAT_ID);
 
     enriched.push({
       noradId:     gp.NORAD_CAT_ID,
@@ -146,6 +141,9 @@ function buildFromCelesTrak(gpElements: CelesTrakGPElement[]): EnrichedTLEObject
       inclination:  gp.INCLINATION,
       rcsSize:      gp.RCS_SIZE        ?? null,
       epoch:        normEpoch,
+      sectors:      facets.sectors,
+      purpose:      facets.purpose,
+      status:       facets.status,
     });
   }
 
@@ -185,8 +183,8 @@ export async function runUpdateCycle(): Promise<void> {
   // ── Primary: Space-Track ────────────────────────────────────────────────
   try {
     logger.info('Attempting Space-Track fetch (primary source)');
-    const { gp, satcat } = await fetchFromSpaceTrack();
-    enriched = buildFromSpaceTrack(gp, satcat);
+    const { gp } = await fetchFromSpaceTrack();
+    enriched = buildFromSpaceTrack(gp);
     rawGp = gp;
     source = 'space-track';
   } catch (primaryErr) {

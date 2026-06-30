@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import { SpaceTrackGPElement, SpaceTrackSatCatEntry } from '../types/index.js';
+import { SpaceTrackGPElement } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 
 // ============================================================
@@ -8,11 +8,15 @@ import { logger } from '../utils/logger.js';
 // Session lifecycle (one per fetch cycle, never left open):
 //   1. POST /ajaxauth/login          → receive session cookie
 //   2. GET  GP query (paginated)     → all current orbital objects
-//   3. GET  SATCAT query             → operational status per object
-//   4. GET  /ajaxauth/logout         → always, even on error (finally block)
+//   3. GET  /ajaxauth/logout         → always, even on error (finally block)
+//
+// NOTE: we deliberately DO NOT fetch the SATCAT class. Space-Track's satcat no
+// longer exposes OPS_STATUS_CODE (the field is absent from the response), so it
+// gave us nothing — object type comes from the GP class (OBJECT_TYPE) and orbital
+// status comes from the checked-in McDowell satcat.csv (see enrichment/).
 //
 // Request budget per 24h cycle:
-//   1 login + 1–3 GP pages + 1 SATCAT + 1 logout ≈ 4–6 requests
+//   1 login + 1–3 GP pages + 1 logout ≈ 3–5 requests
 //   Space-Track allows ~30/day — we stay well under that.
 //
 // Credentials are read from environment variables:
@@ -31,13 +35,6 @@ const GP_BASE =
   `${BASE_URL}/basicspacedata/query/class/gp` +
   `/DECAY_DATE/null-val` +
   `/EPOCH/%3Enow-30` +
-  `/orderby/NORAD_CAT_ID%20asc` +
-  `/format/json/emptyresult/show`;
-
-// SATCAT — current catalog entries only (CURRENT/Y filters out decayed objects).
-const SATCAT_URL =
-  `${BASE_URL}/basicspacedata/query/class/satcat` +
-  `/CURRENT/Y` +
   `/orderby/NORAD_CAT_ID%20asc` +
   `/format/json/emptyresult/show`;
 
@@ -174,46 +171,17 @@ async function fetchAllGP(cookie: string): Promise<SpaceTrackGPElement[]> {
   return all;
 }
 
-/**
- * Fetch the full SATCAT. Used to get OPS_STATUS_CODE (active/inactive status)
- * which is not available in the GP class.
- */
-async function fetchSATCAT(cookie: string): Promise<SpaceTrackSatCatEntry[]> {
-  logger.info('Space-Track: fetching SATCAT');
-
-  const resp = await axios.get<SpaceTrackSatCatEntry[]>(SATCAT_URL, {
-    timeout: TIMEOUT_MS,
-    decompress: true,
-    headers: { Cookie: cookie, 'Accept-Encoding': 'gzip' },
-    validateStatus: (s) => s < 500,
-  });
-
-  if (resp.status === 401) {
-    throw new Error('Space-Track SATCAT fetch: session expired or invalid (HTTP 401)');
-  }
-  if (resp.status !== 200) {
-    throw new Error(`Space-Track SATCAT fetch failed: HTTP ${resp.status}`);
-  }
-  if (!Array.isArray(resp.data)) {
-    throw new Error('Space-Track SATCAT fetch: unexpected non-array response');
-  }
-
-  logger.info(`Space-Track: SATCAT fetch complete — ${resp.data.length} entries`);
-  return resp.data;
-}
-
 // ============================================================
 // Public API
 // ============================================================
 
 export interface SpaceTrackFetchResult {
   gp: SpaceTrackGPElement[];
-  satcat: SpaceTrackSatCatEntry[];
 }
 
 /**
  * Run a full Space-Track fetch cycle:
- *   login → fetch all GP (paginated) → fetch SATCAT → logout
+ *   login → fetch all GP (paginated) → logout
  *
  * The session is ALWAYS closed in the finally block regardless of errors.
  * Throws on failure so the caller (tle-updater) can fall back to CelesTrak.
@@ -228,8 +196,7 @@ export async function fetchFromSpaceTrack(): Promise<SpaceTrackFetchResult> {
   try {
     cookie = await login();
     const gp = await fetchAllGP(cookie);
-    const satcat = await fetchSATCAT(cookie);
-    return { gp, satcat };
+    return { gp };
   } finally {
     // Always logout — never leave a session open.
     if (cookie) {

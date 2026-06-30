@@ -1,23 +1,26 @@
 // ============================================================
-// build-enrichment.ts — one-shot metadata join builder (SKELETON)
+// build-enrichment.ts — one-shot metadata join builder
 //
 // Reads the two static snapshots (McDowell General Catalog + UCS Satellite
 // Database), normalizes each to ObjectMetadata, unions them keyed by NORAD ID,
-// and writes packages/backend/data/metadata-enrichment.json.
+// and writes the committed runtime artifacts:
+//   enrichment-data/metadata-enrichment.json  — full join, keyed by NORAD
+//   enrichment-data/decayed-catalog.json       — slim rows for the decayed browser
 //
 // Run manually on snapshot refresh — NOT on the request path, NOT at boot:
 //   npx tsx packages/backend/src/enrichment/build-enrichment.ts
 //
-// Today this is a compilable skeleton: the parse + normalize seams are stubbed
-// with TODOs. Wire the actual field mapping in the enrichment phase.
-// See my_plans/metadata_enrichment.md §4.
+// Output lands in packages/backend/enrichment-data/ (committed, NOT the gitignored
+// runtime data/ dir) so it ships to prod and the loader resolves it identically
+// under tsx (dev) and node dist (prod). See my_plans/metadata_enrichment.md §4.
 // ============================================================
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
   ObjectMetadata,
+  DecayedCatalogRow,
   Sector,
   Purpose,
   OrbitalStatus,
@@ -32,7 +35,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
 const SATCAT_CSV = resolve(REPO_ROOT, 'my_plans/satcat.csv');
 const UCS_TXT = resolve(REPO_ROOT, 'my_plans/UCS-Satellite-Database 5-1-2023 (text).txt');
-const OUT_JSON = resolve(__dirname, '../../data/metadata-enrichment.json');
+// Committed artifact dir — anchored at the backend package root (../../enrichment-data),
+// resolving the same under src (tsx) and dist (node), mirroring how file-cache.ts anchors data/.
+const GEN_DIR = resolve(__dirname, '../../enrichment-data');
+const OUT_JSON = resolve(GEN_DIR, 'metadata-enrichment.json');
+const OUT_DECAYED = resolve(GEN_DIR, 'decayed-catalog.json');
+
+const DECAYED_STATUSES = new Set<OrbitalStatus>(['decayed', 'deorbited', 'exploded']);
 
 // ── Minimal parsers (no deps) ─────────────────────────────────────────────────
 
@@ -59,6 +68,12 @@ function parseDelimited(line: string, delim: string): string[] {
 function toNum(s: string | undefined): number | null {
   if (!s) return null;
   const n = parseFloat(s.replace(/,/g, '').trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+function toInt(s: string | undefined): number | null {
+  if (!s) return null;
+  const n = parseInt(s.trim(), 10);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -116,13 +131,18 @@ function parsePurpose(cell: string): Purpose {
 
 // ── Source ingest ───────────────────────────────────────────────────────────
 
-/** Ingest satcat.csv → seed records keyed by NORAD (country, status, type, orbit_class). */
-function ingestSatcat(map: Map<number, ObjectMetadata>): void {
+/**
+ * Ingest satcat.csv → seed records keyed by NORAD (country, status, type,
+ * orbit_class), AND collect slim rows for the decayed-catalog browser.
+ */
+function ingestSatcat(map: Map<number, ObjectMetadata>, decayedOut: DecayedCatalogRow[]): void {
   const text = readFileSync(SATCAT_CSV, 'utf-8');
   const lines = text.split(/\r?\n/);
   const header = parseDelimited(lines[0], ',');
   const idx = (name: string) => header.indexOf(name);
   const iNorad = idx('satcat');
+  const iName = idx('name');
+  const iLaunchYear = idx('launch_year');
   const iState = idx('state');
   const iOwner = idx('owner');
   const iStatus = idx('status');
@@ -143,6 +163,18 @@ function ingestSatcat(map: Map<number, ObjectMetadata>): void {
     rec.orbitClass = f[iClass]?.trim() || null;
     if (!rec.sources.includes('satcat-gc')) rec.sources.push('satcat-gc');
     map.set(norad, rec);
+
+    if (DECAYED_STATUSES.has(rec.orbitalStatus)) {
+      decayedOut.push({
+        noradId: norad,
+        name: f[iName]?.trim() || `NORAD ${norad}`,
+        country: rec.operatorCountry,
+        status: rec.orbitalStatus,
+        objectType: rec.objectType,
+        orbitClass: rec.orbitClass,
+        launchYear: toInt(f[iLaunchYear]),
+      });
+    }
   }
 }
 
@@ -200,15 +232,27 @@ function ingestUcs(map: Map<number, ObjectMetadata>): void {
 
 function main(): void {
   const map = new Map<number, ObjectMetadata>();
-  ingestSatcat(map);
+  const decayed: DecayedCatalogRow[] = [];
+  ingestSatcat(map, decayed);
   ingestUcs(map);
 
   const out: Record<number, ObjectMetadata> = {};
   for (const [norad, rec] of map) out[norad] = rec;
 
-  writeFileSync(OUT_JSON, JSON.stringify(out));
+  // Drop null/empty fields on write — most of the ~60k satcat-only records have
+  // ~15 null spec fields each, so omitting them roughly halves the artifact.
+  // The loader/consumers coalesce missing → null/[]/'other'/'unknown'.
+  const slim = (_key: string, value: unknown) =>
+    value === null || (Array.isArray(value) && value.length === 0) ? undefined : value;
+
+  mkdirSync(GEN_DIR, { recursive: true });
+  writeFileSync(OUT_JSON, JSON.stringify(out, slim));
+  writeFileSync(OUT_DECAYED, JSON.stringify(decayed, slim));
   // eslint-disable-next-line no-console
-  console.log(`metadata-enrichment.json written: ${map.size} records → ${OUT_JSON}`);
+  console.log(
+    `Enrichment built: ${map.size} metadata records → ${OUT_JSON}\n` +
+      `Decayed catalog: ${decayed.length} rows → ${OUT_DECAYED}`,
+  );
 }
 
 // Run only when invoked directly (tsx), never on import.

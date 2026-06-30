@@ -111,7 +111,11 @@ export interface InlineMetadataFacets {
   operatorCountry: string | null;
   sectors: Sector[];
   purpose: Purpose;
-  operationalStatus: OperationalStatus;
+  // Orbital status from the McDowell satcat.csv (in_orbit / decayed / ...). This
+  // is the source of the "status" filter — Space-Track does NOT expose operational
+  // status. On the live globe this is ~all 'in_orbit' (every object has a current
+  // TLE); decayed/deorbited objects live in the decayed-catalog browser.
+  status: OrbitalStatus;
 }
 
 /** Empty/unknown facets for objects with no metadata match (debris, post-2023 launches). */
@@ -119,8 +123,23 @@ export const EMPTY_FACETS: InlineMetadataFacets = {
   operatorCountry: null,
   sectors: [],
   purpose: 'other',
-  operationalStatus: 'unknown',
+  status: 'unknown',
 };
+
+// ============================================================
+// Decayed-catalog browser row — a SLIM projection (not the full ObjectMetadata)
+// for the non-rendered "browse decayed/deorbited objects" panel. Built from
+// satcat.csv for orbitalStatus ∈ {decayed, deorbited, exploded}.
+// ============================================================
+export interface DecayedCatalogRow {
+  noradId: number;
+  name: string;
+  country: string | null;       // canonical operator code (see country-codes.ts)
+  status: OrbitalStatus;
+  objectType: CatalogObjectType;
+  orbitClass: string | null;
+  launchYear: number | null;
+}
 
 // ── Normalization lookup tables (source vocab → canonical enum) ────────────────
 

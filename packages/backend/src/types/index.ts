@@ -1,4 +1,5 @@
 import type { OMMJsonObject } from 'satellite.js';
+import type { Sector, Purpose, OrbitalStatus } from '../enrichment/types.js';
 
 /** Re-export so both packages share one source of truth for the OMM shape. */
 export type { OMMJsonObject };
@@ -143,6 +144,12 @@ export interface EnrichedTLEObject {
   inclination: number;           // degrees
   rcsSize: string | null;
   epoch: string;                 // ISO timestamp of the TLE epoch
+  // ── Inline metadata facets (joined in the cron from the enrichment store) ──
+  // status = orbital status from the McDowell satcat.csv (in_orbit/decayed/...);
+  // sectors/purpose come from the UCS join ([] / 'other' when unmatched).
+  sectors: Sector[];
+  purpose: Purpose;
+  status: OrbitalStatus;
 }
 
 // Written to data/version.json
