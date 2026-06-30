@@ -55,6 +55,19 @@ export type ColorBy = 'type' | 'status' | 'sector' | 'country';
 /** Country filter: every operator, or only an explicit allow-set of canonical codes. */
 export type CountryFilter = { mode: 'all' } | { mode: 'only'; codes: Set<string> };
 
+/**
+ * The slice of state the satellite render-side filter pass reads. The full store
+ * state structurally satisfies this, so callers pass `useStore.getState()` directly.
+ */
+export interface SatelliteFilterState {
+  typeFilters: Record<CatalogType, boolean>;
+  statusFilters: Record<OrbitalStatus, boolean>;
+  sectorFilters: Record<SectorFilterKey, boolean>;
+  purposeFilters: Record<Purpose, boolean>;
+  countryFilter: CountryFilter;
+  regimeFilters: Record<OrbitalRegime, boolean>;
+}
+
 const ALL_TYPE_ON: Record<CatalogType, boolean> = {
   satellite: true, rocket_body: true, debris: true, unknown: true, deep_space: true,
 };
