@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { getSunDirection, getGAST } from '../orbital/time';
+import { FUTURE_HORIZON_DAYS, MS_PER_DAY } from '../orbital/propagation-limits';
 import type { VisualListResolvedResult } from '../data/visualList';
 import { VisualListPoller, buildCatalogResult, type TleCatalogResult } from '../data/tle-client';
 import { bootstrapCatalog } from '../data/bootstrapCatalog';
@@ -472,8 +473,13 @@ export class Engine {
   private computeTarget(): CatalogTarget {
     const cov = useStore.getState().historyCoverage;
     const today = utcDay(Date.now());
+    // Live TLEs are only meaningful (and cheap to propagate) near their epoch. Beyond a
+    // forward horizon, satellites go planetarium (sky only) — symmetric with the past,
+    // and keeps far-future times out of the SGP4 worker. See orbital/propagation-limits.ts.
+    const horizon = utcDay(Date.now() + FUTURE_HORIZON_DAYS * MS_PER_DAY);
     const t = utcDay(simClock.now());
-    if (t >= today) return { kind: 'live' };                      // today / future → current elements
+    if (t > horizon) return { kind: 'hidden' };                   // beyond forward horizon → planetarium
+    if (t >= today) return { kind: 'live' };                      // today .. +horizon → current elements
     if (!cov || !cov.from || !cov.to) return { kind: 'hidden' };  // no history → planetarium
     if (t < cov.from) return { kind: 'hidden' };                  // before coverage → planetarium
     if (t > cov.to) return { kind: 'live' };                      // recent gap not yet ingested → current

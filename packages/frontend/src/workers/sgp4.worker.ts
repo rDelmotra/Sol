@@ -12,6 +12,7 @@
 
 import * as satellite from 'satellite.js';
 import type { OMMJsonObject } from 'satellite.js';
+import { withinPropagationWindow } from '../orbital/propagation-limits';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -137,44 +138,67 @@ function handlePropagate(timestamp: number, seq: number): void {
 
     const { positions, velocities, validFlags } = getActiveBuffers();
 
+    // Propagation epoch as a Julian day, computed ONCE for the whole pass (it's the
+    // same date for every object). Non-finite timestamps (wheel-overshoot → Invalid
+    // Date) become NaN here and are rejected per-object by withinPropagationWindow.
+    const jdNow = Number.isFinite(timestamp) ? satellite.jday(date) : NaN;
+
+    const markInvalid = (i: number): void => {
+        const i3 = i * 3;
+        positions[i3] = 0;
+        positions[i3 + 1] = 0;
+        positions[i3 + 2] = 0;
+        velocities[i3] = 0;
+        velocities[i3 + 1] = 0;
+        velocities[i3 + 2] = 0;
+        validFlags[i] = 0;
+    };
+
     for (let i = 0; i < objectCount; i++) {
         const rec = satrecs[i];
 
         // Handle null satrec from failed parse
         if (!rec) {
-            positions[i * 3] = 0;
-            positions[i * 3 + 1] = 0;
-            positions[i * 3 + 2] = 0;
-            velocities[i * 3] = 0;
-            velocities[i * 3 + 1] = 0;
-            velocities[i * 3 + 2] = 0;
-            validFlags[i] = 0;
+            markInvalid(i);
             continue;
         }
 
-        const result = satellite.propagate(rec, date);
+        // HARD CAP: skip objects too far from their element-set epoch BEFORE propagating.
+        // satellite.js's deep-space resonance integrator (dspace) steps from epoch in
+        // fixed 720-min increments — cost ∝ |tsince| — so an unbounded scrub would wedge
+        // this worker in a synchronous loop. Symmetric (far future AND far past). See
+        // orbital/propagation-limits.ts.
+        if (!withinPropagationWindow(jdNow, rec.jdsatepoch)) {
+            markInvalid(i);
+            continue;
+        }
+
+        // Real throws inside satellite.js must not abort the entire tick — one bad
+        // object would otherwise freeze every satellite. Isolate per object.
+        let result: ReturnType<typeof satellite.propagate> | null = null;
+        try {
+            result = satellite.propagate(rec, date);
+        } catch {
+            markInvalid(i);
+            continue;
+        }
         const posEci = result?.position;
         const velEci = result?.velocity;
 
         // propagate returns { position: false } on failure
         if (!posEci || typeof posEci === 'boolean' || !velEci || typeof velEci === 'boolean') {
-            positions[i * 3] = 0;
-            positions[i * 3 + 1] = 0;
-            positions[i * 3 + 2] = 0;
-            velocities[i * 3] = 0;
-            velocities[i * 3 + 1] = 0;
-            velocities[i * 3 + 2] = 0;
-            validFlags[i] = 0;
+            markInvalid(i);
             continue;
         }
 
         // Scale ECI (TEME) from km to Earth radii (6371 km = 1.0)
-        positions[i * 3] = posEci.x / EARTH_RADIUS_KM;
-        positions[i * 3 + 1] = posEci.y / EARTH_RADIUS_KM;
-        positions[i * 3 + 2] = posEci.z / EARTH_RADIUS_KM;
-        velocities[i * 3] = velEci.x / EARTH_RADIUS_KM;
-        velocities[i * 3 + 1] = velEci.y / EARTH_RADIUS_KM;
-        velocities[i * 3 + 2] = velEci.z / EARTH_RADIUS_KM;
+        const i3 = i * 3;
+        positions[i3] = posEci.x / EARTH_RADIUS_KM;
+        positions[i3 + 1] = posEci.y / EARTH_RADIUS_KM;
+        positions[i3 + 2] = posEci.z / EARTH_RADIUS_KM;
+        velocities[i3] = velEci.x / EARTH_RADIUS_KM;
+        velocities[i3 + 1] = velEci.y / EARTH_RADIUS_KM;
+        velocities[i3 + 2] = velEci.z / EARTH_RADIUS_KM;
         validFlags[i] = 1;
     }
 
