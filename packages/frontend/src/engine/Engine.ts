@@ -603,7 +603,7 @@ export class Engine {
    * and hides DSOs (current missions) while reviewing the past.
    */
   private applyCatalog(result: TleCatalogResult, day: string | null): void {
-    const { catalogData, tles, categoryCounts, regimeCounts } = result;
+    const { catalogData, tles, categoryCounts, regimeCounts, facetCounts } = result;
     const store = useStore.getState();
 
     // Capture selection (re-resolved by noradId) + trail intent BEFORE the swap.
@@ -637,7 +637,7 @@ export class Engine {
 
     // Store: catalog + counts so HUD / search / filters reflect the viewed day.
     store.setCatalogData(catalogData);
-    store.setCatalogInfo({ objectCount: catalogData.length, categoryCounts, regimeCounts });
+    store.setCatalogInfo({ objectCount: catalogData.length, categoryCounts, regimeCounts, facetCounts });
 
     // Index-stability: the object set changes per day → re-resolve the selection by
     // noradId. Following continues (nav reads selectedIndex live); preserve trail.

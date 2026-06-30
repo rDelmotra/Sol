@@ -46,6 +46,9 @@ function obj(
     inclination: 51,
     rcsSize: null,
     epoch: '2026-06-19T00:00:00.000Z',
+    sectors: [],
+    purpose: 'other',
+    status: 'in_orbit',
   };
 }
 
@@ -71,6 +74,14 @@ describe('buildCatalogResult', () => {
     assert.equal(result.regimeCounts.LEO, 2);
     assert.equal(result.regimeCounts.GEO, 1);
     assert.equal(result.regimeCounts.MEO, 0);
+
+    // Phase B facet totals (all three objects share type/status/country/purpose;
+    // no UCS sectors → 'unspecified').
+    assert.equal(result.facetCounts.type.satellite, 3);
+    assert.equal(result.facetCounts.status.in_orbit, 3);
+    assert.equal(result.facetCounts.sector.unspecified, 3);
+    assert.equal(result.facetCounts.purpose.other, 3);
+    assert.equal(result.facetCounts.country.US, 3);
   });
 
   it('returns zeroed counts for an empty catalog', () => {
@@ -78,5 +89,26 @@ describe('buildCatalogResult', () => {
     assert.deepEqual(result.tles, []);
     assert.equal(result.categoryCounts.active_satellite, 0);
     assert.equal(result.regimeCounts.LEO, 0);
+    assert.equal(result.facetCounts.type.satellite, 0);
+    assert.deepEqual(result.facetCounts.country, {});
+  });
+
+  it('tallies multi-sector membership and an unspecified bucket', () => {
+    const a = obj(10, 'active_satellite', 'LEO');
+    a.sectors = ['military', 'government'];
+    a.purpose = 'communications';
+    a.status = 'decayed';
+    a.countryCode = 'PRC';
+    const b = obj(11, 'active_satellite', 'LEO'); // sectors [] → unspecified
+
+    const { facetCounts } = buildCatalogResult([a, b]);
+    assert.equal(facetCounts.sector.military, 1);
+    assert.equal(facetCounts.sector.government, 1);
+    assert.equal(facetCounts.sector.unspecified, 1);
+    assert.equal(facetCounts.status.decayed, 1);
+    assert.equal(facetCounts.status.in_orbit, 1);
+    assert.equal(facetCounts.purpose.communications, 1);
+    assert.equal(facetCounts.country.PRC, 1);
+    assert.equal(facetCounts.country.US, 1);
   });
 });

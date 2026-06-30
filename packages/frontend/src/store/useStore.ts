@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime } from '../data/types';
+import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime, CatalogType, FacetCounts } from '../data/types';
+import { emptyFacetCounts, cloneFacetCounts } from '../data/types';
+import type { Purpose, SectorFilterKey, OrbitalStatus } from '../data/metadata-types';
 import type { DsoObject, DsoSnapshot } from '../data/dso-types';
 import type { VisualListSource, VisualListStatus } from '../data/visualList';
 import type { HistoryCoverage } from '../data/history-client';
@@ -42,6 +44,30 @@ export interface VisualListState {
   updatedAt: number | null;
   message: string | null;
 }
+
+// ── Rich-metadata facets (Phase B) ────────────────────────────────────────────
+// Added ALONGSIDE the legacy category/regime filter surface; the legacy fields
+// are retired in B5–B7 once the renderer + UI read these instead.
+
+/** Dimension the satellite point cloud is colored by (drives the Legend + palette). */
+export type ColorBy = 'type' | 'status' | 'sector' | 'country';
+
+/** Country filter: every operator, or only an explicit allow-set of canonical codes. */
+export type CountryFilter = { mode: 'all' } | { mode: 'only'; codes: Set<string> };
+
+const ALL_TYPE_ON: Record<CatalogType, boolean> = {
+  satellite: true, rocket_body: true, debris: true, unknown: true, deep_space: true,
+};
+const ALL_STATUS_ON: Record<OrbitalStatus, boolean> = {
+  in_orbit: true, decayed: true, deorbited: true, beyond_earth: true, exploded: true, unknown: true,
+};
+const ALL_SECTOR_ON: Record<SectorFilterKey, boolean> = {
+  commercial: true, government: true, military: true, civil: true, unspecified: true,
+};
+const ALL_PURPOSE_ON: Record<Purpose, boolean> = {
+  communications: true, earth_observation: true, navigation: true, technology_dev: true,
+  space_science: true, space_observation: true, surveillance: true, meteorological: true, other: true,
+};
 
 interface AppState {
   loadingPhase: LoadingPhase;
@@ -91,6 +117,16 @@ interface AppState {
   visibleCategoryCounts: Record<ObjectCategory, number>;
   visibleRegimeCounts: Record<OrbitalRegime, number>;
 
+  // Rich-metadata facet filters + color-by (Phase B; additive to category/regime above)
+  colorBy: ColorBy;
+  typeFilters: Record<CatalogType, boolean>;
+  statusFilters: Record<OrbitalStatus, boolean>;
+  sectorFilters: Record<SectorFilterKey, boolean>;
+  purposeFilters: Record<Purpose, boolean>;
+  countryFilter: CountryFilter;
+  facetCounts: FacetCounts;
+  visibleFacetCounts: FacetCounts;
+
   setCameraMode: (mode: CameraMode) => void;
   setTrackingStyle: (style: TrackingStyle) => void;
   setTriggerFlyTo: (fn: (index: number) => void) => void;
@@ -102,6 +138,7 @@ interface AppState {
     objectCount: number;
     categoryCounts: Record<ObjectCategory, number>;
     regimeCounts: Record<OrbitalRegime, number>;
+    facetCounts?: FacetCounts;
   }) => void;
   toggleCategoryFilter: (category: ObjectCategory) => void;
   toggleRegimeFilter: (regime: OrbitalRegime) => void;
@@ -109,6 +146,15 @@ interface AppState {
     catCounts: Record<ObjectCategory, number>,
     regCounts: Record<OrbitalRegime, number>,
   ) => void;
+
+  // Phase B facet actions
+  setColorBy: (colorBy: ColorBy) => void;
+  toggleTypeFilter: (key: CatalogType) => void;
+  toggleStatusFilter: (key: OrbitalStatus) => void;
+  toggleSectorFilter: (key: SectorFilterKey) => void;
+  togglePurposeFilter: (key: Purpose) => void;
+  setCountryFilter: (filter: CountryFilter) => void;
+  setVisibleFacetCounts: (counts: FacetCounts) => void;
   setCatalogData: (data: EnrichedTLEObject[]) => void;
   setSelectByIndex: (fn: (index: number) => void) => void;
   setSelectedSatellite: (
@@ -254,6 +300,15 @@ export const useStore = create<AppState>((set) => ({
   },
   visibleRegimeCounts: { LEO: 0, MEO: 0, GEO: 0, HEO: 0, OTHER: 0 },
 
+  colorBy: 'type',
+  typeFilters: { ...ALL_TYPE_ON },
+  statusFilters: { ...ALL_STATUS_ON },
+  sectorFilters: { ...ALL_SECTOR_ON },
+  purposeFilters: { ...ALL_PURPOSE_ON },
+  countryFilter: { mode: 'all' },
+  facetCounts: emptyFacetCounts(),
+  visibleFacetCounts: emptyFacetCounts(),
+
   setCameraMode: (mode) => set({ cameraMode: mode }),
   setTrackingStyle: (style) => set({ trackingStyle: style }),
   setTriggerFlyTo: (fn) => set({ triggerFlyTo: fn }),
@@ -261,15 +316,21 @@ export const useStore = create<AppState>((set) => ({
   setTriggerResetCamera: (fn) => set({ triggerResetCamera: fn }),
   setLoadingPhase: (phase) => set({ loadingPhase: phase }),
   setLoadingError: (error) => set({ loadingError: error }),
-  setCatalogInfo: (info) =>
+  setCatalogInfo: (info) => {
+    const facetCounts = info.facetCounts ?? emptyFacetCounts();
     set({
       objectCount: info.objectCount,
       categoryCounts: info.categoryCounts,
       regimeCounts: info.regimeCounts,
       visibleCategoryCounts: { ...info.categoryCounts },
       visibleRegimeCounts: { ...info.regimeCounts },
+      facetCounts,
+      // At load every object is visible — seed visible = total (deep-cloned so the
+      // renderer can mutate visible counts without touching the totals).
+      visibleFacetCounts: cloneFacetCounts(facetCounts),
       dataTimestamp: Date.now(),
-    }),
+    });
+  },
   toggleCategoryFilter: (category) =>
     set((state) => ({
       categoryFilters: {
@@ -286,6 +347,18 @@ export const useStore = create<AppState>((set) => ({
     })),
   setVisibleCounts: (catCounts, regCounts) =>
     set({ visibleCategoryCounts: catCounts, visibleRegimeCounts: regCounts }),
+
+  setColorBy: (colorBy) => set({ colorBy }),
+  toggleTypeFilter: (key) =>
+    set((state) => ({ typeFilters: { ...state.typeFilters, [key]: !state.typeFilters[key] } })),
+  toggleStatusFilter: (key) =>
+    set((state) => ({ statusFilters: { ...state.statusFilters, [key]: !state.statusFilters[key] } })),
+  toggleSectorFilter: (key) =>
+    set((state) => ({ sectorFilters: { ...state.sectorFilters, [key]: !state.sectorFilters[key] } })),
+  togglePurposeFilter: (key) =>
+    set((state) => ({ purposeFilters: { ...state.purposeFilters, [key]: !state.purposeFilters[key] } })),
+  setCountryFilter: (filter) => set({ countryFilter: filter }),
+  setVisibleFacetCounts: (counts) => set({ visibleFacetCounts: counts }),
   setCatalogData: (data) => set({ catalogData: data }),
   setSelectByIndex: (fn) => set({ selectByIndex: fn }),
   setSelectedSatellite: (index, data, altitude) =>
@@ -410,6 +483,16 @@ export const useStore = create<AppState>((set) => ({
     set((state) => ({
       dsoObjects: objects,
       categoryCounts: { ...state.categoryCounts, deep_space: objects.length },
+      // DSOs are the only 'deep_space' objects (TLE catalog has none) — mirror the
+      // count into the new type facet (total + visible) so the type filter group agrees.
+      facetCounts: {
+        ...state.facetCounts,
+        type: { ...state.facetCounts.type, deep_space: objects.length },
+      },
+      visibleFacetCounts: {
+        ...state.visibleFacetCounts,
+        type: { ...state.visibleFacetCounts.type, deep_space: objects.length },
+      },
     })),
   setDsoEphemeris: (dsoId, snapshot) =>
     set((state) => ({

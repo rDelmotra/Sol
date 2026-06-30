@@ -1,4 +1,5 @@
-import type { TLEInput, EnrichedTLEObject, ObjectCategory, OrbitalRegime } from './types';
+import type { TLEInput, EnrichedTLEObject, ObjectCategory, OrbitalRegime, FacetCounts } from './types';
+import { emptyFacetCounts } from './types';
 import { readCatalogCache, writeCatalogCache } from './catalog-cache';
 import {
   fetchVisualList,
@@ -12,6 +13,8 @@ export interface TleCatalogResult {
   tles: TLEInput[];
   categoryCounts: Record<ObjectCategory, number>;
   regimeCounts: Record<OrbitalRegime, number>;
+  /** Rich-metadata facet totals (type/status/sector/purpose/country) — Phase B. */
+  facetCounts: FacetCounts;
 }
 
 // Warm-load staleness ceiling. Within this window we render from the IndexedDB
@@ -38,12 +41,28 @@ export function buildCatalogResult(catalogData: EnrichedTLEObject[]): TleCatalog
   const regimeCounts: Record<OrbitalRegime, number> = {
     LEO: 0, MEO: 0, GEO: 0, HEO: 0, OTHER: 0,
   };
+  // Phase B facet totals — tallied in the SAME pass. Sector is multi-valued: an
+  // object in {military, government} increments both; an unmatched object (no UCS
+  // sectors) lands in 'unspecified'. Country keys by the raw operator code so the
+  // counts match the render-side country gate exactly (empty '' bucketed as-is).
+  const facetCounts = emptyFacetCounts();
   for (const obj of catalogData) {
     categoryCounts[obj.category] = (categoryCounts[obj.category] ?? 0) + 1;
     regimeCounts[obj.regime] = (regimeCounts[obj.regime] ?? 0) + 1;
+
+    facetCounts.type[obj.objectType] += 1;
+    facetCounts.status[obj.status] += 1;
+    facetCounts.purpose[obj.purpose] += 1;
+    if (obj.sectors.length === 0) {
+      facetCounts.sector.unspecified += 1;
+    } else {
+      for (const s of obj.sectors) facetCounts.sector[s] += 1;
+    }
+    const code = obj.countryCode || 'TBD';
+    facetCounts.country[code] = (facetCounts.country[code] ?? 0) + 1;
   }
 
-  return { catalogData, tles, categoryCounts, regimeCounts };
+  return { catalogData, tles, categoryCounts, regimeCounts, facetCounts };
 }
 
 interface NetworkCatalog {

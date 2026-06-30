@@ -1,15 +1,18 @@
 // ============================================================
 // Metadata enrichment — frontend type mirror
 //
-// Mirrors packages/backend/src/enrichment/types.ts. The four InlineMetadataFacets
-// get merged onto EnrichedTLEObject (data/types.ts) when the live join is wired;
-// the full ObjectMetadata is fetched lazily from /api/metadata/:noradId for the
-// InfoCard "Specifications" section. NOT YET WIRED.
+// Mirrors packages/backend/src/enrichment/types.ts. The InlineMetadataFacets
+// (operatorCountry, sectors, purpose, status) are merged onto EnrichedTLEObject
+// (data/types.ts); the full ObjectMetadata is fetched lazily from
+// /api/metadata/:noradId for the InfoCard "Specifications" section (Phase C).
 //
 // See my_plans/metadata_enrichment.md.
 // ============================================================
 
 export type Sector = 'commercial' | 'government' | 'military' | 'civil';
+
+/** Sector filter key space: the four real sectors plus an explicit "no UCS match". */
+export type SectorFilterKey = Sector | 'unspecified';
 
 export type Purpose =
   | 'communications'
@@ -22,6 +25,7 @@ export type Purpose =
   | 'meteorological'
   | 'other';
 
+/** Operational status (vestigial — Space-Track no longer exposes it; always 'unknown'). */
 export type OperationalStatus =
   | 'operational'
   | 'partial'
@@ -31,6 +35,7 @@ export type OperationalStatus =
   | 'extended'
   | 'unknown';
 
+/** Orbital status from the McDowell satcat.csv — the live "status" facet. */
 export type OrbitalStatus =
   | 'in_orbit'
   | 'decayed'
@@ -46,19 +51,25 @@ export type CatalogObjectType =
   | 'component'
   | 'unknown';
 
+export type MetadataSource = 'ucs-2023-05' | 'satcat-gc' | 'spacetrack';
+
 /** Compact facets inlined onto EnrichedTLEObject (cheap to filter, hot-path safe). */
 export interface InlineMetadataFacets {
   operatorCountry: string | null;
   sectors: Sector[];
   purpose: Purpose;
-  operationalStatus: OperationalStatus;
+  status: OrbitalStatus;
 }
 
-/** Full record, lazy-loaded for the InfoCard. */
-export interface ObjectMetadata extends InlineMetadataFacets {
+/** Full record, lazy-loaded from /api/metadata/:noradId for the InfoCard (Phase C). */
+export interface ObjectMetadata {
   noradId: number;
+  operatorCountry: string | null;
   operatorOrg: string | null;
+  sectors: Sector[];
+  purpose: Purpose;
   detailedPurpose: string | null;
+  operationalStatus: OperationalStatus;
   orbitalStatus: OrbitalStatus;
   objectType: CatalogObjectType;
   contractor: string | null;
@@ -71,15 +82,28 @@ export interface ObjectMetadata extends InlineMetadataFacets {
   expectedLifetimeYrs: number | null;
   cospar: string | null;
   orbitClass: string | null;
+  sources: MetadataSource[];
 }
 
-// ── Display labels for the (future) FilterPanel groups ────────────────────────
+/** Slim row for the decayed-catalog browser (GET /api/catalog/decayed) — Phase D. */
+export interface DecayedCatalogRow {
+  noradId: number;
+  name: string;
+  country: string | null;
+  status: OrbitalStatus;
+  objectType: CatalogObjectType;
+  orbitClass: string | null;
+  launchYear: number | null;
+}
 
-export const SECTOR_LABELS: Record<Sector, string> = {
+// ── Display labels for the FilterPanel groups + Legend (Phase B6/B7) ───────────
+
+export const SECTOR_LABELS: Record<SectorFilterKey, string> = {
   commercial: 'Commercial',
   government: 'Government',
   military: 'Military',
   civil: 'Civil',
+  unspecified: 'Unspecified',
 };
 
 export const PURPOSE_LABELS: Record<Purpose, string> = {
@@ -94,12 +118,11 @@ export const PURPOSE_LABELS: Record<Purpose, string> = {
   other: 'Other / Unspecified',
 };
 
-export const OPERATIONAL_STATUS_LABELS: Record<OperationalStatus, string> = {
-  operational: 'Operational',
-  partial: 'Partially Operational',
-  nonoperational: 'Non-operational',
-  backup: 'Backup / Standby',
-  spare: 'Spare',
-  extended: 'Extended Mission',
+export const ORBITAL_STATUS_LABELS: Record<OrbitalStatus, string> = {
+  in_orbit: 'In Orbit',
+  decayed: 'Decayed',
+  deorbited: 'Deorbited',
+  beyond_earth: 'Beyond Earth Orbit',
+  exploded: 'Exploded',
   unknown: 'Unknown',
 };
