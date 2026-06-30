@@ -1,5 +1,6 @@
 import type { TLEInput, EnrichedTLEObject, ObjectCategory, OrbitalRegime, FacetCounts } from './types';
 import { emptyFacetCounts } from './types';
+import type { Sector, Purpose, OrbitalStatus } from './metadata-types';
 import { readCatalogCache, writeCatalogCache } from './catalog-cache';
 import {
   fetchVisualList,
@@ -25,6 +26,16 @@ const CATALOG_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /** Derive the renderer-facing result (TLE inputs + counts) from raw catalog. */
 export function buildCatalogResult(catalogData: EnrichedTLEObject[]): TleCatalogResult {
+  // Defensive: a catalog cached before the facet fields existed (stale backend
+  // cache / old IndexedDB copy) would lack sectors/purpose/status, and the render
+  // path reads them unconditionally. Coalesce in place so nothing reads undefined.
+  for (const obj of catalogData) {
+    const o = obj as Partial<Pick<EnrichedTLEObject, 'sectors' | 'purpose' | 'status'>> & EnrichedTLEObject;
+    if (!o.sectors) o.sectors = [] as Sector[];
+    if (!o.purpose) o.purpose = 'other' as Purpose;
+    if (!o.status) o.status = 'unknown' as OrbitalStatus;
+  }
+
   const tles: TLEInput[] = catalogData.map((d) => ({
     noradId: d.noradId,
     omm: d.omm,

@@ -5,10 +5,16 @@ import type {
   EnrichedTLEObject,
   ObjectCategory,
   OrbitalRegime,
-  CatalogType,
   FacetCounts,
 } from '../data/types';
-import type { OrbitalStatus, SectorFilterKey } from '../data/metadata-types';
+import {
+  TYPE_COLORS,
+  STATUS_COLORS,
+  COUNTRY_COLORS,
+  FALLBACK_GREY,
+  sectorColor,
+  type RGB,
+} from '../data/facet-colors';
 import {
   getPhaseMultiplierFromComponents,
   isEclipsedFromComponents,
@@ -25,55 +31,9 @@ import type { VisibilityMode, ColorBy, SatelliteFilterState } from '../store/use
 
 const MAX_OBJECTS = 100_000;
 
-type RGB = [number, number, number];
-
-const FALLBACK_GREY: RGB = [0.459, 0.459, 0.459];
-
-// ── Color-by palettes (one per ColorBy dimension) ─────────────────────────────
-// recolorBy() writes ONLY the color attribute from these — never pickId — so GPU
+// Color palettes live in data/facet-colors (shared with the FilterPanel legend).
+// recolorBy() writes ONLY the color attribute from them — never pickId — so GPU
 // picking (which decodes pickId, not color) is unaffected by any recolor.
-
-const TYPE_COLORS: Record<CatalogType, RGB> = {
-  satellite:   [0.298, 0.686, 0.314], // payload — green
-  rocket_body: [1.000, 0.757, 0.027], // amber
-  debris:      [0.957, 0.263, 0.212], // red
-  unknown:     [0.459, 0.459, 0.459], // grey
-  deep_space:  [0.000, 0.737, 0.831], // cyan
-};
-
-const STATUS_COLORS: Record<OrbitalStatus, RGB> = {
-  in_orbit:     [0.298, 0.686, 0.314], // green
-  decayed:      [0.957, 0.263, 0.212], // red
-  deorbited:    [0.851, 0.325, 0.310], // muted red
-  beyond_earth: [0.612, 0.404, 0.910], // violet
-  exploded:     [1.000, 0.498, 0.063], // orange
-  unknown:      [0.459, 0.459, 0.459], // grey
-};
-
-const SECTOR_COLORS: Record<SectorFilterKey, RGB> = {
-  commercial:  [0.129, 0.588, 0.953], // blue
-  government:  [0.298, 0.686, 0.314], // green
-  military:    [0.906, 0.298, 0.235], // red
-  civil:       [0.000, 0.737, 0.831], // teal
-  unspecified: [0.459, 0.459, 0.459], // grey
-};
-
-// Distinct hues for the biggest operators (canonical Space-Track codes); everyone
-// else falls back to grey. Keep in sync with backend enrichment/country-codes.ts.
-const COUNTRY_COLORS: Record<string, RGB> = {
-  US:   [0.129, 0.588, 0.953], // blue
-  PRC:  [0.906, 0.298, 0.235], // red
-  CIS:  [1.000, 0.596, 0.000], // orange
-  UK:   [0.612, 0.404, 0.910], // violet
-  JPN:  [0.926, 0.404, 0.631], // pink
-  IND:  [0.298, 0.686, 0.314], // green
-  FR:   [0.000, 0.737, 0.831], // cyan
-  GER:  [1.000, 0.851, 0.235], // yellow
-  ESA:  [0.404, 0.792, 0.643], // sea green
-  CA:   [0.847, 0.482, 0.863], // orchid
-  SES:  [0.561, 0.690, 0.196], // olive
-  ITSO: [0.498, 0.549, 0.612], // slate
-};
 
 /** RGB for one object under the active color-by dimension. */
 function colorForObject(obj: EnrichedTLEObject, colorBy: ColorBy): RGB {
@@ -83,11 +43,7 @@ function colorForObject(obj: EnrichedTLEObject, colorBy: ColorBy): RGB {
     case 'status':
       return STATUS_COLORS[obj.status] ?? FALLBACK_GREY;
     case 'sector':
-      // Objects can hold multiple sectors — color by the primary (first) one;
-      // no UCS match → the 'unspecified' grey.
-      return obj.sectors.length > 0
-        ? (SECTOR_COLORS[obj.sectors[0]] ?? FALLBACK_GREY)
-        : SECTOR_COLORS.unspecified;
+      return sectorColor(obj.sectors);
     case 'country':
       return COUNTRY_COLORS[obj.countryCode] ?? FALLBACK_GREY;
   }

@@ -371,7 +371,16 @@ export const useStore = create<AppState>((set) => ({
   togglePurposeFilter: (key) =>
     set((state) => ({ purposeFilters: { ...state.purposeFilters, [key]: !state.purposeFilters[key] } })),
   setCountryFilter: (filter) => set({ countryFilter: filter }),
-  setVisibleFacetCounts: (counts) => set({ visibleFacetCounts: counts }),
+  setVisibleFacetCounts: (counts) =>
+    // The satellite render pass counts only TLE objects, so its type.deep_space is
+    // always 0. DSOs (the only deep_space objects, owned by a separate layer) are
+    // never gated by this pass → keep their count = the maintained total.
+    set((state) => ({
+      visibleFacetCounts: {
+        ...counts,
+        type: { ...counts.type, deep_space: state.facetCounts.type.deep_space },
+      },
+    })),
   setCatalogData: (data) => set({ catalogData: data }),
   setSelectByIndex: (fn) => set({ selectByIndex: fn }),
   setSelectedSatellite: (index, data, altitude) =>
