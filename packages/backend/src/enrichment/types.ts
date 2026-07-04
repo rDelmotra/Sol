@@ -61,7 +61,22 @@ export type CatalogObjectType =
   | 'unknown';
 
 // ── Provenance — which snapshot each record was joined from ───────────────────
-export type MetadataSource = 'ucs-2023-05' | 'satcat-gc' | 'spacetrack';
+// 'inferred' = filled from the program registry (programs.ts) by name-pattern
+// matching, not looked up in a source. Appended to sources[] whenever the
+// matcher contributed anything (membership and/or facets).
+export type MetadataSource = 'ucs-2023-05' | 'satcat-gc' | 'spacetrack' | 'inferred';
+
+// ── Per-facet provenance ───────────────────────────────────────────────────────
+// Present ONLY for facets that were filled by program inference; absence of a
+// key means the value came from UCS/satcat per the record-level sources[]
+// semantics. NEVER assign an empty {} — the build script's slim() replacer
+// drops nulls/empty arrays but not empty objects.
+export interface FacetProvenance {
+  sectors?: MetadataSource;
+  purpose?: MetadataSource;
+  country?: MetadataSource;
+  org?: MetadataSource;
+}
 
 // ============================================================
 // The join record. Most fields are nullable — coverage is partial (UCS specs
@@ -99,6 +114,13 @@ export interface ObjectMetadata {
   // Detailed orbit class from the General Catalog (e.g. "LLEO/I", "GEO/S").
   orbitClass: string | null;
 
+  // Program membership (programs.ts registry id, e.g. 'starlink'). Stamped on
+  // every payload whose name matches a registry entry, independent of whether
+  // any facets were inferred from it.
+  program?: string;
+  // Per-facet inference provenance — see FacetProvenance above.
+  facetProvenance?: FacetProvenance;
+
   sources: MetadataSource[];           // provenance — which snapshots contributed
 }
 
@@ -116,6 +138,9 @@ export interface InlineMetadataFacets {
   // status. On the live globe this is ~all 'in_orbit' (every object has a current
   // TLE); decayed/deorbited objects live in the decayed-catalog browser.
   status: OrbitalStatus;
+  // Program membership (registry id). Optional + omitted when absent to keep
+  // the hot /api/tle/all payload lean.
+  program?: string;
 }
 
 /** Empty/unknown facets for objects with no metadata match (debris, post-2023 launches). */

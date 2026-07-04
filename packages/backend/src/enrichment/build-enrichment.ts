@@ -30,6 +30,7 @@ import {
   SATCAT_TYPE_TO_OBJECT,
 } from './types.js';
 import { canonicalFromSatcatState, canonicalFromUcsCountry } from './country-codes.js';
+import { PROGRAMS, matchProgram, applyProgramDefaults } from './programs.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
@@ -40,6 +41,7 @@ const UCS_TXT = resolve(REPO_ROOT, 'my_plans/UCS-Satellite-Database 5-1-2023 (te
 const GEN_DIR = resolve(__dirname, '../../enrichment-data');
 const OUT_JSON = resolve(GEN_DIR, 'metadata-enrichment.json');
 const OUT_DECAYED = resolve(GEN_DIR, 'decayed-catalog.json');
+const OUT_PROGRAMS = resolve(GEN_DIR, 'programs-summary.json');
 
 const DECAYED_STATUSES = new Set<OrbitalStatus>(['decayed', 'deorbited', 'exploded']);
 
@@ -135,7 +137,11 @@ function parsePurpose(cell: string): Purpose {
  * Ingest satcat.csv → seed records keyed by NORAD (country, status, type,
  * orbit_class), AND collect slim rows for the decayed-catalog browser.
  */
-function ingestSatcat(map: Map<number, ObjectMetadata>, decayedOut: DecayedCatalogRow[]): void {
+function ingestSatcat(
+  map: Map<number, ObjectMetadata>,
+  decayedOut: DecayedCatalogRow[],
+  namesOut: Map<number, string>,
+): void {
   const text = readFileSync(SATCAT_CSV, 'utf-8');
   const lines = text.split(/\r?\n/);
   const header = parseDelimited(lines[0], ',');
@@ -163,6 +169,8 @@ function ingestSatcat(map: Map<number, ObjectMetadata>, decayedOut: DecayedCatal
     rec.orbitClass = f[iClass]?.trim() || null;
     if (!rec.sources.includes('satcat-gc')) rec.sources.push('satcat-gc');
     map.set(norad, rec);
+    const name = f[iName]?.trim();
+    if (name) namesOut.set(norad, name);
 
     if (DECAYED_STATUSES.has(rec.orbitalStatus)) {
       decayedOut.push({
@@ -228,13 +236,83 @@ function ingestUcs(map: Map<number, ObjectMetadata>): void {
   }
 }
 
+// ── Program inference pass ────────────────────────────────────────────────────
+
+/** Live in-orbit payload coverage — the number the whole phase exists to move. */
+function coverageStats(map: Map<number, ObjectMetadata>): { sectors: number; purpose: number; total: number } {
+  let sectors = 0;
+  let purpose = 0;
+  let total = 0;
+  for (const rec of map.values()) {
+    if (rec.objectType !== 'payload' || rec.orbitalStatus !== 'in_orbit') continue;
+    total++;
+    if (rec.sectors.length > 0) sectors++;
+    if (rec.purpose !== 'other') purpose++;
+  }
+  return { sectors, purpose, total };
+}
+
+/**
+ * Match PAYLOADS ONLY against the program registry and fill only-empty facets
+ * (UCS/satcat win — see applyProgramDefaults). Prints the coverage report the
+ * curation loop feeds on, and returns per-program match counts for the summary
+ * artifact.
+ */
+function applyPrograms(
+  map: Map<number, ObjectMetadata>,
+  names: Map<number, string>,
+): Map<string, number> {
+  const before = coverageStats(map);
+  const counts = new Map<string, number>();
+  const unmatchedPrefixes = new Map<string, number>();
+
+  for (const rec of map.values()) {
+    if (rec.objectType !== 'payload') continue;
+    const name = names.get(rec.noradId);
+    if (!name) continue;
+    const entry = matchProgram(name);
+    if (entry) {
+      applyProgramDefaults(rec, entry);
+      counts.set(entry.id, (counts.get(entry.id) ?? 0) + 1);
+    } else if (rec.orbitalStatus === 'in_orbit' && rec.sectors.length === 0) {
+      // Curation feedback: the biggest still-unspecified live name families.
+      const prefix = name.toUpperCase().split(/[- ]/)[0] ?? name.toUpperCase();
+      unmatchedPrefixes.set(prefix, (unmatchedPrefixes.get(prefix) ?? 0) + 1);
+    }
+  }
+
+  const after = coverageStats(map);
+  const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : '—');
+  // eslint-disable-next-line no-console
+  console.log(
+    `Program pass — live in-orbit payloads (${after.total}):\n` +
+      `  sectors coverage: ${before.sectors} (${pct(before.sectors, before.total)}) → ` +
+      `${after.sectors} (${pct(after.sectors, after.total)})\n` +
+      `  purpose coverage: ${before.purpose} (${pct(before.purpose, before.total)}) → ` +
+      `${after.purpose} (${pct(after.purpose, after.total)})`,
+  );
+  const byCount = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  // eslint-disable-next-line no-console
+  console.log('Per-program matches:');
+  for (const [id, n] of byCount) console.log(`  ${id.padEnd(14)} ${n}`); // eslint-disable-line no-console
+  const topUnmatched = [...unmatchedPrefixes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15);
+  // eslint-disable-next-line no-console
+  console.log(
+    'Top still-unspecified live payload prefixes (curation candidates):\n' +
+      topUnmatched.map(([p, n]) => `  ${p.padEnd(14)} ${n}`).join('\n'),
+  );
+  return counts;
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 function main(): void {
   const map = new Map<number, ObjectMetadata>();
   const decayed: DecayedCatalogRow[] = [];
-  ingestSatcat(map, decayed);
+  const names = new Map<number, string>();
+  ingestSatcat(map, decayed, names);
   ingestUcs(map);
+  const programCounts = applyPrograms(map, names);
 
   const out: Record<number, ObjectMetadata> = {};
   for (const [norad, rec] of map) out[norad] = rec;
@@ -245,13 +323,22 @@ function main(): void {
   const slim = (_key: string, value: unknown) =>
     value === null || (Array.isArray(value) && value.length === 0) ? undefined : value;
 
+  // Tiny, diff-reviewable registry roll-up (future GET /api/programs backing).
+  const programsSummary = PROGRAMS.map((p) => ({
+    id: p.id,
+    displayName: p.displayName,
+    matchCount: programCounts.get(p.id) ?? 0,
+  }));
+
   mkdirSync(GEN_DIR, { recursive: true });
   writeFileSync(OUT_JSON, JSON.stringify(out, slim));
   writeFileSync(OUT_DECAYED, JSON.stringify(decayed, slim));
+  writeFileSync(OUT_PROGRAMS, JSON.stringify(programsSummary, null, 2));
   // eslint-disable-next-line no-console
   console.log(
     `Enrichment built: ${map.size} metadata records → ${OUT_JSON}\n` +
-      `Decayed catalog: ${decayed.length} rows → ${OUT_DECAYED}`,
+      `Decayed catalog: ${decayed.length} rows → ${OUT_DECAYED}\n` +
+      `Programs summary: ${programsSummary.length} programs → ${OUT_PROGRAMS}`,
   );
 }
 

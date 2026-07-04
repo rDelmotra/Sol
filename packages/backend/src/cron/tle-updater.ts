@@ -69,13 +69,17 @@ function buildFromSpaceTrack(
     // Space-Track ops-status field disappeared).
     const objectType = classifyObjectType(gp.OBJECT_TYPE);
 
-    // Inline metadata facets: orbital status from satcat.csv; sectors/purpose from UCS.
+    // Inline metadata facets: orbital status from satcat.csv; sectors/purpose from
+    // UCS, with the program registry as payload-only fallback (covers post-snapshot
+    // launches). Gate on the RAW type string — /^PAY/i covers Space-Track "PAYLOAD"
+    // and CelesTrak "PAY"; classifyObjectType only recognizes the former.
     const noradId = parseInt(gp.NORAD_CAT_ID, 10);
-    const facets = getInlineFacets(noradId);
+    const name = gp.OBJECT_NAME.trim();
+    const facets = getInlineFacets(noradId, name, /^PAY/i.test(gp.OBJECT_TYPE));
 
     enriched.push({
       noradId,
-      name:        gp.OBJECT_NAME.trim(),
+      name,
       omm,
       objectType,
       category,
@@ -91,6 +95,7 @@ function buildFromSpaceTrack(
       sectors:      facets.sectors,
       purpose:      facets.purpose,
       status:       facets.status,
+      ...(facets.program ? { program: facets.program } : {}),
     });
   }
 
@@ -122,13 +127,15 @@ function buildFromCelesTrak(gpElements: CelesTrakGPElement[]): EnrichedTLEObject
     const { category, regime } = classifyObject(classifiable);
 
     // ObjectType straight from the GP OBJECT_TYPE (current); status + sectors/purpose
-    // from the enrichment join (satcat.csv orbital status, UCS sector/purpose).
+    // from the enrichment join (satcat.csv orbital status, UCS sector/purpose) with
+    // the program-registry payload fallback (raw-string gate: CelesTrak says "PAY").
     const objectType = classifyObjectType(gp.OBJECT_TYPE);
-    const facets = getInlineFacets(gp.NORAD_CAT_ID);
+    const name = gp.OBJECT_NAME.trim();
+    const facets = getInlineFacets(gp.NORAD_CAT_ID, name, /^PAY/i.test(gp.OBJECT_TYPE));
 
     enriched.push({
       noradId:     gp.NORAD_CAT_ID,
-      name:        gp.OBJECT_NAME.trim(),
+      name,
       omm,
       objectType,
       category,
@@ -144,6 +151,7 @@ function buildFromCelesTrak(gpElements: CelesTrakGPElement[]): EnrichedTLEObject
       sectors:      facets.sectors,
       purpose:      facets.purpose,
       status:       facets.status,
+      ...(facets.program ? { program: facets.program } : {}),
     });
   }
 

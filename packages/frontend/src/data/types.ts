@@ -69,10 +69,13 @@ export interface EnrichedTLEObject {
   rcsSize: string | null;
   epoch: string;
   // ── Inline metadata facets (joined on the backend; mirror of EnrichedTLEObject) ──
-  // status = orbital status from satcat.csv; sectors/purpose from the UCS join.
+  // status = orbital status from satcat.csv; sectors/purpose from the UCS join
+  // (program-registry inference fills the gaps for unmatched payloads).
   sectors: Sector[];
   purpose: Purpose;
   status: OrbitalStatus;
+  // Program membership slug (e.g. 'starlink'); omitted when unmatched.
+  program?: string;
 }
 
 export type WorkerInMessage =

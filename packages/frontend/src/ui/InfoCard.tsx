@@ -1,5 +1,6 @@
 import { useStore } from '../store/useStore';
 import type { ObjectCategory } from '../data/types';
+import { PROGRAM_LABELS } from '../data/metadata-types';
 
 const CATEGORY_LABELS: Record<ObjectCategory, string> = {
   active_satellite: 'Active Satellite',
@@ -221,6 +222,7 @@ export function InfoCard() {
       <Row label="Inclination" value={`${s.inclination.toFixed(1)}°`} />
       <Row label="Apogee" value={`${Math.round(s.apogee).toLocaleString()} km`} />
       <Row label="Perigee" value={`${Math.round(s.perigee).toLocaleString()} km`} />
+      <Row label="Program" value={s.program ? (PROGRAM_LABELS[s.program] ?? s.program) : null} />
       <Row label="Country" value={s.countryCode} />
       <Row label="Launch" value={s.launchDate} />
       <Row label="Epoch" value={s.epoch?.slice(0, 10) ?? null} />

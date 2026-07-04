@@ -150,6 +150,9 @@ export interface EnrichedTLEObject {
   sectors: Sector[];
   purpose: Purpose;
   status: OrbitalStatus;
+  // Program membership (programs.ts registry slug, e.g. 'starlink'). Omitted
+  // when the object matches no program, keeping the hot payload lean.
+  program?: string;
 }
 
 // Written to data/version.json
