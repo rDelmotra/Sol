@@ -34,6 +34,8 @@ export const COUNTRY_DISPLAY: Record<string, CountryDisplay> = {
   ARGN: { name: 'Argentina', flag: '🇦🇷' },
   NETH: { name: 'Netherlands', flag: '🇳🇱' },
   LUXE: { name: 'Luxembourg', flag: '🇱🇺' },
+  IT:   { name: 'Italy', flag: '🇮🇹' },
+  UAE:  { name: 'United Arab Emirates', flag: '🇦🇪' },
   GLOB: { name: 'Multinational', flag: '🌐' },
   NZ:   { name: 'New Zealand', flag: '🇳🇿' },
   TBD:  { name: 'Unknown', flag: '🏳️' },

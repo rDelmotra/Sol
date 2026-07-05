@@ -28,7 +28,7 @@ function record(overrides: Partial<ObjectMetadata>): ObjectMetadata {
     expectedLifetimeYrs: null,
     cospar: null,
     orbitClass: null,
-    sources: ['satcat-gc'],
+    sources: ['gcat'],
     ...overrides,
   };
 }
@@ -45,11 +45,11 @@ describe('applyProgramDefaults', () => {
     assert.equal(rec.purpose, 'communications');
     assert.equal(rec.facetProvenance?.sectors, 'inferred');
     assert.equal(rec.facetProvenance?.purpose, 'inferred');
-    assert.deepEqual(rec.sources, ['satcat-gc', 'inferred']);
+    assert.deepEqual(rec.sources, ['gcat', 'inferred']);
 
     // Idempotent on sources — a second apply must not duplicate 'inferred'.
     applyProgramDefaults(rec, starlink);
-    assert.deepEqual(rec.sources, ['satcat-gc', 'inferred']);
+    assert.deepEqual(rec.sources, ['gcat', 'inferred']);
   });
 
   it('UCS-covered facets get no provenance keys and keep their values', () => {
@@ -58,7 +58,7 @@ describe('applyProgramDefaults', () => {
       purpose: 'space_science',
       operatorCountry: 'US',
       operatorOrg: 'NASA',
-      sources: ['satcat-gc', 'ucs-2023-05'],
+      sources: ['gcat', 'ucs-2023-05'],
     });
     applyProgramDefaults(rec, starlink);
     assert.equal(rec.program, 'starlink');            // membership always stamped

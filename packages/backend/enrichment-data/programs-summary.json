@@ -2,7 +2,7 @@
   {
     "id": "starlink",
     "displayName": "Starlink",
-    "matchCount": 11419
+    "matchCount": 12360
   },
   {
     "id": "oneweb",
@@ -12,17 +12,17 @@
   {
     "id": "kuiper",
     "displayName": "Project Kuiper",
-    "matchCount": 212
+    "matchCount": 398
   },
   {
     "id": "qianfan",
     "displayName": "Qianfan (G60)",
-    "matchCount": 107
+    "matchCount": 201
   },
   {
     "id": "guowang",
     "displayName": "Guowang",
-    "matchCount": 163
+    "matchCount": 177
   },
   {
     "id": "iridium",
@@ -37,7 +37,7 @@
   {
     "id": "orbcomm",
     "displayName": "Orbcomm",
-    "matchCount": 62
+    "matchCount": 63
   },
   {
     "id": "spacebee",
@@ -62,7 +62,7 @@
   {
     "id": "flock",
     "displayName": "Flock (Planet)",
-    "matchCount": 644
+    "matchCount": 648
   },
   {
     "id": "skysat",
@@ -72,22 +72,22 @@
   {
     "id": "lemur",
     "displayName": "Lemur (Spire)",
-    "matchCount": 205
+    "matchCount": 223
   },
   {
     "id": "jilin",
     "displayName": "Jilin-1",
-    "matchCount": 46
+    "matchCount": 76
   },
   {
     "id": "hawkeye",
     "displayName": "HawkEye 360",
-    "matchCount": 39
+    "matchCount": 42
   },
   {
     "id": "bro",
     "displayName": "BRO (Unseenlabs)",
-    "matchCount": 19
+    "matchCount": 22
   },
   {
     "id": "blacksky",
@@ -97,32 +97,32 @@
   {
     "id": "yunyao",
     "displayName": "Yunyao",
-    "matchCount": 14
+    "matchCount": 9
   },
   {
     "id": "geesat",
     "displayName": "GeeSAT (Geely)",
-    "matchCount": 62
+    "matchCount": 63
   },
   {
     "id": "iceye",
     "displayName": "ICEYE",
-    "matchCount": 54
+    "matchCount": 71
   },
   {
     "id": "tianmu",
     "displayName": "Tianmu-1",
-    "matchCount": 18
+    "matchCount": 22
   },
   {
     "id": "iride",
     "displayName": "IRIDE",
-    "matchCount": 16
+    "matchCount": 30
   },
   {
     "id": "gps",
     "displayName": "GPS (Navstar)",
-    "matchCount": 79
+    "matchCount": 80
   },
   {
     "id": "galileo",
@@ -142,7 +142,7 @@
   {
     "id": "transit",
     "displayName": "Transit (NNS)",
-    "matchCount": 27
+    "matchCount": 34
   },
   {
     "id": "fengyun",
@@ -152,7 +152,7 @@
   {
     "id": "meteor",
     "displayName": "Meteor",
-    "matchCount": 64
+    "matchCount": 77
   },
   {
     "id": "noaa",
@@ -162,7 +162,7 @@
   {
     "id": "goes",
     "displayName": "GOES",
-    "matchCount": 19
+    "matchCount": 21
   },
   {
     "id": "metop",
@@ -177,7 +177,7 @@
   {
     "id": "dmsp",
     "displayName": "DMSP",
-    "matchCount": 26
+    "matchCount": 29
   },
   {
     "id": "yunhai",
@@ -192,7 +192,7 @@
   {
     "id": "yaogan",
     "displayName": "Yaogan",
-    "matchCount": 174
+    "matchCount": 175
   },
   {
     "id": "gaofen",
@@ -217,7 +217,7 @@
   {
     "id": "landsat",
     "displayName": "Landsat",
-    "matchCount": 7
+    "matchCount": 8
   },
   {
     "id": "intelsat",
@@ -227,12 +227,12 @@
   {
     "id": "eutelsat",
     "displayName": "Eutelsat",
-    "matchCount": 36
+    "matchCount": 54
   },
   {
     "id": "ses",
     "displayName": "SES / Astra",
-    "matchCount": 43
+    "matchCount": 46
   },
   {
     "id": "o3b",
@@ -242,12 +242,12 @@
   {
     "id": "telstar",
     "displayName": "Telstar / Anik",
-    "matchCount": 32
+    "matchCount": 34
   },
   {
     "id": "ekspress",
     "displayName": "Ekspress",
-    "matchCount": 27
+    "matchCount": 29
   },
   {
     "id": "jcsat",
@@ -262,12 +262,12 @@
   {
     "id": "chinasat",
     "displayName": "ChinaSat (Zhongxing)",
-    "matchCount": 37
+    "matchCount": 38
   },
   {
     "id": "insat",
     "displayName": "INSAT / GSAT (India)",
-    "matchCount": 19
+    "matchCount": 24
   },
   {
     "id": "tdrs",
@@ -282,57 +282,57 @@
   {
     "id": "gonets",
     "displayName": "Gonets",
-    "matchCount": 34
+    "matchCount": 36
   },
   {
     "id": "strela",
     "displayName": "Strela",
-    "matchCount": 0
+    "matchCount": 572
   },
   {
     "id": "molniya",
     "displayName": "Molniya",
-    "matchCount": 164
+    "matchCount": 172
   },
   {
     "id": "raduga",
     "displayName": "Raduga",
-    "matchCount": 44
+    "matchCount": 45
   },
   {
     "id": "gorizont",
     "displayName": "Gorizont",
-    "matchCount": 32
+    "matchCount": 34
   },
   {
     "id": "ekran",
     "displayName": "Ekran",
-    "matchCount": 21
+    "matchCount": 22
   },
   {
     "id": "shiyan",
     "displayName": "Shiyan",
-    "matchCount": 55
+    "matchCount": 52
   },
   {
     "id": "shijian",
     "displayName": "Shijian",
-    "matchCount": 49
+    "matchCount": 53
   },
   {
     "id": "tjs",
     "displayName": "TJS (Tongxin Jishu Shiyan)",
-    "matchCount": 22
+    "matchCount": 26
   },
   {
     "id": "hulianwang-shiyan",
     "displayName": "Hulianwang Shiyan",
-    "matchCount": 18
+    "matchCount": 0
   },
   {
     "id": "sda",
     "displayName": "SDA (PWSA)",
-    "matchCount": 42
+    "matchCount": 71
   },
   {
     "id": "dsp",
@@ -347,12 +347,12 @@
   {
     "id": "cosmos",
     "displayName": "Kosmos",
-    "matchCount": 3178
+    "matchCount": 2590
   },
   {
     "id": "usa",
     "displayName": "USA (DoD series)",
-    "matchCount": 392
+    "matchCount": 425
   },
   {
     "id": "ops",

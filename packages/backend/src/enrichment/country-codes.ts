@@ -40,13 +40,19 @@ export const COUNTRY_DISPLAY: Record<string, CountryDisplay> = {
   ARGN: { name: 'Argentina', flag: '🇦🇷' },
   NETH: { name: 'Netherlands', flag: '🇳🇱' },
   LUXE: { name: 'Luxembourg', flag: '🇱🇺' },
+  IT: { name: 'Italy', flag: '🇮🇹' },
+  UAE: { name: 'United Arab Emirates', flag: '🇦🇪' },
   GLOB: { name: 'Multinational', flag: '🌐' },
   NZ: { name: 'New Zealand', flag: '🇳🇿' },
   TBD: { name: 'Unknown', flag: '' },
 };
 
-// McDowell SATCAT `state` code → canonical Space-Track code.
-// (SATCAT uses ISO-ish 1–2 letter codes; Space-Track uses its own set.)
+// McDowell GCAT `state` code → canonical Space-Track code.
+// (GCAT uses ISO-ish 1–2 letter codes for countries and I-prefixed codes for
+// international orgs; Space-Track uses its own set.) Codes NOT in this table
+// pass through raw AND are surfaced with counts in gcat-mapping-report.json —
+// extend here as the report demands. NOTE: plain 'I' is ITALY (San Marco,
+// Sirio); Intelsat is 'I-INT' — an earlier table wrongly sent I→ITSO.
 export const SATCAT_STATE_TO_CANONICAL: Record<string, string> = {
   US: 'US',
   SU: 'CIS',  // Soviet Union → CIS/Russia lineage
@@ -57,16 +63,24 @@ export const SATCAT_STATE_TO_CANONICAL: Record<string, string> = {
   UK: 'UK',
   IN: 'IND',
   NZ: 'NZ',
-  'I-ESA': 'ESA',
   D: 'GER',
   CA: 'CA',
-  I: 'ITSO',  // Intelsat (org)
+  I: 'IT',       // Italy
   L: 'LUXE',
   KR: 'SKOR',
   E: 'SPN',
   AU: 'AUS',
   IL: 'ISRA',
   TR: 'TURK',
+  BR: 'BRAZ',
+  AR: 'ARGN',
+  NL: 'NETH',
+  UAE: 'UAE',
+  // International organizations (I-prefixed in GCAT)
+  'I-ESA': 'ESA',
+  'I-ESRO': 'ESA',   // ESA predecessor
+  'I-INT': 'ITSO',   // Intelsat
+  'I-EUT': 'EUTE',   // Eutelsat
 };
 
 // UCS full country name → canonical Space-Track code.

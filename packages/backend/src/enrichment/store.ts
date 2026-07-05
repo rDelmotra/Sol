@@ -14,7 +14,12 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import type { ObjectMetadata, InlineMetadataFacets, DecayedCatalogRow } from './types.js';
+import type {
+  ObjectMetadata,
+  InlineMetadataFacets,
+  DecayedCatalogRow,
+  EnrichmentArtifactMeta,
+} from './types.js';
 import { matchProgram } from './programs.js';
 import { logger } from '../utils/logger.js';
 
@@ -32,11 +37,18 @@ export function loadEnrichment(): Map<number, ObjectMetadata> {
 
   const map = new Map<number, ObjectMetadata>();
   try {
-    const parsed = JSON.parse(readFileSync(METADATA_PATH, 'utf8')) as Record<string, ObjectMetadata>;
-    for (const key of Object.keys(parsed)) {
-      map.set(Number(key), parsed[key]);
+    // { meta, objects } envelope (G1+); tolerate the legacy flat map too.
+    const parsed = JSON.parse(readFileSync(METADATA_PATH, 'utf8')) as {
+      meta?: EnrichmentArtifactMeta;
+      objects?: Record<string, ObjectMetadata>;
+    } & Record<string, ObjectMetadata>;
+    const objects = parsed.objects ?? parsed;
+    for (const key of Object.keys(objects)) {
+      const norad = Number(key);
+      if (Number.isFinite(norad)) map.set(norad, objects[key] as ObjectMetadata);
     }
-    logger.info(`Enrichment metadata loaded: ${map.size} records`);
+    const snap = parsed.meta?.gcatSnapshot ? ` (GCAT snapshot: ${parsed.meta.gcatSnapshot})` : '';
+    logger.info(`Enrichment metadata loaded: ${map.size} records${snap}`);
   } catch (err) {
     logger.warn(
       `Enrichment metadata unavailable (${(err as Error).message}); serving without it. ` +
@@ -120,7 +132,11 @@ export function getDecayedCatalog(): DecayedCatalogRow[] {
 
   let rows: DecayedCatalogRow[] = [];
   try {
-    rows = JSON.parse(readFileSync(DECAYED_PATH, 'utf8')) as DecayedCatalogRow[];
+    // { meta, rows } envelope (G1+); tolerate the legacy bare array too.
+    const parsed = JSON.parse(readFileSync(DECAYED_PATH, 'utf8')) as
+      | DecayedCatalogRow[]
+      | { meta?: EnrichmentArtifactMeta; rows: DecayedCatalogRow[] };
+    rows = Array.isArray(parsed) ? parsed : parsed.rows ?? [];
     logger.info(`Decayed catalog loaded: ${rows.length} rows`);
   } catch (err) {
     logger.warn(`Decayed catalog unavailable (${(err as Error).message}).`);

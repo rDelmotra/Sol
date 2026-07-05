@@ -1,18 +1,25 @@
 // ============================================================
 // build-enrichment.ts — one-shot metadata join builder
 //
-// Reads the two static snapshots (McDowell General Catalog + UCS Satellite
-// Database), normalizes each to ObjectMetadata, unions them keyed by NORAD ID,
-// and writes the committed runtime artifacts:
-//   enrichment-data/metadata-enrichment.json  — full join, keyed by NORAD
-//   enrichment-data/decayed-catalog.json       — slim rows for the decayed browser
+// Reads the two static snapshots (the full GCAT satcat+psatcat + the UCS
+// Satellite Database), normalizes each to ObjectMetadata, unions them keyed by
+// NORAD ID, and writes the committed runtime artifacts:
+//   enrichment-data/metadata-enrichment.json  — { meta, objects } full join
+//   enrichment-data/decayed-catalog.json      — { meta, rows } decayed browser
+//   enrichment-data/gcat-mapping-report.json  — every unmapped code/collision
+//   enrichment-data/programs-summary.json     — registry roll-up
+//
+// Precedence per facet: GCAT (measured, maintained) > UCS (frozen 2023-05) >
+// program inference — EXCEPT the free-text dossier fields UCS uniquely curates
+// (detailed purpose text, power, lifetime, sites/vehicles as display names).
 //
 // Run manually on snapshot refresh — NOT on the request path, NOT at boot:
 //   npx tsx packages/backend/src/enrichment/build-enrichment.ts
 //
 // Output lands in packages/backend/enrichment-data/ (committed, NOT the gitignored
 // runtime data/ dir) so it ships to prod and the loader resolves it identically
-// under tsx (dev) and node dist (prod). See my_plans/metadata_enrichment.md §4.
+// under tsx (dev) and node dist (prod). See my_plans/metadata_enrichment.md §4
+// and my_plans/gcat_ingestion_architecture.md.
 // ============================================================
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -23,18 +30,18 @@ import {
   DecayedCatalogRow,
   Sector,
   Purpose,
-  OrbitalStatus,
-  CatalogObjectType,
+  EnrichmentArtifactMeta,
   UCS_USER_TO_SECTOR,
-  SATCAT_STATUS_TO_ORBITAL,
-  SATCAT_TYPE_TO_OBJECT,
+  emptyObjectMetadata,
 } from './types.js';
-import { canonicalFromSatcatState, canonicalFromUcsCountry } from './country-codes.js';
+import { canonicalFromUcsCountry } from './country-codes.js';
 import { PROGRAMS, matchProgram, applyProgramDefaults } from './programs.js';
+import { ingestGcat } from './gcat/ingest.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
-const SATCAT_CSV = resolve(REPO_ROOT, 'my_plans/satcat.csv');
+const GCAT_SATCAT = resolve(REPO_ROOT, 'my_plans/GCAT all/Object catalog/cats/satcat');
+const GCAT_PSATCAT = resolve(REPO_ROOT, 'my_plans/GCAT all/Object catalog/cats/psatcat');
 const UCS_TXT = resolve(REPO_ROOT, 'my_plans/UCS-Satellite-Database 5-1-2023 (text).txt');
 // Committed artifact dir — anchored at the backend package root (../../enrichment-data),
 // resolving the same under src (tsx) and dist (node), mirroring how file-cache.ts anchors data/.
@@ -42,8 +49,10 @@ const GEN_DIR = resolve(__dirname, '../../enrichment-data');
 const OUT_JSON = resolve(GEN_DIR, 'metadata-enrichment.json');
 const OUT_DECAYED = resolve(GEN_DIR, 'decayed-catalog.json');
 const OUT_PROGRAMS = resolve(GEN_DIR, 'programs-summary.json');
+const OUT_REPORT = resolve(GEN_DIR, 'gcat-mapping-report.json');
 
-const DECAYED_STATUSES = new Set<OrbitalStatus>(['decayed', 'deorbited', 'exploded']);
+const GCAT_CITATION = 'GCAT (J. McDowell, planet4589.org/space/gcat)';
+const UCS_SNAPSHOT = '2023-05-01';
 
 // ── Minimal parsers (no deps) ─────────────────────────────────────────────────
 
@@ -71,37 +80,6 @@ function toNum(s: string | undefined): number | null {
   if (!s) return null;
   const n = parseFloat(s.replace(/,/g, '').trim());
   return Number.isFinite(n) ? n : null;
-}
-
-function toInt(s: string | undefined): number | null {
-  if (!s) return null;
-  const n = parseInt(s.trim(), 10);
-  return Number.isFinite(n) ? n : null;
-}
-
-function emptyRecord(noradId: number): ObjectMetadata {
-  return {
-    noradId,
-    operatorCountry: null,
-    operatorOrg: null,
-    sectors: [],
-    purpose: 'other',
-    detailedPurpose: null,
-    operationalStatus: 'unknown',
-    orbitalStatus: 'unknown',
-    objectType: 'unknown',
-    contractor: null,
-    contractorCountry: null,
-    launchSite: null,
-    launchVehicle: null,
-    launchMassKg: null,
-    dryMassKg: null,
-    powerW: null,
-    expectedLifetimeYrs: null,
-    cospar: null,
-    orbitClass: null,
-    sources: [],
-  };
 }
 
 // ── Normalizers ───────────────────────────────────────────────────────────────
@@ -134,59 +112,11 @@ function parsePurpose(cell: string): Purpose {
 // ── Source ingest ───────────────────────────────────────────────────────────
 
 /**
- * Ingest satcat.csv → seed records keyed by NORAD (country, status, type,
- * orbit_class), AND collect slim rows for the decayed-catalog browser.
+ * Ingest the UCS database → overlay specs (active payloads only). Runs AFTER
+ * the GCAT pass: sectors/purpose/country/masses fill ONLY when GCAT left them
+ * empty; the UCS-unique dossier fields (detailed purpose text, contractor,
+ * site/vehicle display names, power, lifetime) keep UCS authority.
  */
-function ingestSatcat(
-  map: Map<number, ObjectMetadata>,
-  decayedOut: DecayedCatalogRow[],
-  namesOut: Map<number, string>,
-): void {
-  const text = readFileSync(SATCAT_CSV, 'utf-8');
-  const lines = text.split(/\r?\n/);
-  const header = parseDelimited(lines[0], ',');
-  const idx = (name: string) => header.indexOf(name);
-  const iNorad = idx('satcat');
-  const iName = idx('name');
-  const iLaunchYear = idx('launch_year');
-  const iState = idx('state');
-  const iOwner = idx('owner');
-  const iStatus = idx('status');
-  const iType = idx('object_type');
-  const iClass = idx('orbit_class');
-
-  for (let r = 1; r < lines.length; r++) {
-    if (!lines[r]) continue;
-    const f = parseDelimited(lines[r], ',');
-    const norad = parseInt(f[iNorad], 10);
-    if (!Number.isFinite(norad)) continue;
-
-    const rec = map.get(norad) ?? emptyRecord(norad);
-    rec.operatorCountry = canonicalFromSatcatState(f[iState]?.trim() ?? '');
-    rec.operatorOrg = f[iOwner]?.trim() || null;
-    rec.orbitalStatus = (SATCAT_STATUS_TO_ORBITAL[f[iStatus]?.trim()] ?? 'unknown') as OrbitalStatus;
-    rec.objectType = (SATCAT_TYPE_TO_OBJECT[f[iType]?.trim()] ?? 'unknown') as CatalogObjectType;
-    rec.orbitClass = f[iClass]?.trim() || null;
-    if (!rec.sources.includes('satcat-gc')) rec.sources.push('satcat-gc');
-    map.set(norad, rec);
-    const name = f[iName]?.trim();
-    if (name) namesOut.set(norad, name);
-
-    if (DECAYED_STATUSES.has(rec.orbitalStatus)) {
-      decayedOut.push({
-        noradId: norad,
-        name: f[iName]?.trim() || `NORAD ${norad}`,
-        country: rec.operatorCountry,
-        status: rec.orbitalStatus,
-        objectType: rec.objectType,
-        orbitClass: rec.orbitClass,
-        launchYear: toInt(f[iLaunchYear]),
-      });
-    }
-  }
-}
-
-/** Ingest the UCS database → overlay sector/purpose/specs (active payloads only). */
 function ingestUcs(map: Map<number, ObjectMetadata>): void {
   // NOTE: the .txt is single-byte (latin-1), tab-separated. 'latin1' is lossless here.
   const text = readFileSync(UCS_TXT, 'latin1');
@@ -215,93 +145,92 @@ function ingestUcs(map: Map<number, ObjectMetadata>): void {
     const norad = parseInt(f[iNorad]?.trim() ?? '', 10);
     if (!Number.isFinite(norad)) continue;
 
-    const rec = map.get(norad) ?? emptyRecord(norad);
-    rec.sectors = parseSectors(f[iUsers] ?? '');
-    rec.purpose = parsePurpose(f[iPurpose] ?? '');
-    rec.detailedPurpose = f[iDetail]?.trim() || null;
-    // UCS country is the live-authority fallback only if Space-Track later has none.
+    const rec = map.get(norad) ?? emptyObjectMetadata(norad);
+    // GCAT wins on shared facets — UCS fills only-empty (psatcat Clas/Category
+    // cover ~all payloads, so these fire mainly for objects GCAT skipped).
+    if (rec.sectors.length === 0) rec.sectors = parseSectors(f[iUsers] ?? '');
+    // 'other' sourced from GCAT (prov stamp) is a statement, not a gap — keep it.
+    if (rec.purpose === 'other' && rec.facetProvenance?.purpose !== 'gcat') {
+      const p = parsePurpose(f[iPurpose] ?? '');
+      if (p !== 'other') rec.purpose = p;
+    }
+    // UCS's curated English text beats the raw GCAT category string when present.
+    const detail = f[iDetail]?.trim();
+    if (detail) rec.detailedPurpose = detail;
     if (!rec.operatorCountry) rec.operatorCountry = canonicalFromUcsCountry(f[iCountry] ?? '');
     rec.operatorOrg = rec.operatorOrg ?? (f[iOperator]?.trim() || null);
     rec.contractor = f[iContractor]?.trim() || null;
     rec.contractorCountry = f[iContractorCountry]?.trim() || null;
     rec.launchSite = f[iSite]?.trim() || null;
     rec.launchVehicle = f[iVehicle]?.trim() || null;
-    rec.launchMassKg = toNum(f[iLaunchMass]);
-    rec.dryMassKg = toNum(f[iDryMass]);
+    rec.launchMassKg = rec.launchMassKg ?? toNum(f[iLaunchMass]);
+    rec.dryMassKg = rec.dryMassKg ?? toNum(f[iDryMass]);
     rec.powerW = toNum(f[iPower]);
     rec.expectedLifetimeYrs = toNum(f[iLifetime]);
-    rec.cospar = f[iCospar]?.trim() || null;
+    rec.cospar = rec.cospar ?? (f[iCospar]?.trim() || null);
     if (!rec.sources.includes('ucs-2023-05')) rec.sources.push('ucs-2023-05');
     map.set(norad, rec);
   }
 }
 
-// ── Program inference pass ────────────────────────────────────────────────────
+// ── Program slug pass ─────────────────────────────────────────────────────────
 
-/** Live in-orbit payload coverage — the number the whole phase exists to move. */
-function coverageStats(map: Map<number, ObjectMetadata>): { sectors: number; purpose: number; total: number } {
-  let sectors = 0;
-  let purpose = 0;
-  let total = 0;
+interface CoverageStats {
+  sectors: number;
+  purpose: number;
+  program: number;
+  mass: number;
+  bus: number;
+  total: number;
+}
+
+/** Live in-orbit payload coverage — the numbers the enrichment passes move. */
+function coverageStats(map: Map<number, ObjectMetadata>): CoverageStats {
+  const s: CoverageStats = { sectors: 0, purpose: 0, program: 0, mass: 0, bus: 0, total: 0 };
   for (const rec of map.values()) {
     if (rec.objectType !== 'payload' || rec.orbitalStatus !== 'in_orbit') continue;
-    total++;
-    if (rec.sectors.length > 0) sectors++;
-    if (rec.purpose !== 'other') purpose++;
+    s.total++;
+    if (rec.sectors.length > 0) s.sectors++;
+    if (rec.purpose !== 'other') s.purpose++;
+    if (rec.program) s.program++;
+    if (rec.launchMassKg) s.mass++;
+    if (rec.bus) s.bus++;
   }
-  return { sectors, purpose, total };
+  return s;
 }
 
 /**
- * Match PAYLOADS ONLY against the program registry and fill only-empty facets
- * (UCS/satcat win — see applyProgramDefaults). Prints the coverage report the
- * curation loop feeds on, and returns per-program match counts for the summary
- * artifact.
+ * Stamp the registry SLUG on payloads. The GCAT program string is tried first
+ * ("Starlink 2MO S1" prefix-matches the starlink entry; GLONASS's GCAT program
+ * escapes the ambiguous Kosmos name), then the object name. Facet-filling from
+ * registry defaults still applies (only-empty — GCAT/UCS values survive), which
+ * after G1 mainly matters for post-snapshot launches via the live cron path.
+ * Returns per-program counts + the top unmapped GCAT program strings (registry
+ * curation candidates) for the mapping report.
  */
 function applyPrograms(
   map: Map<number, ObjectMetadata>,
   names: Map<number, string>,
-): Map<string, number> {
-  const before = coverageStats(map);
+): { counts: Map<string, number>; unmappedGcatPrograms: [string, number][] } {
   const counts = new Map<string, number>();
-  const unmatchedPrefixes = new Map<string, number>();
+  const unmapped = new Map<string, number>();
 
   for (const rec of map.values()) {
     if (rec.objectType !== 'payload') continue;
     const name = names.get(rec.noradId);
-    if (!name) continue;
-    const entry = matchProgram(name);
+    const entry =
+      (rec.gcatProgram ? matchProgram(rec.gcatProgram) : null) ??
+      (name ? matchProgram(name) : null);
     if (entry) {
       applyProgramDefaults(rec, entry);
       counts.set(entry.id, (counts.get(entry.id) ?? 0) + 1);
-    } else if (rec.orbitalStatus === 'in_orbit' && rec.sectors.length === 0) {
-      // Curation feedback: the biggest still-unspecified live name families.
-      const prefix = name.toUpperCase().split(/[- ]/)[0] ?? name.toUpperCase();
-      unmatchedPrefixes.set(prefix, (unmatchedPrefixes.get(prefix) ?? 0) + 1);
+    } else if (rec.orbitalStatus === 'in_orbit' && rec.gcatProgram) {
+      unmapped.set(rec.gcatProgram, (unmapped.get(rec.gcatProgram) ?? 0) + 1);
     }
   }
 
-  const after = coverageStats(map);
-  const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : '—');
-  // eslint-disable-next-line no-console
-  console.log(
-    `Program pass — live in-orbit payloads (${after.total}):\n` +
-      `  sectors coverage: ${before.sectors} (${pct(before.sectors, before.total)}) → ` +
-      `${after.sectors} (${pct(after.sectors, after.total)})\n` +
-      `  purpose coverage: ${before.purpose} (${pct(before.purpose, before.total)}) → ` +
-      `${after.purpose} (${pct(after.purpose, after.total)})`,
-  );
-  const byCount = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  // eslint-disable-next-line no-console
-  console.log('Per-program matches:');
-  for (const [id, n] of byCount) console.log(`  ${id.padEnd(14)} ${n}`); // eslint-disable-line no-console
-  const topUnmatched = [...unmatchedPrefixes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15);
-  // eslint-disable-next-line no-console
-  console.log(
-    'Top still-unspecified live payload prefixes (curation candidates):\n' +
-      topUnmatched.map(([p, n]) => `  ${p.padEnd(14)} ${n}`).join('\n'),
-  );
-  return counts;
+  const unmappedGcatPrograms = [...unmapped.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40);
+  return { counts, unmappedGcatPrograms };
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -310,18 +239,36 @@ function main(): void {
   const map = new Map<number, ObjectMetadata>();
   const decayed: DecayedCatalogRow[] = [];
   const names = new Map<number, string>();
-  ingestSatcat(map, decayed, names);
+
+  const { snapshotDate, report } = ingestGcat(
+    readFileSync(GCAT_SATCAT, 'utf-8'),
+    readFileSync(GCAT_PSATCAT, 'utf-8'),
+    map,
+    decayed,
+    names,
+  );
+  const afterGcat = coverageStats(map);
   ingestUcs(map);
-  const programCounts = applyPrograms(map, names);
+  const { counts: programCounts, unmappedGcatPrograms } = applyPrograms(map, names);
+  const final = coverageStats(map);
 
-  const out: Record<number, ObjectMetadata> = {};
-  for (const [norad, rec] of map) out[norad] = rec;
+  const objects: Record<number, ObjectMetadata> = {};
+  for (const [norad, rec] of map) objects[norad] = rec;
 
-  // Drop null/empty fields on write — most of the ~60k satcat-only records have
-  // ~15 null spec fields each, so omitting them roughly halves the artifact.
+  // Drop null/empty fields on write — most of the ~60k GCAT-only records have
+  // many null spec fields each, so omitting them roughly halves the artifact.
   // The loader/consumers coalesce missing → null/[]/'other'/'unknown'.
   const slim = (_key: string, value: unknown) =>
     value === null || (Array.isArray(value) && value.length === 0) ? undefined : value;
+
+  const meta = (recordCount: number): EnrichmentArtifactMeta => ({
+    source: GCAT_CITATION,
+    license: 'CC-BY 4.0',
+    gcatSnapshot: snapshotDate,
+    ucsSnapshot: UCS_SNAPSHOT,
+    builtAt: new Date().toISOString(),
+    recordCount,
+  });
 
   // Tiny, diff-reviewable registry roll-up (future GET /api/programs backing).
   const programsSummary = PROGRAMS.map((p) => ({
@@ -330,15 +277,48 @@ function main(): void {
     matchCount: programCounts.get(p.id) ?? 0,
   }));
 
+  // The "measurable + every ambiguity surfaced" contract — committed and
+  // diff-reviewed on every snapshot refresh.
+  const mappingReport = {
+    meta: meta(map.size),
+    coverage: {
+      liveInOrbitPayloads: final.total,
+      afterGcat: { sectors: afterGcat.sectors, purpose: afterGcat.purpose },
+      final,
+    },
+    ...report,
+    unmappedGcatPrograms: Object.fromEntries(unmappedGcatPrograms),
+  };
+
   mkdirSync(GEN_DIR, { recursive: true });
-  writeFileSync(OUT_JSON, JSON.stringify(out, slim));
-  writeFileSync(OUT_DECAYED, JSON.stringify(decayed, slim));
+  writeFileSync(OUT_JSON, JSON.stringify({ meta: meta(map.size), objects }, slim));
+  writeFileSync(OUT_DECAYED, JSON.stringify({ meta: meta(decayed.length), rows: decayed }, slim));
   writeFileSync(OUT_PROGRAMS, JSON.stringify(programsSummary, null, 2));
+  writeFileSync(OUT_REPORT, JSON.stringify(mappingReport, null, 2));
+
+  const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : '—');
+  const reportCounts = (r: Record<string, number>) =>
+    Object.entries(r).sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([k, n]) => `${k}:${n}`).join(' ') || '(none)';
   // eslint-disable-next-line no-console
   console.log(
-    `Enrichment built: ${map.size} metadata records → ${OUT_JSON}\n` +
+    `GCAT snapshot: ${snapshotDate}\n` +
+      `Enrichment built: ${map.size} metadata records → ${OUT_JSON}\n` +
       `Decayed catalog: ${decayed.length} rows → ${OUT_DECAYED}\n` +
-      `Programs summary: ${programsSummary.length} programs → ${OUT_PROGRAMS}`,
+      `Live in-orbit payloads (${final.total}):\n` +
+      `  sectors  ${final.sectors} (${pct(final.sectors, final.total)})  ` +
+      `purpose ${final.purpose} (${pct(final.purpose, final.total)})  ` +
+      `program ${final.program} (${pct(final.program, final.total)})\n` +
+      `  mass     ${final.mass} (${pct(final.mass, final.total)})  ` +
+      `bus ${final.bus} (${pct(final.bus, final.total)})\n` +
+      `Mapping report → ${OUT_REPORT}\n` +
+      `  unmapped status:   ${reportCounts(report.unmappedStatus)}\n` +
+      `  unmapped category: ${reportCounts(report.unmappedCategory)}\n` +
+      `  unmapped clas:     ${reportCounts(report.unmappedClas)}\n` +
+      `  passthrough state: ${reportCounts(report.passthroughStateCodes)}\n` +
+      `  NORAD collisions:  ${report.noradCollisions.length}  ` +
+      `no-NORAD rows: ${report.skippedNoNorad}  psatcat unjoined: ${report.psatcatUnjoined}\n` +
+      `  top unmapped GCAT programs: ${reportCounts(mappingReport.unmappedGcatPrograms)}`,
   );
 }
 

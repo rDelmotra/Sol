@@ -25,7 +25,7 @@ export type Purpose =
   | 'meteorological'
   | 'other';
 
-/** Operational status (vestigial — Space-Track no longer exposes it; always 'unknown'). */
+/** Operational status — filled from the GCAT psatcat operational timeline (G1). */
 export type OperationalStatus =
   | 'operational'
   | 'partial'
@@ -35,7 +35,7 @@ export type OperationalStatus =
   | 'extended'
   | 'unknown';
 
-/** Orbital status from the McDowell satcat.csv — the live "status" facet. */
+/** Orbital status from the GCAT satcat — the live "status" facet. */
 export type OrbitalStatus =
   | 'in_orbit'
   | 'decayed'
@@ -51,15 +51,29 @@ export type CatalogObjectType =
   | 'component'
   | 'unknown';
 
-// 'inferred' = filled from the backend program registry by name-pattern match.
-export type MetadataSource = 'ucs-2023-05' | 'satcat-gc' | 'spacetrack' | 'inferred';
+// 'gcat' = full GCAT satcat/psatcat snapshot (replaced the trimmed 'satcat-gc'
+// CSV in G1); 'inferred' = backend program registry name-pattern match.
+export type MetadataSource = 'ucs-2023-05' | 'gcat' | 'spacetrack' | 'inferred';
 
-/** Per-facet provenance — keys exist ONLY for facets filled by program inference. */
+/** Per-facet provenance — keys exist for facets filled by GCAT or inference. */
 export interface FacetProvenance {
   sectors?: MetadataSource;
   purpose?: MetadataSource;
   country?: MetadataSource;
   org?: MetadataSource;
+}
+
+/** Raw GCAT code block — verbatim source cells behind the normalized facets. */
+export interface GcatRawCodes {
+  status?: string;
+  type?: string;
+  clas?: string;
+  category?: string;
+  program?: string;
+  opOrbit?: string;
+  owner?: string;
+  state?: string;
+  manufacturer?: string;
 }
 
 /** Compact facets inlined onto EnrichedTLEObject (cheap to filter, hot-path safe). */
@@ -92,8 +106,27 @@ export interface ObjectMetadata {
   expectedLifetimeYrs: number | null;
   cospar: string | null;
   orbitClass: string | null;
+  // ── GCAT satcat/psatcat fields (G1) ──────────────────────────────────────────
+  jcat?: string;
+  launchTag?: string;
+  launchDate?: string;          // raw GCAT vague date ("1998 Nov 20 0649:47")
+  bus?: string;
+  motor?: string;
+  shape?: string;
+  lengthM?: number;
+  diameterM?: number;
+  spanM?: number;
+  totMassKg?: number;
+  gcatProgram?: string;         // raw GCAT program string ("Starlink 2MO S1")
+  maneuverability?: 'M' | 'D';  // M=maneuverable, D=deorbit-capable
+  attitudeControl?: string;
+  plane?: string;
+  lastActiveDate?: string;      // omitted = believed still active
+  endOpDate?: string;           // omitted = believed still operating
+  endTransmitDate?: string;     // omitted = believed still transmitting
+  gcat?: GcatRawCodes;          // raw source codes (reversibility)
   program?: string;                    // program registry slug (e.g. 'starlink')
-  facetProvenance?: FacetProvenance;   // present only when facets were inferred
+  facetProvenance?: FacetProvenance;   // present when facets are gcat/inferred
   sources: MetadataSource[];
 }
 

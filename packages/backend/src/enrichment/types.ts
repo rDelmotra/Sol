@@ -61,21 +61,38 @@ export type CatalogObjectType =
   | 'unknown';
 
 // ── Provenance — which snapshot each record was joined from ───────────────────
+// 'gcat'     = full GCAT satcat/psatcat snapshot (supersedes the old trimmed
+//              'satcat-gc' CSV as of G1 — see my_plans/gcat_ingestion_architecture.md)
 // 'inferred' = filled from the program registry (programs.ts) by name-pattern
-// matching, not looked up in a source. Appended to sources[] whenever the
-// matcher contributed anything (membership and/or facets).
-export type MetadataSource = 'ucs-2023-05' | 'satcat-gc' | 'spacetrack' | 'inferred';
+//              matching, not looked up in a source. Appended to sources[]
+//              whenever the matcher contributed anything (membership/facets).
+export type MetadataSource = 'ucs-2023-05' | 'gcat' | 'spacetrack' | 'inferred';
 
 // ── Per-facet provenance ───────────────────────────────────────────────────────
-// Present ONLY for facets that were filled by program inference; absence of a
-// key means the value came from UCS/satcat per the record-level sources[]
-// semantics. NEVER assign an empty {} — the build script's slim() replacer
-// drops nulls/empty arrays but not empty objects.
+// Present for facets filled by program inference ('inferred') or by the GCAT
+// psatcat/satcat join ('gcat'); absence of a key means the value came from UCS
+// per the record-level sources[] semantics. NEVER assign an empty {} — the
+// build script's slim() replacer drops nulls/empty arrays but not empty objects.
 export interface FacetProvenance {
   sectors?: MetadataSource;
   purpose?: MetadataSource;
   country?: MetadataSource;
   org?: MetadataSource;
+}
+
+// ── Raw GCAT codes (reversibility block) ───────────────────────────────────────
+// Verbatim trimmed source cells for every normalized facet. Only assigned when
+// at least one key is present (slim() drops nulls/empty arrays, NOT empty {}).
+export interface GcatRawCodes {
+  status?: string;        // satcat Status ("O", "AR", "R?", …)
+  type?: string;          // full satcat Type cell ("PPTH-MU", "CP E-I", …)
+  clas?: string;          // psatcat Clas ("B", "CD", …)
+  category?: string;      // full psatcat Category cell ("COM/MET-RO", "SIG?*")
+  program?: string;       // psatcat Program (duplicated to gcatProgram for reach)
+  opOrbit?: string;       // satcat OpOrbit+OQU cell ("LLEO/I -")
+  owner?: string;         // GCAT org code ("SPXS") — name resolution is G2
+  state?: string;         // GCAT state code pre-canonicalization ("SU", "I-ESA")
+  manufacturer?: string;  // GCAT org code
 }
 
 // ============================================================
@@ -114,6 +131,31 @@ export interface ObjectMetadata {
   // Detailed orbit class from the General Catalog (e.g. "LLEO/I", "GEO/S").
   orbitClass: string | null;
 
+  // ── GCAT satcat/psatcat fields (G1) — lazy-served, never inlined ────────────
+  jcat?: string;                // GCAT universal id (S25544, …)
+  launchTag?: string;           // GCAT launch key ("1998-067") — G2 launches join
+  launchDate?: string;          // raw GCAT vague date ("1998 Nov 20 0649:47")
+  bus?: string;
+  motor?: string;
+  shape?: string;
+  lengthM?: number;
+  diameterM?: number;
+  spanM?: number;
+  totMassKg?: number;           // GCAT TotMass — attached-group total at launch
+  gcatProgram?: string;         // raw GCAT program string ("Starlink 2MO S1");
+                                // `program` below stays the registry SLUG
+  maneuverability?: 'M' | 'D';  // psatcat Mvr: M=maneuverable, D=deorbit-capable
+  attitudeControl?: string;     // psatcat Att code (P, S, G, U, …)
+  plane?: string;               // constellation plane/shell label
+  // psatcat operational timeline (raw vague dates; a '*' cell = "believed still
+  // active/operating/transmitting" and is OMITTED here — see ingest.ts)
+  lastActiveDate?: string;      // TLast
+  endOpDate?: string;           // TOp
+  endTransmitDate?: string;     // TDate
+  // Raw GCAT code block — verbatim trimmed cells (uncertainty '?' kept), so every
+  // normalization above is reversible without re-reading the snapshot files.
+  gcat?: GcatRawCodes;
+
   // Program membership (programs.ts registry id, e.g. 'starlink'). Stamped on
   // every payload whose name matches a registry entry, independent of whether
   // any facets were inferred from it.
@@ -143,6 +185,32 @@ export interface InlineMetadataFacets {
   program?: string;
 }
 
+/** Fresh all-unknown join record — shared by the GCAT and UCS ingest passes. */
+export function emptyObjectMetadata(noradId: number): ObjectMetadata {
+  return {
+    noradId,
+    operatorCountry: null,
+    operatorOrg: null,
+    sectors: [],
+    purpose: 'other',
+    detailedPurpose: null,
+    operationalStatus: 'unknown',
+    orbitalStatus: 'unknown',
+    objectType: 'unknown',
+    contractor: null,
+    contractorCountry: null,
+    launchSite: null,
+    launchVehicle: null,
+    launchMassKg: null,
+    dryMassKg: null,
+    powerW: null,
+    expectedLifetimeYrs: null,
+    cospar: null,
+    orbitClass: null,
+    sources: [],
+  };
+}
+
 /** Empty/unknown facets for objects with no metadata match (debris, post-2023 launches). */
 export const EMPTY_FACETS: InlineMetadataFacets = {
   operatorCountry: null,
@@ -164,6 +232,18 @@ export interface DecayedCatalogRow {
   objectType: CatalogObjectType;
   orbitClass: string | null;
   launchYear: number | null;
+}
+
+// ── Artifact envelope (G1) ─────────────────────────────────────────────────────
+// Every committed enrichment artifact wraps its data in { meta, objects|rows }
+// so snapshot provenance + citation ship with the data (CC-BY requirement).
+export interface EnrichmentArtifactMeta {
+  source: string;         // "GCAT (J. McDowell, planet4589.org/space/gcat)"
+  license: string;        // "CC-BY 4.0"
+  gcatSnapshot: string | null;  // from the file's "# Updated …" line
+  ucsSnapshot: string;    // "2023-05-01"
+  builtAt: string;        // ISO timestamp of the build run
+  recordCount: number;
 }
 
 // ── Normalization lookup tables (source vocab → canonical enum) ────────────────

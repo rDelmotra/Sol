@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import type { ObjectCategory } from '../data/types';
-import { PROGRAM_LABELS } from '../data/metadata-types';
+import { PROGRAM_LABELS, type ObjectMetadata } from '../data/metadata-types';
+import { fetchObjectMetadata } from '../data/metadata-client';
 
 const CATEGORY_LABELS: Record<ObjectCategory, string> = {
   active_satellite: 'Active Satellite',
@@ -65,6 +67,68 @@ function Row({ label, value }: { label: string; value: string | number | null })
   );
 }
 
+/** Lazy /api/metadata/:noradId fetch — session-cached in metadata-client. */
+function useObjectMetadata(noradId: number | null): ObjectMetadata | null {
+  const [meta, setMeta] = useState<ObjectMetadata | null>(null);
+  useEffect(() => {
+    setMeta(null);
+    if (noradId === null) return;
+    let cancelled = false;
+    void fetchObjectMetadata(noradId).then((m) => {
+      if (!cancelled) setMeta(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [noradId]);
+  return meta;
+}
+
+const MANEUVERABILITY_LABELS: Record<string, string> = {
+  M: 'Maneuverable',
+  D: 'Deorbit-capable',
+};
+
+function formatKg(kg: number | null | undefined): string | null {
+  return kg ? `${kg.toLocaleString()} kg` : null;
+}
+
+/** "L × Ø m (span S m)" from whichever dimensions GCAT has. */
+function formatDimensions(m: ObjectMetadata): string | null {
+  const body =
+    m.lengthM && m.diameterM ? `${m.lengthM} × ${m.diameterM} m` : null;
+  const span = m.spanM ? `span ${m.spanM} m` : null;
+  if (body && span) return `${body} (${span})`;
+  return body ?? span;
+}
+
+/** GCAT+UCS detail rows for the selected TLE object (lazy-fetched). */
+function MetadataRows({ meta }: { meta: ObjectMetadata | null }) {
+  if (!meta) return null;
+  return (
+    <>
+      <Row label="Series" value={meta.gcatProgram ?? null} />
+      <Row label="Operator" value={meta.operatorOrg} />
+      <Row label="Launch mass" value={formatKg(meta.launchMassKg)} />
+      <Row label="Dry mass" value={formatKg(meta.dryMassKg)} />
+      <Row label="Size" value={formatDimensions(meta)} />
+      <Row label="Bus" value={meta.bus ?? null} />
+      <Row label="Shape" value={meta.shape ?? null} />
+      <Row
+        label="Propulsion"
+        value={meta.maneuverability ? MANEUVERABILITY_LABELS[meta.maneuverability] : null}
+      />
+      <Row label="Last active" value={meta.lastActiveDate ?? null} />
+      <Row label="Ops ended" value={meta.endOpDate ?? null} />
+      {meta.sources.includes('gcat') && (
+        <div style={{ marginTop: 6, fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>
+          Catalog data: GCAT / J. McDowell (CC-BY)
+        </div>
+      )}
+    </>
+  );
+}
+
 
 export function InfoCard() {
   const selectedSatellite = useStore((s) => s.selectedSatellite);
@@ -82,6 +146,7 @@ export function InfoCard() {
   const cameraMode = useStore((s) => s.cameraMode);
   const setCameraMode = useStore((s) => s.setCameraMode);
   const trackingStyle = useStore((s) => s.trackingStyle);
+  const meta = useObjectMetadata(selectedSatellite?.noradId ?? null);
 
   if (!selectedSatellite && !selectedDso) return null;
 
@@ -226,6 +291,7 @@ export function InfoCard() {
       <Row label="Country" value={s.countryCode} />
       <Row label="Launch" value={s.launchDate} />
       <Row label="Epoch" value={s.epoch?.slice(0, 10) ?? null} />
+      <MetadataRows meta={meta} />
 
       <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
         <button
