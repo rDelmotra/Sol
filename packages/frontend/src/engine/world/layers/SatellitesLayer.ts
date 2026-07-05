@@ -104,6 +104,7 @@ export class SatellitesLayer implements Layer {
     let prevSector = s0.sectorFilters;
     let prevPurpose = s0.purposeFilters;
     let prevCountry = s0.countryFilter;
+    let prevProgram = s0.programFilter;
     let prevReg = s0.regimeFilters;
     let prevColorBy = s0.colorBy;
     let prevMode = s0.visibilityMode;
@@ -115,6 +116,7 @@ export class SatellitesLayer implements Layer {
         state.sectorFilters !== prevSector ||
         state.purposeFilters !== prevPurpose ||
         state.countryFilter !== prevCountry ||
+        state.programFilter !== prevProgram ||
         state.regimeFilters !== prevReg;
       const colorByChanged = state.colorBy !== prevColorBy;
       const obsLocChanged = state.observerLocation !== prevObs;
@@ -128,6 +130,7 @@ export class SatellitesLayer implements Layer {
       prevSector = state.sectorFilters;
       prevPurpose = state.purposeFilters;
       prevCountry = state.countryFilter;
+      prevProgram = state.programFilter;
       prevReg = state.regimeFilters;
       prevColorBy = state.colorBy;
       prevMode = state.visibilityMode;

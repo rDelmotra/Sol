@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Fuse, { type FuseResult } from 'fuse.js';
 import { useStore } from '../store/useStore';
 import type { EnrichedTLEObject, ObjectCategory } from '../data/types';
+import { parseQuery } from '../query/parser';
+import { irToFilterPatch } from '../query/executor';
+import { EMPTY_IR, type QueryIR } from '../query/types';
 
 const CATEGORY_COLORS: Record<ObjectCategory, string> = {
   active_satellite: '#4CAF50',
@@ -19,8 +22,13 @@ export function SearchBar() {
   const selectByIndex = useStore((s) => s.selectByIndex);
   const loadingPhase = useStore((s) => s.loadingPhase);
   const hasSelection = useStore((s) => !!(s.selectedSatellite || s.selectedDso));
+  const applyQueryFilters = useStore((s) => s.applyQueryFilters);
+  const clearQueryFilters = useStore((s) => s.clearQueryFilters);
+  const visibleFacetCounts = useStore((s) => s.visibleFacetCounts);
+  const facetCounts = useStore((s) => s.facetCounts);
 
   const [query, setQuery] = useState('');
+  const [ir, setIr] = useState<QueryIR>(EMPTY_IR);
   const [results, setResults] = useState<FuseResult<EnrichedTLEObject>[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
@@ -46,35 +54,67 @@ export function SearchBar() {
     });
   }, [catalogData]);
 
-  // Debounced search
+  // Compile + apply a query: parse → facet filters (live), residual → Fuse.
+  // The whole-word rule is structural in the parser (exact-key lookups), so a
+  // mid-typed token can't transiently match; unchanged constraints are
+  // reference-preserved in the store (reconcileFilterSlices) so keystrokes
+  // that only extend residual text never trigger a renderer recompute.
+  const runQuery = useCallback(
+    (value: string) => {
+      const nextIr = parseQuery(value);
+      setIr(nextIr);
+      applyQueryFilters(irToFilterPatch(nextIr));
+      const residual = nextIr.text;
+      setResults(residual && fuse ? fuse.search(residual, { limit: 10 }) : []);
+      setHighlightedIndex(0);
+    },
+    [fuse, applyQueryFilters],
+  );
+
+  const resetQueryState = useCallback(() => {
+    setIr(EMPTY_IR);
+    setResults([]);
+    setHighlightedIndex(0);
+    clearQueryFilters();
+  }, [clearQueryFilters]);
+
+  // Debounced pipeline; empty input restores the swarm synchronously.
   const onQueryChange = useCallback(
     (value: string) => {
       setQuery(value);
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      if (!value.trim() || !fuse) {
-        setResults([]);
-        setHighlightedIndex(0);
+      if (!value.trim()) {
+        resetQueryState();
         return;
       }
-      debounceRef.current = setTimeout(() => {
-        const hits = fuse.search(value, { limit: 10 });
-        setResults(hits);
-        setHighlightedIndex(0);
-      }, DEBOUNCE_MS);
+      debounceRef.current = setTimeout(() => runQuery(value), DEBOUNCE_MS);
     },
-    [fuse],
+    [runQuery, resetQueryState],
   );
 
-  // Select a result
+  // Remove one interpretation chip: splice its span out of the input text and
+  // re-run immediately (input text stays the single source of truth).
+  const removeChip = useCallback(
+    (start: number, end: number) => {
+      const next = (query.slice(0, start) + query.slice(end)).replace(/\s{2,}/g, ' ').trim();
+      setQuery(next);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (!next) resetQueryState();
+      else runQuery(next);
+    },
+    [query, runQuery, resetQueryState],
+  );
+
+  // Select a result — releases the query filter (query text is cleared).
   const selectResult = useCallback(
     (refIndex: number) => {
       if (selectByIndex) selectByIndex(refIndex);
       setQuery('');
-      setResults([]);
+      resetQueryState();
       setIsOpen(false);
       inputRef.current?.blur();
     },
-    [selectByIndex],
+    [selectByIndex, resetQueryState],
   );
 
   // Keyboard navigation
@@ -92,13 +132,21 @@ export function SearchBar() {
         if (hit?.refIndex != null) selectResult(hit.refIndex);
       } else if (e.key === 'Escape') {
         setQuery('');
-        setResults([]);
+        resetQueryState();
         setIsOpen(false);
         inputRef.current?.blur();
       }
     },
-    [results, highlightedIndex, selectResult],
+    [results, highlightedIndex, selectResult, resetQueryState],
   );
+
+  // Unmount / hot-reload safety: never strand a collapsed swarm.
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      clearQueryFilters();
+    };
+  }, [clearQueryFilters]);
 
   // "/" global shortcut
   useEffect(() => {
@@ -131,6 +179,9 @@ export function SearchBar() {
   if (loadingPhase !== 'ready') return null;
 
   const showDropdown = isOpen && results.length > 0;
+  const showChips = ir.matches.length > 0 && query.trim() !== '';
+  const visibleTotal = Object.values(visibleFacetCounts.type).reduce((a, b) => a + b, 0);
+  const catalogTotal = Object.values(facetCounts.type).reduce((a, b) => a + b, 0);
 
   const dynamicInputStyle: React.CSSProperties = {
     ...inputStyle,
@@ -153,6 +204,27 @@ export function SearchBar() {
           style={dynamicInputStyle}
         />
       </div>
+      {showChips && (
+        <div style={chipsRowStyle}>
+          {ir.matches.map((m, i) => (
+            <span key={`${m.group}-${m.value}-${i}`} style={chipStyle}>
+              {m.label}
+              <span
+                style={chipRemoveStyle}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  removeChip(m.start, m.end);
+                }}
+              >
+                ×
+              </span>
+            </span>
+          ))}
+          <span style={countLineStyle}>
+            {visibleTotal.toLocaleString()} of {catalogTotal.toLocaleString()} objects
+          </span>
+        </div>
+      )}
       {showDropdown && (
         <div style={dropdownStyle}>
           {results.map((hit, i) => {
@@ -256,4 +328,42 @@ const resultItemStyle: React.CSSProperties = {
   fontFamily: 'monospace',
   fontSize: '12px',
   color: 'rgba(255, 255, 255, 0.85)',
+};
+
+const chipsRowStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  alignItems: 'center',
+  gap: 4,
+  marginTop: 4,
+  pointerEvents: 'auto',
+};
+
+const chipStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  padding: '2px 7px',
+  background: 'rgba(0, 0, 0, 0.7)',
+  backdropFilter: 'blur(4px)',
+  border: '1px solid rgba(255, 255, 255, 0.18)',
+  borderRadius: 10,
+  fontFamily: 'monospace',
+  fontSize: '11px',
+  color: 'rgba(255, 255, 255, 0.85)',
+};
+
+const chipRemoveStyle: React.CSSProperties = {
+  cursor: 'pointer',
+  color: 'rgba(255, 255, 255, 0.4)',
+  fontSize: '12px',
+  lineHeight: 1,
+};
+
+const countLineStyle: React.CSSProperties = {
+  marginLeft: 'auto',
+  fontFamily: 'monospace',
+  fontSize: '10px',
+  color: 'rgba(255, 255, 255, 0.4)',
+  whiteSpace: 'nowrap',
 };

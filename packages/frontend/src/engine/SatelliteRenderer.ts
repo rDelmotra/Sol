@@ -336,9 +336,11 @@ export class SatelliteRenderer {
     const facetCounts = makeFacetCounts();
 
     // Destructure once (the gate runs per object over the whole catalog).
-    const { typeFilters, statusFilters, sectorFilters, purposeFilters, regimeFilters, countryFilter } = filters;
+    const { typeFilters, statusFilters, sectorFilters, purposeFilters, regimeFilters, countryFilter, programFilter } = filters;
     const countryAll = countryFilter.mode === 'all';
     const countryCodes = countryFilter.mode === 'only' ? countryFilter.codes : null;
+    const programAll = programFilter.mode === 'all';
+    const programIds = programFilter.mode === 'only' ? programFilter.ids : null;
 
     const observerAvailable = observerPos !== null;
     const obsX = observerPos?.x ?? 0;
@@ -382,6 +384,11 @@ export class SatelliteRenderer {
       }
       if (isVisibleBase && !countryAll) {
         isVisibleBase = countryCodes!.has(obj.countryCode || 'TBD');
+      }
+      // Program (query-driven): objects without a program are excluded when a
+      // program filter is active — "starlink" means only Starlink.
+      if (isVisibleBase && !programAll) {
+        isVisibleBase = programIds!.has(obj.program ?? '');
       }
 
       this.filterMask[i] = isVisibleBase ? 1 : 0;

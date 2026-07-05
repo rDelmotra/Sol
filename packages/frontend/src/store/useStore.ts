@@ -7,6 +7,8 @@ import type { VisualListSource, VisualListStatus } from '../data/visualList';
 import type { HistoryCoverage } from '../data/history-client';
 import type { DsoLabelPosition } from '../engine/DsoRenderer';
 import { simClock } from '../engine/SimClock';
+import { reconcileFilterSlices } from '../query/apply';
+import type { QueryFilterPatch } from '../query/types';
 
 export type LoadingPhase = 'fetching' | 'initializing' | 'propagating' | 'ready';
 export type CameraMode = 'free' | 'flying' | 'following' | 'returning';
@@ -55,6 +57,10 @@ export type ColorBy = 'type' | 'status' | 'sector' | 'country';
 /** Country filter: every operator, or only an explicit allow-set of canonical codes. */
 export type CountryFilter = { mode: 'all' } | { mode: 'only'; codes: Set<string> };
 
+/** Program filter: every object, or only members of an allow-set of program slugs.
+ *  Query-only for now — the FilterPanel has no program group yet. */
+export type ProgramFilter = { mode: 'all' } | { mode: 'only'; ids: Set<string> };
+
 /**
  * The slice of state the satellite render-side filter pass reads. The full store
  * state structurally satisfies this, so callers pass `useStore.getState()` directly.
@@ -65,6 +71,7 @@ export interface SatelliteFilterState {
   sectorFilters: Record<SectorFilterKey, boolean>;
   purposeFilters: Record<Purpose, boolean>;
   countryFilter: CountryFilter;
+  programFilter: ProgramFilter;
   regimeFilters: Record<OrbitalRegime, boolean>;
 }
 
@@ -137,6 +144,7 @@ interface AppState {
   sectorFilters: Record<SectorFilterKey, boolean>;
   purposeFilters: Record<Purpose, boolean>;
   countryFilter: CountryFilter;
+  programFilter: ProgramFilter;
   facetCounts: FacetCounts;
   visibleFacetCounts: FacetCounts;
 
@@ -167,6 +175,18 @@ interface AppState {
   toggleSectorFilter: (key: SectorFilterKey) => void;
   togglePurposeFilter: (key: Purpose) => void;
   setCountryFilter: (filter: CountryFilter) => void;
+  /**
+   * Apply a compiled query patch with OVERWRITE semantics over the seven
+   * query-controlled slices (type/status/sector/purpose/regime/country/program):
+   * each group becomes `patch.group ?? all-on`. FilterPanel manual toggles work
+   * on top afterwards; the next query keystroke/chip-removal re-overwrites.
+   * Reference identity is preserved for semantically-unchanged groups via
+   * reconcileFilterSlices (query/apply.ts) — load-bearing for the
+   * SatellitesLayer diff (no per-keystroke recomputes).
+   */
+  applyQueryFilters: (patch: QueryFilterPatch) => void;
+  /** Restore all seven query-controlled slices to all-on / mode:'all'. */
+  clearQueryFilters: () => void;
   setVisibleFacetCounts: (counts: FacetCounts) => void;
   setCatalogData: (data: EnrichedTLEObject[]) => void;
   setSelectByIndex: (fn: (index: number) => void) => void;
@@ -238,7 +258,7 @@ interface AppState {
   setTriggerJoyrideDso: (fn: (dsoId: string) => void) => void;
 }
 
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<AppState>((set, get) => ({
   loadingPhase: 'fetching',
   loadingError: null,
   cameraMode: 'free',
@@ -319,6 +339,7 @@ export const useStore = create<AppState>((set) => ({
   sectorFilters: { ...ALL_SECTOR_ON },
   purposeFilters: { ...ALL_PURPOSE_ON },
   countryFilter: { mode: 'all' },
+  programFilter: { mode: 'all' },
   facetCounts: emptyFacetCounts(),
   visibleFacetCounts: emptyFacetCounts(),
 
@@ -371,6 +392,23 @@ export const useStore = create<AppState>((set) => ({
   togglePurposeFilter: (key) =>
     set((state) => ({ purposeFilters: { ...state.purposeFilters, [key]: !state.purposeFilters[key] } })),
   setCountryFilter: (filter) => set({ countryFilter: filter }),
+  applyQueryFilters: (patch) => {
+    const s = get();
+    const delta = reconcileFilterSlices(
+      {
+        typeFilters: s.typeFilters,
+        statusFilters: s.statusFilters,
+        sectorFilters: s.sectorFilters,
+        purposeFilters: s.purposeFilters,
+        regimeFilters: s.regimeFilters,
+        countryFilter: s.countryFilter,
+        programFilter: s.programFilter,
+      },
+      patch,
+    );
+    if (Object.keys(delta).length > 0) set(delta);
+  },
+  clearQueryFilters: () => get().applyQueryFilters({}),
   setVisibleFacetCounts: (counts) =>
     // The satellite render pass counts only TLE objects, so its type.deep_space is
     // always 0. DSOs (the only deep_space objects, owned by a separate layer) are
