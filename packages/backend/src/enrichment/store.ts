@@ -20,16 +20,26 @@ import type {
   DecayedCatalogRow,
   EnrichmentArtifactMeta,
 } from './types.js';
+import type { OrgRecord } from './gcat/orgs.js';
+import type { LaunchRecord } from './gcat/launches.js';
 import { matchProgram } from './programs.js';
+import { primaryOwnerCode } from './gcat/inherit.js';
 import { logger } from '../utils/logger.js';
+
+export { primaryOwnerCode };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = resolve(__dirname, '../../enrichment-data');
 const METADATA_PATH = resolve(DATA_DIR, 'metadata-enrichment.json');
 const DECAYED_PATH = resolve(DATA_DIR, 'decayed-catalog.json');
+const LAUNCHES_PATH = resolve(DATA_DIR, 'launches.json');
+const ORGS_PATH = resolve(DATA_DIR, 'orgs.json');
 
 let metadataCache: Map<number, ObjectMetadata> | null = null;
 let decayedCache: DecayedCatalogRow[] | null = null;
+let launchesCache: Map<string, LaunchRecord> | null = null;
+let orgsCache: Map<string, OrgRecord> | null = null;
+let launchIndexCache: Map<string, number[]> | null = null;
 
 /** Load (once) the NORAD→ObjectMetadata map. Empty Map if the artifact is missing. */
 export function loadEnrichment(): Map<number, ObjectMetadata> {
@@ -124,6 +134,54 @@ export function getInlineFacets(
   isPayload?: boolean,
 ): InlineMetadataFacets {
   return deriveInlineFacets(loadEnrichment().get(noradId), name, isPayload);
+}
+
+/** Generic { meta, <key>: Record } entity artifact loader (lazy, graceful). */
+function loadEntityMap<T>(path: string, key: string, label: string): Map<string, T> {
+  const map = new Map<string, T>();
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    const entries = (parsed[key] ?? {}) as Record<string, T>;
+    for (const k of Object.keys(entries)) map.set(k, entries[k]);
+    logger.info(`${label} loaded: ${map.size} records`);
+  } catch (err) {
+    logger.warn(`${label} unavailable (${(err as Error).message}).`);
+  }
+  return map;
+}
+
+/** Load (once) the Launches entity (launches.json, keyed by Launch_Tag). */
+export function loadLaunches(): Map<string, LaunchRecord> {
+  launchesCache ??= loadEntityMap<LaunchRecord>(LAUNCHES_PATH, 'launches', 'Launches entity');
+  return launchesCache;
+}
+
+/** Load (once) the Organizations entity (orgs.json, keyed by org code). */
+export function loadOrgs(): Map<string, OrgRecord> {
+  orgsCache ??= loadEntityMap<OrgRecord>(ORGS_PATH, 'orgs', 'Orgs entity');
+  return orgsCache;
+}
+
+export function getLaunch(tag: string): LaunchRecord | undefined {
+  return loadLaunches().get(tag);
+}
+
+export function getOrg(code: string): OrgRecord | undefined {
+  return loadOrgs().get(code);
+}
+
+/** Lazy launchTag → noradId[] index over the metadata map (for /api/launch/:tag). */
+export function getLaunchObjectIndex(): Map<string, number[]> {
+  if (launchIndexCache) return launchIndexCache;
+  const index = new Map<string, number[]>();
+  for (const [norad, rec] of loadEnrichment()) {
+    if (!rec.launchTag) continue;
+    const list = index.get(rec.launchTag) ?? [];
+    list.push(norad);
+    index.set(rec.launchTag, list);
+  }
+  launchIndexCache = index;
+  return index;
 }
 
 /** Load (once) the slim decayed/deorbited rows for the catalog browser. */

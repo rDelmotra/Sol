@@ -27,7 +27,7 @@ function buildCatalog(columns: [string, number][], rows: string[][]): string {
 
 const SATCAT_COLS: [string, number][] = [
   ['JCAT', 13], ['Satcat', 12], ['Launch_Tag', 11], ['Piece', 15], ['Type', 13],
-  ['Name', 29], ['LDate', 13], ['Status', 7], ['Owner', 13], ['State', 13],
+  ['Name', 29], ['LDate', 13], ['Parent', 15], ['Status', 7], ['Owner', 13], ['State', 13],
   ['Manufacturer', 19], ['Bus', 17], ['Motor', 13], ['Mass', 14], ['DryMass', 13],
   ['TotMass', 14], ['Length', 10], ['Diamete', 9], ['Span', 11], ['Shape', 33],
   ['OpOrbitOQU', 11],
@@ -42,7 +42,7 @@ const PSATCAT_COLS: [string, number][] = [
 function satRow(over: Partial<Record<string, string>>): string[] {
   const d: Record<string, string> = {
     JCAT: 'S00001', Satcat: '00001', Launch_Tag: '2020-001', Piece: '2020-001A',
-    Type: 'P', Name: 'Testsat 1', LDate: '2020 Jan  1', Status: 'O', Owner: 'SPXS',
+    Type: 'P', Name: 'Testsat 1', LDate: '2020 Jan  1', Parent: '-', Status: 'O', Owner: 'SPXS',
     State: 'US', Manufacturer: 'SPX', Bus: 'Starlink', Motor: '-', Mass: '260',
     DryMass: '250', TotMass: '260', Length: '3.0', Diamete: '1.5', Span: '8.0',
     Shape: 'Box + pan', OpOrbitOQU: 'LLEO/I -', ...over,
@@ -165,6 +165,24 @@ test('decayed rows emitted for decayed/deorbited/exploded; ERR excluded', () => 
   assert.equal(map.get(13)!.orbitalStatus, 'unknown');
   assert.equal(map.get(15)!.orbitalStatus, 'unknown');
   assert.deepEqual(result.report.unmappedStatus, { WAT: 1 });
+});
+
+test('parentJcat: first token, * and port suffix stripped, raw preserved', () => {
+  const { map, result } = run(
+    [
+      satRow({}),
+      satRow({ JCAT: 'S00002', Satcat: '00002', Parent: 'S00001* PMA-1' }),
+      satRow({ JCAT: 'S00003', Satcat: '00003', Parent: 'A11915' }),
+    ],
+    [],
+  );
+  assert.equal(map.get(1)!.parentJcat, undefined);
+  assert.equal(map.get(1)!.gcat?.parent, undefined);
+  const r2 = map.get(2)!;
+  assert.equal(r2.parentJcat, 'S00001');
+  assert.equal(r2.gcat?.parent, 'S00001* PMA-1');       // verbatim
+  assert.equal(map.get(3)!.parentJcat, 'A11915');       // non-S kept (walk misses gracefully)
+  assert.equal(result.jcatToNorad.get('S00002'), 2);
 });
 
 test('uncertain codes: R? maps to decayed; state ?-suffix joins the table', () => {

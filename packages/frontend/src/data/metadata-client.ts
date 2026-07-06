@@ -8,13 +8,15 @@
 // 404 (no record) caches as null.
 // ============================================================
 
-import type { ObjectMetadata } from './metadata-types';
+import type { ObjectMetadataResponse } from './metadata-types';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
-const cache = new Map<number, ObjectMetadata | null>();
+const cache = new Map<number, ObjectMetadataResponse | null>();
 
-export async function fetchObjectMetadata(noradId: number): Promise<ObjectMetadata | null> {
+export async function fetchObjectMetadata(
+  noradId: number,
+): Promise<ObjectMetadataResponse | null> {
   if (cache.has(noradId)) return cache.get(noradId) ?? null;
   try {
     const res = await fetch(`${API_BASE}/api/metadata/${noradId}`);
@@ -22,7 +24,7 @@ export async function fetchObjectMetadata(noradId: number): Promise<ObjectMetada
       if (res.status === 404) cache.set(noradId, null);
       return null;
     }
-    const meta = (await res.json()) as ObjectMetadata;
+    const meta = (await res.json()) as ObjectMetadataResponse;
     cache.set(noradId, meta);
     return meta;
   } catch {

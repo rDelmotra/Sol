@@ -52,8 +52,16 @@ export type CatalogObjectType =
   | 'unknown';
 
 // 'gcat' = full GCAT satcat/psatcat snapshot (replaced the trimmed 'satcat-gc'
-// CSV in G1); 'inferred' = backend program registry name-pattern match.
-export type MetadataSource = 'ucs-2023-05' | 'gcat' | 'spacetrack' | 'inferred';
+// CSV in G1); 'gcat-org' = Owner→orgs.tsv Class join (G2, still source data);
+// 'inferred' = backend program registry name-pattern match; 'inherited' =
+// relational inference (parent-tree walk / launch-payload majority, G2).
+export type MetadataSource =
+  | 'ucs-2023-05'
+  | 'gcat'
+  | 'gcat-org'
+  | 'spacetrack'
+  | 'inferred'
+  | 'inherited';
 
 /** Per-facet provenance — keys exist for facets filled by GCAT or inference. */
 export interface FacetProvenance {
@@ -61,12 +69,14 @@ export interface FacetProvenance {
   purpose?: MetadataSource;
   country?: MetadataSource;
   org?: MetadataSource;
+  program?: MetadataSource;
 }
 
 /** Raw GCAT code block — verbatim source cells behind the normalized facets. */
 export interface GcatRawCodes {
   status?: string;
   type?: string;
+  parent?: string;
   clas?: string;
   category?: string;
   program?: string;
@@ -108,6 +118,7 @@ export interface ObjectMetadata {
   orbitClass: string | null;
   // ── GCAT satcat/psatcat fields (G1) ──────────────────────────────────────────
   jcat?: string;
+  parentJcat?: string;
   launchTag?: string;
   launchDate?: string;          // raw GCAT vague date ("1998 Nov 20 0649:47")
   bus?: string;
@@ -129,6 +140,60 @@ export interface ObjectMetadata {
   facetProvenance?: FacetProvenance;   // present when facets are gcat/inferred
   sources: MetadataSource[];
 }
+
+// ── G2 entities (mirrors of backend gcat/launches.ts + gcat/orgs.ts) ───────────
+
+/** Launch entity row (launches.json / GET /api/launch/:tag). */
+export interface LaunchInfo {
+  tag: string;
+  date: string;
+  lvType: string;
+  lvFamily: string | null;
+  variant: string | null;
+  flightId: string | null;
+  mission: string | null;
+  site: string | null;
+  siteName: string | null;
+  pad: string | null;
+  platform: string | null;
+  agencies: string[];
+  code: string;
+  success: boolean | null;
+  category: string | null;
+  group: string | null;
+  orbPay: number | null;
+  /** Resolved agency display names — embedded by the metadata route. */
+  agencyNames?: string[];
+}
+
+/** Organization entity row (orgs.json / GET /api/org/:code). */
+export interface OrgInfo {
+  code: string;
+  name: string;
+  stateCode: string | null;
+  cls: string | null;
+  sectors: Sector[];
+  type: string | null;
+  parent: string | null;
+  lat: number | null;
+  lon: number | null;
+  tstart: string | null;
+  tstop: string | null;
+}
+
+/** Slim org reference embedded in the metadata response. */
+export interface OrgRef {
+  code: string;
+  name: string;
+  sectors: Sector[];
+}
+
+/** What GET /api/metadata/:noradId actually returns — record + composed context. */
+export type ObjectMetadataResponse = ObjectMetadata & {
+  launch?: LaunchInfo;
+  ownerOrg?: OrgRef;
+  manufacturerOrg?: OrgRef;
+};
 
 /** Slim row for the decayed-catalog browser (GET /api/catalog/decayed) — Phase D. */
 export interface DecayedCatalogRow {

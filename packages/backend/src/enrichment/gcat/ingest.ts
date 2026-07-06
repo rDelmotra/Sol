@@ -72,6 +72,9 @@ const DECAYED_STATUSES = new Set<OrbitalStatus>(['decayed', 'deorbited', 'explod
 export interface GcatIngestResult {
   snapshotDate: string | null;
   report: MappingReport;
+  /** JCAT → NORAD over the CHOSEN (deduped) satcat rows — used by the G2
+   *  parent walk in inherit.ts to resolve rec.parentJcat references. */
+  jcatToNorad: Map<string, number>;
 }
 
 // ── The ingest pass ───────────────────────────────────────────────────────────
@@ -143,7 +146,7 @@ export function ingestGcat(
     applyPsatcatRow(map.get(norad)!, row, report);
   }
 
-  return { snapshotDate: satcat.snapshotDate, report };
+  return { snapshotDate: satcat.snapshotDate, report, jcatToNorad };
 }
 
 /** Collision rule: prefer the non-superseded ('N' = renamed) row, then later JCAT. */
@@ -175,6 +178,16 @@ function applySatcatRow(
   if (launchDate) rec.launchDate = launchDate;
   const piece = cleanCode(row.Piece).value;
   if (piece) rec.cospar = piece;
+
+  // Separation-tree parent. First token only (cells may carry a port suffix,
+  // e.g. "S25545 PMA-1"), '*' (mismatch flag) stripped; JCAT references only —
+  // world names (Earth/Luna) live in the Primary column, but guard anyway.
+  const parentCell = row.Parent?.trim() ?? '';
+  if (parentCell && parentCell !== '-') {
+    raw.parent = parentCell;
+    const tok = parentCell.split(/\s+/)[0].replace(/\*$/, '');
+    if (/^[A-Z]\d/.test(tok)) rec.parentJcat = tok;
+  }
 
   // Orbital status — doc-verified table; unmapped → 'unknown' + reported.
   const statusRaw = row.Status?.trim() ?? '';

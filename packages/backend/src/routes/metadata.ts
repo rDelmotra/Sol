@@ -1,18 +1,39 @@
 import { Router, type Request, type Response } from 'express';
-import { getMetadata, getDecayedCatalog } from '../enrichment/store.js';
+import {
+  getMetadata,
+  getDecayedCatalog,
+  getLaunch,
+  getOrg,
+  getLaunchObjectIndex,
+  primaryOwnerCode,
+} from '../enrichment/store.js';
+import type { OrgRecord } from '../enrichment/gcat/orgs.js';
 
 // ============================================================
 // Rich-metadata routes (lazy — read the boot-loaded in-memory store, never the
 // request path hits disk after the first load).
 //
-//   GET /api/metadata/:noradId   — full ObjectMetadata for the InfoCard
+//   GET /api/metadata/:noradId   — ObjectMetadata + composed launch/org context
 //   GET /api/catalog/decayed     — paginated decayed/deorbited browser rows
+//   GET /api/launch/:tag         — LaunchRecord + the noradIds it produced
+//   GET /api/org/:code           — OrgRecord
 //
-// Mounted at /api/metadata and /api/catalog respectively in index.ts.
+// Mounted at /api/metadata, /api/catalog, /api/launch, /api/org in index.ts.
+// Launch/org context is COMPOSED at request time from the boot-loaded entity
+// maps (launches.json / orgs.json) — the per-object artifact stays normalized.
 // ============================================================
 
 export const metadataRouter = Router();
 export const catalogRouter = Router();
+export const launchRouter = Router();
+export const orgRouter = Router();
+
+/** Slim org projection embedded in responses (full record via /api/org/:code). */
+function orgRef(code: string | null): { code: string; name: string; sectors: OrgRecord['sectors'] } | undefined {
+  if (!code) return undefined;
+  const org = getOrg(code);
+  return org ? { code: org.code, name: org.name, sectors: org.sectors } : undefined;
+}
 
 // ── GET /api/metadata/:noradId ────────────────────────────────────────────────
 metadataRouter.get('/:noradId', (req: Request, res: Response) => {
@@ -28,8 +49,49 @@ metadataRouter.get('/:noradId', (req: Request, res: Response) => {
     return;
   }
 
+  const launch = meta.launchTag ? getLaunch(meta.launchTag) : undefined;
+  const manufacturerCode = meta.gcat?.manufacturer
+    ? meta.gcat.manufacturer.split('/')[0].trim().replace(/\?$/, '')
+    : null;
+
   res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.json(meta);
+  res.json({
+    ...meta,
+    ...(launch
+      ? {
+          launch: {
+            ...launch,
+            agencyNames: launch.agencies
+              .map((a) => getOrg(a)?.name)
+              .filter((n): n is string => Boolean(n)),
+          },
+        }
+      : {}),
+    ...(orgRef(primaryOwnerCode(meta)) ? { ownerOrg: orgRef(primaryOwnerCode(meta)) } : {}),
+    ...(orgRef(manufacturerCode) ? { manufacturerOrg: orgRef(manufacturerCode) } : {}),
+  });
+});
+
+// ── GET /api/launch/:tag ──────────────────────────────────────────────────────
+launchRouter.get('/:tag', (req: Request, res: Response) => {
+  const launch = getLaunch(req.params.tag);
+  if (!launch) {
+    res.status(404).json({ error: 'Unknown launch tag.' });
+    return;
+  }
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.json({ launch, noradIds: getLaunchObjectIndex().get(launch.tag) ?? [] });
+});
+
+// ── GET /api/org/:code ────────────────────────────────────────────────────────
+orgRouter.get('/:code', (req: Request, res: Response) => {
+  const org = getOrg(req.params.code);
+  if (!org) {
+    res.status(404).json({ error: 'Unknown organization code.' });
+    return;
+  }
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.json(org);
 });
 
 // ── GET /api/catalog/decayed?offset&limit&q ───────────────────────────────────

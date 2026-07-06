@@ -37,11 +37,24 @@ import {
 import { canonicalFromUcsCountry } from './country-codes.js';
 import { PROGRAMS, matchProgram, applyProgramDefaults } from './programs.js';
 import { ingestGcat } from './gcat/ingest.js';
+import { parseGcatOrgs, OrgRecord } from './gcat/orgs.js';
+import {
+  parseGcatLaunches,
+  parseLvFamilies,
+  parseSiteNames,
+  LaunchRecord,
+} from './gcat/launches.js';
+import { applyGraphInheritance } from './gcat/inherit.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
-const GCAT_SATCAT = resolve(REPO_ROOT, 'my_plans/GCAT all/Object catalog/cats/satcat');
-const GCAT_PSATCAT = resolve(REPO_ROOT, 'my_plans/GCAT all/Object catalog/cats/psatcat');
+const GCAT_DIR = resolve(REPO_ROOT, 'my_plans/GCAT all');
+const GCAT_SATCAT = resolve(GCAT_DIR, 'Object catalog/cats/satcat');
+const GCAT_PSATCAT = resolve(GCAT_DIR, 'Object catalog/cats/psatcat');
+const GCAT_ORGS = resolve(GCAT_DIR, 'organisations/orgs.tsv');
+const GCAT_LAUNCH = resolve(GCAT_DIR, 'Launch Lists/launch.tsv');
+const GCAT_LV = resolve(GCAT_DIR, 'Launch Vehicles/lv.tsv');
+const GCAT_SITES = resolve(GCAT_DIR, 'Launch Origin/sites.tsv');
 const UCS_TXT = resolve(REPO_ROOT, 'my_plans/UCS-Satellite-Database 5-1-2023 (text).txt');
 // Committed artifact dir — anchored at the backend package root (../../enrichment-data),
 // resolving the same under src (tsx) and dist (node), mirroring how file-cache.ts anchors data/.
@@ -50,6 +63,8 @@ const OUT_JSON = resolve(GEN_DIR, 'metadata-enrichment.json');
 const OUT_DECAYED = resolve(GEN_DIR, 'decayed-catalog.json');
 const OUT_PROGRAMS = resolve(GEN_DIR, 'programs-summary.json');
 const OUT_REPORT = resolve(GEN_DIR, 'gcat-mapping-report.json');
+const OUT_LAUNCHES = resolve(GEN_DIR, 'launches.json');
+const OUT_ORGS = resolve(GEN_DIR, 'orgs.json');
 
 const GCAT_CITATION = 'GCAT (J. McDowell, planet4589.org/space/gcat)';
 const UCS_SNAPSHOT = '2023-05-01';
@@ -184,14 +199,19 @@ interface CoverageStats {
   total: number;
 }
 
-/** Live in-orbit payload coverage — the numbers the enrichment passes move. */
-function coverageStats(map: Map<number, ObjectMetadata>): CoverageStats {
+/** Live in-orbit coverage — the numbers the enrichment passes move. */
+function coverageStats(
+  map: Map<number, ObjectMetadata>,
+  scope: 'payloads' | 'all' = 'payloads',
+): CoverageStats {
   const s: CoverageStats = { sectors: 0, purpose: 0, program: 0, mass: 0, bus: 0, total: 0 };
   for (const rec of map.values()) {
-    if (rec.objectType !== 'payload' || rec.orbitalStatus !== 'in_orbit') continue;
+    if (rec.orbitalStatus !== 'in_orbit') continue;
+    if (scope === 'payloads' && rec.objectType !== 'payload') continue;
     s.total++;
     if (rec.sectors.length > 0) s.sectors++;
-    if (rec.purpose !== 'other') s.purpose++;
+    // purpose counts as covered when stated OR explicitly sourced/inherited 'other'
+    if (rec.purpose !== 'other' || rec.facetProvenance?.purpose !== undefined) s.purpose++;
     if (rec.program) s.program++;
     if (rec.launchMassKg) s.mass++;
     if (rec.bus) s.bus++;
@@ -240,7 +260,7 @@ function main(): void {
   const decayed: DecayedCatalogRow[] = [];
   const names = new Map<number, string>();
 
-  const { snapshotDate, report } = ingestGcat(
+  const { snapshotDate, report, jcatToNorad } = ingestGcat(
     readFileSync(GCAT_SATCAT, 'utf-8'),
     readFileSync(GCAT_PSATCAT, 'utf-8'),
     map,
@@ -250,7 +270,51 @@ function main(): void {
   const afterGcat = coverageStats(map);
   ingestUcs(map);
   const { counts: programCounts, unmappedGcatPrograms } = applyPrograms(map, names);
+
+  // ── G2: entities + graph inheritance ─────────────────────────────────────────
+  const orgs = parseGcatOrgs(readFileSync(GCAT_ORGS, 'utf-8'));
+  const launches = parseGcatLaunches(
+    readFileSync(GCAT_LAUNCH, 'utf-8'),
+    parseLvFamilies(readFileSync(GCAT_LV, 'utf-8')),
+    parseSiteNames(readFileSync(GCAT_SITES, 'utf-8')),
+  );
+  const inheritance = applyGraphInheritance(map, jcatToNorad, orgs);
+
   const final = coverageStats(map);
+  const finalAll = coverageStats(map, 'all');
+
+  // Referenced-only entity artifacts: launches any record points at; orgs any
+  // record Owns/Manufactures or any shipped launch lists as Agency (+ parent chains).
+  const referencedLaunches: Record<string, LaunchRecord> = {};
+  const referencedOrgCodes = new Set<string>();
+  for (const rec of map.values()) {
+    if (rec.launchTag && launches.has(rec.launchTag)) {
+      referencedLaunches[rec.launchTag] = launches.get(rec.launchTag)!;
+    }
+    for (const raw of [rec.gcat?.owner, rec.gcat?.manufacturer]) {
+      if (!raw) continue;
+      for (const code of raw.split('/')) {
+        const c = code.trim().replace(/\?$/, '');
+        if (c) referencedOrgCodes.add(c);
+      }
+    }
+  }
+  for (const l of Object.values(referencedLaunches)) {
+    for (const a of l.agencies) referencedOrgCodes.add(a);
+  }
+  // Pull in org parent chains (bounded — hierarchy is shallow).
+  for (const code of [...referencedOrgCodes]) {
+    let cur = orgs.get(code)?.parent ?? null;
+    for (let i = 0; cur && i < 6; i++) {
+      referencedOrgCodes.add(cur);
+      cur = orgs.get(cur)?.parent ?? null;
+    }
+  }
+  const referencedOrgs: Record<string, OrgRecord> = {};
+  for (const code of referencedOrgCodes) {
+    const o = orgs.get(code);
+    if (o) referencedOrgs[code] = o;
+  }
 
   const objects: Record<number, ObjectMetadata> = {};
   for (const [norad, rec] of map) objects[norad] = rec;
@@ -285,9 +349,11 @@ function main(): void {
       liveInOrbitPayloads: final.total,
       afterGcat: { sectors: afterGcat.sectors, purpose: afterGcat.purpose },
       final,
+      allInOrbit: finalAll,
     },
     ...report,
     unmappedGcatPrograms: Object.fromEntries(unmappedGcatPrograms),
+    inheritance,
   };
 
   mkdirSync(GEN_DIR, { recursive: true });
@@ -295,6 +361,17 @@ function main(): void {
   writeFileSync(OUT_DECAYED, JSON.stringify({ meta: meta(decayed.length), rows: decayed }, slim));
   writeFileSync(OUT_PROGRAMS, JSON.stringify(programsSummary, null, 2));
   writeFileSync(OUT_REPORT, JSON.stringify(mappingReport, null, 2));
+  writeFileSync(
+    OUT_LAUNCHES,
+    JSON.stringify(
+      { meta: meta(Object.keys(referencedLaunches).length), launches: referencedLaunches },
+      slim,
+    ),
+  );
+  writeFileSync(
+    OUT_ORGS,
+    JSON.stringify({ meta: meta(Object.keys(referencedOrgs).length), orgs: referencedOrgs }, slim),
+  );
 
   const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : '—');
   const reportCounts = (r: Record<string, number>) =>
@@ -311,6 +388,18 @@ function main(): void {
       `program ${final.program} (${pct(final.program, final.total)})\n` +
       `  mass     ${final.mass} (${pct(final.mass, final.total)})  ` +
       `bus ${final.bus} (${pct(final.bus, final.total)})\n` +
+      `ALL in-orbit objects (${finalAll.total}):\n` +
+      `  sectors  ${finalAll.sectors} (${pct(finalAll.sectors, finalAll.total)})  ` +
+      `purpose ${finalAll.purpose} (${pct(finalAll.purpose, finalAll.total)})  ` +
+      `program ${finalAll.program} (${pct(finalAll.program, finalAll.total)})\n` +
+      `Entities: ${Object.keys(referencedLaunches).length} launches → ${OUT_LAUNCHES}\n` +
+      `          ${Object.keys(referencedOrgs).length} orgs → ${OUT_ORGS}\n` +
+      `Inheritance: owner-sector ${inheritance.ownerSector}  ` +
+      `owner-org-name ${inheritance.ownerOrgName}  parent-walk ${inheritance.parentWalkFills}  ` +
+      `launch-majority ${inheritance.launchMajorityFills}\n` +
+      `  UNRESOLVED purpose+program: ${inheritance.unresolvedTotal}  ` +
+      `sector: ${inheritance.unresolvedSectorTotal}  ` +
+      `unmatched owners: ${reportCounts(inheritance.unmatchedOwnerCodes)}\n` +
       `Mapping report → ${OUT_REPORT}\n` +
       `  unmapped status:   ${reportCounts(report.unmappedStatus)}\n` +
       `  unmapped category: ${reportCounts(report.unmappedCategory)}\n` +

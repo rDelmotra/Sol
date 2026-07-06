@@ -4,22 +4,30 @@
     "license": "CC-BY 4.0",
     "gcatSnapshot": "2026 Jul  3 2203:53",
     "ucsSnapshot": "2023-05-01",
-    "builtAt": "2026-07-05T20:49:12.419Z",
+    "builtAt": "2026-07-06T10:53:39.106Z",
     "recordCount": 69242
   },
   "coverage": {
     "liveInOrbitPayloads": 19525,
     "afterGcat": {
       "sectors": 19519,
-      "purpose": 18989
+      "purpose": 19525
     },
     "final": {
-      "sectors": 19519,
-      "purpose": 18989,
-      "program": 16145,
+      "sectors": 19525,
+      "purpose": 19525,
+      "program": 17149,
       "mass": 19521,
       "bus": 19312,
       "total": 19525
+    },
+    "allInOrbit": {
+      "sectors": 34210,
+      "purpose": 33710,
+      "program": 28446,
+      "mass": 22236,
+      "bus": 21854,
+      "total": 34210
     }
   },
   "unmappedStatus": {},
@@ -218,5 +226,305 @@
     "DMC": 12,
     "COSMIC": 12,
     "Siwei": 12
+  },
+  "inheritance": {
+    "ownerSector": 41984,
+    "ownerCountry": 0,
+    "ownerOrgName": 50027,
+    "parentWalkFills": 19447,
+    "launchMajorityFills": 22651,
+    "unmatchedOwnerCodes": {},
+    "unresolved": [
+      {
+        "norad": 17255,
+        "jcat": "S17255",
+        "type": "debris",
+        "reason": "parent S15876 outside NORAD map; no classed payloads on launch 1985-056"
+      },
+      {
+        "norad": 17325,
+        "jcat": "S17325",
+        "type": "debris",
+        "reason": "parent S15876 outside NORAD map; no classed payloads on launch 1985-056"
+      },
+      {
+        "norad": 19282,
+        "jcat": "S19282",
+        "type": "rocket_body",
+        "reason": "parent R55780 outside NORAD map; no classed payloads on launch 1988-058"
+      },
+      {
+        "norad": 19288,
+        "jcat": "S19288",
+        "type": "rocket_body",
+        "reason": "parent R55818 outside NORAD map; no classed payloads on launch 1988-059"
+      },
+      {
+        "norad": 19857,
+        "jcat": "S19857",
+        "type": "debris",
+        "reason": "parent S15876 outside NORAD map; no classed payloads on launch 1985-056"
+      },
+      {
+        "norad": 19951,
+        "jcat": "S19951",
+        "type": "debris",
+        "reason": "parent S15876 outside NORAD map; no classed payloads on launch 1985-056"
+      },
+      {
+        "norad": 19970,
+        "jcat": "S19970",
+        "type": "component",
+        "reason": "parent A04671 outside NORAD map; no classed payloads on launch 1989-033"
+      },
+      {
+        "norad": 20843,
+        "jcat": "S20843",
+        "type": "component",
+        "reason": "parent A04884 outside NORAD map; no classed payloads on launch 1990-090"
+      },
+      {
+        "norad": 22886,
+        "jcat": "S22886",
+        "type": "component",
+        "reason": "parent S21188 outside NORAD map; no classed payloads on launch 1991-020"
+      },
+      {
+        "norad": 25294,
+        "jcat": "S25294",
+        "type": "component",
+        "reason": "parent S22090 outside NORAD map; no classed payloads on launch 1992-055"
+      },
+      {
+        "norad": 25619,
+        "jcat": "S25619",
+        "type": "rocket_body",
+        "reason": "parent R64436 outside NORAD map; no classed payloads on launch 1999-003"
+      },
+      {
+        "norad": 26683,
+        "jcat": "S26683",
+        "type": "debris",
+        "reason": "parent S15876 outside NORAD map; no classed payloads on launch 1985-056"
+      },
+      {
+        "norad": 26684,
+        "jcat": "S26684",
+        "type": "debris",
+        "reason": "parent S15876 outside NORAD map; no classed payloads on launch 1985-056"
+      },
+      {
+        "norad": 26685,
+        "jcat": "S26685",
+        "type": "debris",
+        "reason": "parent S15876 outside NORAD map; no classed payloads on launch 1985-056"
+      },
+      {
+        "norad": 26787,
+        "jcat": "S26787",
+        "type": "debris",
+        "reason": "parent S15876 outside NORAD map; no classed payloads on launch 1985-056"
+      },
+      {
+        "norad": 29256,
+        "jcat": "S29256",
+        "type": "rocket_body",
+        "reason": "parent R68429 outside NORAD map; no classed payloads on launch 2006-029"
+      },
+      {
+        "norad": 31791,
+        "jcat": "S31791",
+        "type": "component",
+        "reason": "parent S31790 outside NORAD map; no classed payloads on launch 2007-028"
+      },
+      {
+        "norad": 33406,
+        "jcat": "S33406",
+        "type": "rocket_body",
+        "reason": "parent R69473 outside NORAD map; no classed payloads on launch 2008-052"
+      },
+      {
+        "norad": 33407,
+        "jcat": "S33407",
+        "type": "component",
+        "reason": "parent S33406 outside NORAD map; no classed payloads on launch 2008-052"
+      },
+      {
+        "norad": 39138,
+        "jcat": "S39138",
+        "type": "component",
+        "reason": "parent S39082 outside NORAD map; no classed payloads on launch 2013-007"
+      },
+      {
+        "norad": 39139,
+        "jcat": "S39139",
+        "type": "component",
+        "reason": "parent S39082 outside NORAD map; no classed payloads on launch 2013-007"
+      },
+      {
+        "norad": 39140,
+        "jcat": "S39140",
+        "type": "component",
+        "reason": "parent S39082 outside NORAD map; no classed payloads on launch 2013-007"
+      },
+      {
+        "norad": 39141,
+        "jcat": "S39141",
+        "type": "component",
+        "reason": "parent S38073 outside NORAD map; no classed payloads on launch 2012-004"
+      },
+      {
+        "norad": 39371,
+        "jcat": "S39371",
+        "type": "rocket_body",
+        "reason": "parent A08055 outside NORAD map; no classed payloads on launch 2013-060"
+      },
+      {
+        "norad": 39495,
+        "jcat": "S39495",
+        "type": "component",
+        "reason": "parent S39456 outside NORAD map; no classed payloads on launch 2013-069"
+      },
+      {
+        "norad": 39496,
+        "jcat": "S39496",
+        "type": "component",
+        "reason": "parent S32847 outside NORAD map; no classed payloads on launch 2008-023"
+      },
+      {
+        "norad": 40051,
+        "jcat": "S40051",
+        "type": "component",
+        "reason": "parent S26890 outside NORAD map; no classed payloads on launch 2001-036"
+      },
+      {
+        "norad": 41327,
+        "jcat": "S41327",
+        "type": "component",
+        "reason": "parent S41177 outside NORAD map; no classed payloads on launch 2015-080"
+      },
+      {
+        "norad": 41390,
+        "jcat": "S41390",
+        "type": "component",
+        "reason": "parent S41389 outside NORAD map; no classed payloads on launch 2016-017"
+      },
+      {
+        "norad": 43203,
+        "jcat": "S43203",
+        "type": "component",
+        "reason": "parent S26400 outside NORAD map; no classed payloads on launch 2000-037"
+      },
+      {
+        "norad": 44303,
+        "jcat": "S44303",
+        "type": "component",
+        "reason": "parent S39082 outside NORAD map; no classed payloads on launch 2013-007"
+      },
+      {
+        "norad": 44304,
+        "jcat": "S44304",
+        "type": "component",
+        "reason": "parent S39082 outside NORAD map; no classed payloads on launch 2013-007"
+      },
+      {
+        "norad": 44305,
+        "jcat": "S44305",
+        "type": "component",
+        "reason": "parent S39082 outside NORAD map; no classed payloads on launch 2013-007"
+      },
+      {
+        "norad": 44306,
+        "jcat": "S44306",
+        "type": "component",
+        "reason": "parent S39082 outside NORAD map; no classed payloads on launch 2013-007"
+      },
+      {
+        "norad": 48833,
+        "jcat": "S48833",
+        "type": "component",
+        "reason": "parent S45937 outside NORAD map; no classed payloads on launch 2020-050"
+      },
+      {
+        "norad": 49129,
+        "jcat": "S49129",
+        "type": "component",
+        "reason": "parent S48869 outside NORAD map; no classed payloads on launch 2021-057"
+      },
+      {
+        "norad": 55904,
+        "jcat": "S55904",
+        "type": "debris",
+        "reason": "parent S54258 outside NORAD map; no classed payloads on launch 2022-156"
+      },
+      {
+        "norad": 55905,
+        "jcat": "S55905",
+        "type": "debris",
+        "reason": "parent S54258 outside NORAD map; no classed payloads on launch 2022-156"
+      },
+      {
+        "norad": 55907,
+        "jcat": "S55907",
+        "type": "debris",
+        "reason": "parent S54258 outside NORAD map; no classed payloads on launch 2022-156"
+      },
+      {
+        "norad": 56434,
+        "jcat": "S56434",
+        "type": "component",
+        "reason": "parent A07726 outside NORAD map; no classed payloads on launch 2010-019"
+      },
+      {
+        "norad": 57161,
+        "jcat": "S57161",
+        "type": "component",
+        "reason": "parent S39456 outside NORAD map; no classed payloads on launch 2013-069"
+      },
+      {
+        "norad": 57162,
+        "jcat": "S57162",
+        "type": "component",
+        "reason": "parent S37196 outside NORAD map; no classed payloads on launch 2010-055"
+      },
+      {
+        "norad": 57163,
+        "jcat": "S57163",
+        "type": "component",
+        "reason": "parent S28503 outside NORAD map; no classed payloads on launch 2004-051"
+      },
+      {
+        "norad": 60326,
+        "jcat": "S60326",
+        "type": "rocket_body",
+        "reason": "parent S59229 outside NORAD map; no classed payloads on launch 2024-048"
+      },
+      {
+        "norad": 66515,
+        "jcat": "S66515",
+        "type": "component",
+        "reason": "parent S66264 outside NORAD map; no classed payloads on launch 2025-246"
+      },
+      {
+        "norad": 67481,
+        "jcat": "S67481",
+        "type": "component",
+        "reason": "parent S63632 outside NORAD map; no classed payloads on launch 2025-082"
+      },
+      {
+        "norad": 69102,
+        "jcat": "S69102",
+        "type": "rocket_body",
+        "reason": "parent R86339 outside NORAD map; no classed payloads on launch 2026-106"
+      },
+      {
+        "norad": 69328,
+        "jcat": "S69328",
+        "type": "component",
+        "reason": "parent S66645 outside NORAD map; no classed payloads on launch 2025-272"
+      }
+    ],
+    "unresolvedTotal": 48,
+    "unresolvedSectorTotal": 0
   }
 }

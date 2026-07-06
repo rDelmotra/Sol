@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import type { ObjectCategory } from '../data/types';
-import { PROGRAM_LABELS, type ObjectMetadata } from '../data/metadata-types';
+import { PROGRAM_LABELS, type ObjectMetadataResponse } from '../data/metadata-types';
 import { fetchObjectMetadata } from '../data/metadata-client';
 
 const CATEGORY_LABELS: Record<ObjectCategory, string> = {
@@ -68,8 +68,8 @@ function Row({ label, value }: { label: string; value: string | number | null })
 }
 
 /** Lazy /api/metadata/:noradId fetch — session-cached in metadata-client. */
-function useObjectMetadata(noradId: number | null): ObjectMetadata | null {
-  const [meta, setMeta] = useState<ObjectMetadata | null>(null);
+function useObjectMetadata(noradId: number | null): ObjectMetadataResponse | null {
+  const [meta, setMeta] = useState<ObjectMetadataResponse | null>(null);
   useEffect(() => {
     setMeta(null);
     if (noradId === null) return;
@@ -94,7 +94,7 @@ function formatKg(kg: number | null | undefined): string | null {
 }
 
 /** "L × Ø m (span S m)" from whichever dimensions GCAT has. */
-function formatDimensions(m: ObjectMetadata): string | null {
+function formatDimensions(m: ObjectMetadataResponse): string | null {
   const body =
     m.lengthM && m.diameterM ? `${m.lengthM} × ${m.diameterM} m` : null;
   const span = m.spanM ? `span ${m.spanM} m` : null;
@@ -103,12 +103,13 @@ function formatDimensions(m: ObjectMetadata): string | null {
 }
 
 /** GCAT+UCS detail rows for the selected TLE object (lazy-fetched). */
-function MetadataRows({ meta }: { meta: ObjectMetadata | null }) {
+function MetadataRows({ meta }: { meta: ObjectMetadataResponse | null }) {
   if (!meta) return null;
+  const launch = meta.launch;
   return (
     <>
       <Row label="Series" value={meta.gcatProgram ?? null} />
-      <Row label="Operator" value={meta.operatorOrg} />
+      <Row label="Operator" value={meta.ownerOrg?.name ?? meta.operatorOrg} />
       <Row label="Launch mass" value={formatKg(meta.launchMassKg)} />
       <Row label="Dry mass" value={formatKg(meta.dryMassKg)} />
       <Row label="Size" value={formatDimensions(meta)} />
@@ -120,6 +121,14 @@ function MetadataRows({ meta }: { meta: ObjectMetadata | null }) {
       />
       <Row label="Last active" value={meta.lastActiveDate ?? null} />
       <Row label="Ops ended" value={meta.endOpDate ?? null} />
+      {launch && (
+        <>
+          <Row label="Vehicle" value={launch.lvType || null} />
+          <Row label="Launch site" value={launch.siteName ?? launch.site} />
+          <Row label="Launch agency" value={launch.agencyNames?.join(', ') || null} />
+          <Row label="Outcome" value={launch.success === false ? 'Launch failure' : null} />
+        </>
+      )}
       {meta.sources.includes('gcat') && (
         <div style={{ marginTop: 6, fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>
           Catalog data: GCAT / J. McDowell (CC-BY)

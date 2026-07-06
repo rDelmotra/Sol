@@ -61,12 +61,22 @@ export type CatalogObjectType =
   | 'unknown';
 
 // ── Provenance — which snapshot each record was joined from ───────────────────
-// 'gcat'     = full GCAT satcat/psatcat snapshot (supersedes the old trimmed
-//              'satcat-gc' CSV as of G1 — see my_plans/gcat_ingestion_architecture.md)
-// 'inferred' = filled from the program registry (programs.ts) by name-pattern
-//              matching, not looked up in a source. Appended to sources[]
-//              whenever the matcher contributed anything (membership/facets).
-export type MetadataSource = 'ucs-2023-05' | 'gcat' | 'spacetrack' | 'inferred';
+// 'gcat'      = full GCAT satcat/psatcat snapshot (supersedes the old trimmed
+//               'satcat-gc' CSV as of G1 — see my_plans/gcat_ingestion_architecture.md)
+// 'gcat-org'  = facet resolved via the Owner→orgs.tsv Class join (G2) — still
+//               SOURCE data (a join of two GCAT tables), not inference
+// 'inferred'  = filled from the program registry (programs.ts) by name-pattern
+//               matching, not looked up in a source. Appended to sources[]
+//               whenever the matcher contributed anything (membership/facets).
+// 'inherited' = relational inference (G2): Parent-JCAT walk to the ancestor
+//               payload, or launch-payload-majority — never overwrites non-empty
+export type MetadataSource =
+  | 'ucs-2023-05'
+  | 'gcat'
+  | 'gcat-org'
+  | 'spacetrack'
+  | 'inferred'
+  | 'inherited';
 
 // ── Per-facet provenance ───────────────────────────────────────────────────────
 // Present for facets filled by program inference ('inferred') or by the GCAT
@@ -78,6 +88,7 @@ export interface FacetProvenance {
   purpose?: MetadataSource;
   country?: MetadataSource;
   org?: MetadataSource;
+  program?: MetadataSource;   // set only for inherited program membership (G2)
 }
 
 // ── Raw GCAT codes (reversibility block) ───────────────────────────────────────
@@ -86,6 +97,7 @@ export interface FacetProvenance {
 export interface GcatRawCodes {
   status?: string;        // satcat Status ("O", "AR", "R?", …)
   type?: string;          // full satcat Type cell ("PPTH-MU", "CP E-I", …)
+  parent?: string;        // verbatim Parent cell (may carry '*' / port suffix)
   clas?: string;          // psatcat Clas ("B", "CD", …)
   category?: string;      // full psatcat Category cell ("COM/MET-RO", "SIG?*")
   program?: string;       // psatcat Program (duplicated to gcatProgram for reach)
@@ -133,7 +145,8 @@ export interface ObjectMetadata {
 
   // ── GCAT satcat/psatcat fields (G1) — lazy-served, never inlined ────────────
   jcat?: string;                // GCAT universal id (S25544, …)
-  launchTag?: string;           // GCAT launch key ("1998-067") — G2 launches join
+  parentJcat?: string;          // separation-tree parent (first token, '*' stripped)
+  launchTag?: string;           // GCAT launch key ("1998-067") — launches.json join
   launchDate?: string;          // raw GCAT vague date ("1998 Nov 20 0649:47")
   bus?: string;
   motor?: string;
