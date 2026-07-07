@@ -171,7 +171,12 @@ function MetadataRows({
   return (
     <>
       <Row label="Series" value={meta.gcatProgram ?? null} />
-      <Row label="Operator" value={meta.ownerOrg?.name ?? meta.operatorOrg} />
+      <ClickableRow
+        label="Operator"
+        value={meta.ownerOrg?.name ?? meta.operatorOrg}
+        pivot={meta.ownerOrg?.name}
+        onPivot={onPivot}
+      />
       <Row label="Launch mass" value={formatKg(meta.launchMassKg)} />
       <Row label="Dry mass" value={formatKg(meta.dryMassKg)} />
       <Row label="Size" value={formatDimensions(meta)} />
@@ -198,7 +203,14 @@ function MetadataRows({
             pivot={launch.siteName}
             onPivot={onPivot}
           />
-          <Row label="Launch agency" value={launch.agencyNames?.join(', ') || null} />
+          {/* Pivots on the first agency name → agency facet (or owner when the
+              name is also an operator, e.g. SpaceX). */}
+          <ClickableRow
+            label="Launch agency"
+            value={launch.agencyNames?.join(', ') || null}
+            pivot={launch.agencyNames?.[0]}
+            onPivot={onPivot}
+          />
           <Row label="Outcome" value={launch.success === false ? 'Launch failure' : null} />
         </>
       )}

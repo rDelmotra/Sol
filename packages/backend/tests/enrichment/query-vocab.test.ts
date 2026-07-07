@@ -33,16 +33,20 @@ function record(overrides: Partial<ObjectMetadata>): ObjectMetadata {
   };
 }
 
-function org(code: string, name: string, aliases?: string[]): OrgRecord {
+function org(
+  code: string,
+  name: string,
+  opts: { aliases?: string[]; parent?: string } = {},
+): OrgRecord {
   return {
     code,
     name,
-    ...(aliases ? { aliases } : {}),
+    ...(opts.aliases ? { aliases: opts.aliases } : {}),
     stateCode: null,
     cls: 'B',
     sectors: ['commercial'],
     type: 'O',
-    parent: null,
+    parent: opts.parent ?? null,
     lat: null,
     lon: null,
     tstart: null,
@@ -50,7 +54,12 @@ function org(code: string, name: string, aliases?: string[]): OrgRecord {
   };
 }
 
-function launch(tag: string, lvFamily: string | null, siteName: string | null): LaunchRecord {
+function launch(
+  tag: string,
+  lvFamily: string | null,
+  siteName: string | null,
+  agencies: string[] = [],
+): LaunchRecord {
   return {
     tag,
     date: '2019 Nov 11',
@@ -63,7 +72,7 @@ function launch(tag: string, lvFamily: string | null, siteName: string | null): 
     siteName,
     pad: null,
     platform: null,
-    agencies: [],
+    agencies,
     code: 'OS',
     success: true,
     category: null,
@@ -72,36 +81,66 @@ function launch(tag: string, lvFamily: string | null, siteName: string | null): 
   };
 }
 
-test('buildQueryVocab: launches tuple carries [lvFamily, siteName] incl. nulls', () => {
+test('buildQueryVocab: launches tuple carries [lvFamily, siteName, agencies]', () => {
   const vocab = buildQueryVocab([], new Map(), {
-    '2019-074': launch('2019-074', 'Falcon9', 'Cape Canaveral'),
-    '2026-F05': launch('2026-F05', null, null),
+    '2019-074': launch('2019-074', 'Falcon9', 'Cape Canaveral', ['SPX']),
+    '2026-F05': launch('2026-F05', null, null, []),
   });
-  assert.deepEqual(vocab.launches['2019-074'], ['Falcon9', 'Cape Canaveral']);
-  assert.deepEqual(vocab.launches['2026-F05'], [null, null]);
+  assert.deepEqual(vocab.launches['2019-074'], ['Falcon9', 'Cape Canaveral', ['SPX']]);
+  assert.deepEqual(vocab.launches['2026-F05'], [null, null, []]);
 });
 
-test('buildQueryVocab: orgs restricted to in-orbit owners; unknown codes skipped', () => {
+test('buildQueryVocab: emits in-orbit owners; decayed-only + unknown codes skipped', () => {
   const orgs = new Map<string, OrgRecord>([
-    ['SPXS', org('SPXS', 'SpaceX', ['Space Exploration Technologies'])],
+    ['SPXS', org('SPXS', 'SpaceX', { aliases: ['Space Exploration Technologies'] })],
     ['OLDCO', org('OLDCO', 'Defunct Co')],
   ]);
   const records = [
     record({ noradId: 1, orbitalStatus: 'in_orbit', gcat: { owner: 'SPXS' } }),
-    // Decayed-only owner → excluded from the vocab.
     record({ noradId: 2, orbitalStatus: 'decayed', gcat: { owner: 'OLDCO' } }),
-    // In-orbit but the code has no org row → skipped.
     record({ noradId: 3, orbitalStatus: 'in_orbit', gcat: { owner: 'GHOST' } }),
-    // Multi-valued owner with '?' — primary code wins.
     record({ noradId: 4, orbitalStatus: 'in_orbit', gcat: { owner: 'SPXS/NASA?' } }),
   ];
   const vocab = buildQueryVocab(records, orgs, {});
   assert.deepEqual(Object.keys(vocab.orgs), ['SPXS']);
   assert.equal(vocab.orgs.SPXS.n, 'SpaceX');
   assert.deepEqual(vocab.orgs.SPXS.a, ['Space Exploration Technologies']);
+  assert.equal('p' in vocab.orgs.SPXS, false); // no parent
+  assert.deepEqual(vocab.owners, ['SPXS']); // the only in-orbit owner
 });
 
-test('buildQueryVocab: alias key omitted when the org has no variants', () => {
+test('buildQueryVocab: ships parent + pulls in ancestor orgs (family tree)', () => {
+  const orgs = new Map<string, OrgRecord>([
+    ['GSFC', org('GSFC', 'GSFC', { parent: 'NASA' })],
+    ['NASA', org('NASA', 'NASA')],
+    ['KUIP', org('KUIP', 'Kuiper Systems', { parent: 'AMAZ' })],
+    ['AMAZ', org('AMAZ', 'Amazon')], // owns nothing — included as an ancestor
+  ]);
+  const records = [
+    record({ noradId: 1, orbitalStatus: 'in_orbit', gcat: { owner: 'GSFC' } }),
+    record({ noradId: 2, orbitalStatus: 'in_orbit', gcat: { owner: 'KUIP' } }),
+  ];
+  const vocab = buildQueryVocab(records, orgs, {});
+  assert.equal(vocab.orgs.GSFC.p, 'NASA');
+  assert.ok(vocab.orgs.NASA, 'NASA ancestor emitted though it owns nothing');
+  assert.equal(vocab.orgs.KUIP.p, 'AMAZ');
+  assert.ok(vocab.orgs.AMAZ, 'Amazon ancestor emitted for parent-brand search');
+});
+
+test('buildQueryVocab: launch-agency orgs are emitted even when they own nothing', () => {
+  const orgs = new Map<string, OrgRecord>([
+    ['SPXS', org('SPXS', 'SpaceX')],
+    ['ARIA', org('ARIA', 'Arianespace')], // pure provider — owns 0 in-orbit
+  ]);
+  const records = [record({ orbitalStatus: 'in_orbit', gcat: { owner: 'SPXS' } })];
+  const vocab = buildQueryVocab(records, orgs, {
+    '2020-001': launch('2020-001', 'Ariane5', 'Kourou', ['ARIA']),
+  });
+  assert.ok(vocab.orgs.ARIA, 'agency org emitted for the agency facet');
+  assert.deepEqual(vocab.launches['2020-001'][2], ['ARIA']);
+});
+
+test('buildQueryVocab: alias/parent keys omitted when absent', () => {
   const orgs = new Map<string, OrgRecord>([['NASA', org('NASA', 'NASA')]]);
   const vocab = buildQueryVocab(
     [record({ orbitalStatus: 'in_orbit', gcat: { owner: 'NASA' } })],
@@ -110,4 +149,5 @@ test('buildQueryVocab: alias key omitted when the org has no variants', () => {
   );
   assert.equal(vocab.orgs.NASA.n, 'NASA');
   assert.equal('a' in vocab.orgs.NASA, false);
+  assert.equal('p' in vocab.orgs.NASA, false);
 });

@@ -52,29 +52,35 @@ export function irToFilterPatch(ir: QueryIR): QueryFilterPatch {
   const programs = byGroup.get('program');
   if (programs) patch.programFilter = { mode: 'only', ids: new Set(programs) };
 
-  // ── G3: operator (union) + launch-graph (intersection across subgroups) ──────
+  // ── G3: operator (union of family codes) + launch-graph (intersect subgroups) ─
+  const idx = getVocabIndexes();
+  const unionFrom = (index: Map<string, Set<string>> | undefined, values: Set<string>) => {
+    const out = new Set<string>();
+    for (const v of values) for (const t of index?.get(v) ?? []) out.add(t);
+    return out;
+  };
+
   const owners = byGroup.get('owner');
-  if (owners) patch.ownerFilter = { mode: 'only', codes: new Set(owners) };
+  if (owners) {
+    // Owner name-keys → the union of every family org code they resolve to.
+    patch.ownerFilter = { mode: 'only', codes: unionFrom(idx?.ownerCodes, owners) };
+  }
 
   const vehicles = byGroup.get('vehicle');
   const sites = byGroup.get('site');
   const launches = byGroup.get('launch');
   const years = byGroup.get('launch_year');
-  if (vehicles || sites || launches || years) {
-    const idx = getVocabIndexes();
-    const unionTags = (index: Map<string, Set<string>> | undefined, values: Set<string>) => {
-      const out = new Set<string>();
-      for (const v of values) for (const t of index?.get(v) ?? []) out.add(t);
-      return out;
-    };
+  const agencies = byGroup.get('agency');
+  if (vehicles || sites || launches || years || agencies) {
     // Each subgroup contributes ONE tag set (union of its values); the final
     // allow-set is the INTERSECTION across subgroups. "falcon 9 from vandenberg
-    // 2021" = tags(Falcon9) ∩ tags(Vandenberg) ∩ tags(2021).
+    // 2021" = tags(Falcon9) ∩ tags(Vandenberg) ∩ tags(2021); agency intersects too.
     const subsets: Set<string>[] = [];
     if (launches) subsets.push(new Set(launches)); // tags match directly (vocab-free)
-    if (vehicles) subsets.push(unionTags(idx?.vehicleTags, vehicles));
-    if (sites) subsets.push(unionTags(idx?.siteTags, sites));
-    if (years) subsets.push(unionTags(idx?.yearTags, years));
+    if (vehicles) subsets.push(unionFrom(idx?.vehicleTags, vehicles));
+    if (sites) subsets.push(unionFrom(idx?.siteTags, sites));
+    if (years) subsets.push(unionFrom(idx?.yearTags, years));
+    if (agencies) subsets.push(unionFrom(idx?.agencyTags, agencies));
     let tags = subsets[0];
     for (let s = 1; s < subsets.length; s++) {
       tags = new Set([...tags].filter((t) => subsets[s].has(t)));

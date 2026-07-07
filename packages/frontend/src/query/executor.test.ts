@@ -51,15 +51,17 @@ describe('irToFilterPatch', () => {
 
 const VOCAB: QueryVocab = {
   launches: {
-    '2021-005': ['Falcon9', 'Vandenberg'],   // Falcon9 ∧ Vandenberg ∧ 2021
-    '2021-010': ['Falcon9', 'Canaveral'],    // Falcon9 ∧ 2021
-    '2020-005': ['Atlas5', 'Vandenberg'],    // Vandenberg (2020)
-    '2020-001': ['Soyuz', 'Baykonur'],       // Baykonur
+    '2021-005': ['Falcon9', 'Vandenberg', ['SPX']],   // Falcon9 ∧ Vandenberg ∧ 2021
+    '2021-010': ['Falcon9', 'Canaveral', ['SPX']],    // Falcon9 ∧ 2021
+    '2020-005': ['Atlas5', 'Vandenberg', ['ULA']],    // Vandenberg (2020)
+    '2020-001': ['Soyuz', 'Baykonur', ['RVSNR']],     // Baykonur
   },
   orgs: {
     SPXS: { n: 'SpaceX' },
     RSC: { n: 'Roscosmos' },
+    ULA: { n: 'United Launch Alliance' }, // agency-only
   },
+  owners: ['SPXS', 'RSC'],
 };
 
 describe('irToFilterPatch — G3 launch/owner facets', () => {
@@ -89,10 +91,18 @@ describe('irToFilterPatch — G3 launch/owner facets', () => {
     assert.deepEqual(patch.launchFilter, { mode: 'only', tags: new Set(['2019-074']) });
   });
 
-  it('unions owner codes', () => {
+  it('owner name-keys expand to the union of family codes', () => {
     installQueryVocab(VOCAB);
     const patch = irToFilterPatch(parseQuery('spacex roscosmos'));
     assert.deepEqual(patch.ownerFilter, { mode: 'only', codes: new Set(['SPXS', 'RSC']) });
+  });
+
+  it('agency name → launch tags, intersecting the launch subgroups', () => {
+    installQueryVocab(VOCAB);
+    // "united launch alliance 2020" = agencyTags(ULA) ∩ yearTags(2020).
+    const patch = irToFilterPatch(parseQuery('united launch alliance 2020'));
+    assert.deepEqual(patch.launchFilter, { mode: 'only', tags: new Set(['2020-005']) });
+    assert.equal(patch.ownerFilter, undefined); // ULA owns nothing → not an owner
   });
 
   it('empty intersection yields a present-but-empty tag set (0 objects)', () => {

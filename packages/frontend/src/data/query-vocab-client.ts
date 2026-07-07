@@ -12,10 +12,12 @@
 const API_BASE = import.meta.env?.VITE_API_URL ?? '';
 
 export interface QueryVocab {
-  /** tag → [lvFamily, siteName] (nulls preserved). */
-  launches: Record<string, [string | null, string | null]>;
-  /** in-orbit owner code → { n: display name, a?: alias variants }. */
-  orgs: Record<string, { n: string; a?: string[] }>;
+  /** tag → [lvFamily, siteName, agencyCodes] (nulls/[] preserved). */
+  launches: Record<string, [string | null, string | null, string[]]>;
+  /** org code → { n: name, a?: alias variants, p?: parent code } (owners + agencies + ancestors). */
+  orgs: Record<string, { n: string; a?: string[]; p?: string }>;
+  /** Codes that own ≥1 in-orbit object — distinguishes operator vs agency-only names. */
+  owners: string[];
 }
 
 export async function fetchQueryVocab(): Promise<QueryVocab | null> {

@@ -2,14 +2,17 @@
 // query-vocab.ts — compact search-vocabulary artifact builder (G3)
 //
 // Emits the client-side query tier's data-driven vocabulary:
-//   launches: tag → [lvFamily, siteName]   (vehicle/site/year queries compile
-//             down to launch-tag sets against this map)
-//   orgs:     code → { n: name, a?: aliases }  — RESTRICTED to codes that own
-//             at least one in-orbit object, so the runtime alias table stays
-//             lean (~1k orgs, not all 2k referenced ones)
+//   launches: tag → [lvFamily, siteName, agencyCodes]  (vehicle/site/year/agency
+//             queries compile down to launch-tag sets against this map)
+//   orgs:     code → { n: name, a?: aliases, p?: parent }  — the operator/agency
+//             name vocabulary. Emitted set = in-orbit OWNERS ∪ their parent-tree
+//             ANCESTORS ∪ launch AGENCIES ∪ agency ancestors, so the frontend can
+//             (a) resolve an operator name to its whole org FAMILY (parent tree),
+//             (b) resolve an agency name, and (c) still search a parent brand
+//             (e.g. "amazon" → Kuiper) even when the brand owns nothing directly.
 //
 // ALL referenced launches ship (not just in-orbit ones): historical/decayed
-// catalogs reference since-decayed objects and the size is trivial (~330 KB).
+// catalogs reference since-decayed objects and the size is trivial (~350 KB).
 // Pure — unit-tests without snapshot files. Named to avoid gcat/vocab.ts.
 // ============================================================
 
@@ -19,10 +22,24 @@ import type { LaunchRecord } from './gcat/launches.js';
 import { primaryOwnerCode } from './gcat/inherit.js';
 
 export interface QueryVocabArtifact {
-  /** tag → [lvFamily, siteName] (nulls preserved — tuple positions are meaningful). */
-  launches: Record<string, [string | null, string | null]>;
-  /** In-orbit owner org codes only. `a` = remaining name variants, when any. */
-  orgs: Record<string, { n: string; a?: string[] }>;
+  /** tag → [lvFamily, siteName, agencyCodes] (nulls/[] preserved — positional). */
+  launches: Record<string, [string | null, string | null, string[]]>;
+  /** Operator/agency name vocabulary. `a` = alias variants; `p` = parent org code. */
+  orgs: Record<string, { n: string; a?: string[]; p?: string }>;
+  /** The org codes that actually own ≥1 in-orbit object (a subset of `orgs`).
+   *  Lets the client tell an owner name (→ family filter) from an agency-only
+   *  name (→ launch filter) — see query/vocab.ts installQueryVocab. */
+  owners: string[];
+}
+
+/** Walk the parent chain of `code`, adding each ancestor to `out` (cycle/depth-safe). */
+function collectAncestors(code: string, orgs: Map<string, OrgRecord>, out: Set<string>): void {
+  let cur = orgs.get(code)?.parent ?? null;
+  for (let i = 0; cur && i < 10; i++) {
+    if (out.has(cur)) break; // already walked (also breaks cycles)
+    out.add(cur);
+    cur = orgs.get(cur)?.parent ?? null;
+  }
 }
 
 export function buildQueryVocab(
@@ -32,22 +49,35 @@ export function buildQueryVocab(
 ): QueryVocabArtifact {
   const launches: QueryVocabArtifact['launches'] = {};
   for (const [tag, l] of Object.entries(referencedLaunches)) {
-    launches[tag] = [l.lvFamily, l.siteName];
+    launches[tag] = [l.lvFamily, l.siteName, l.agencies];
   }
 
-  const inOrbitOwners = new Set<string>();
+  // In-orbit owners (the codes that actually own objects) — the client uses this
+  // to tell operator names from agency-only names.
+  const owners = new Set<string>();
   for (const rec of records) {
     if (rec.orbitalStatus !== 'in_orbit') continue;
     const code = primaryOwnerCode(rec);
-    if (code && orgs.has(code)) inOrbitOwners.add(code);
+    if (code && orgs.has(code)) owners.add(code);
   }
+
+  // The emit set: owners + launch agencies, each closed over its ancestor chain
+  // so family expansion + parent-brand search work on the client.
+  const emit = new Set<string>(owners);
+  for (const l of Object.values(referencedLaunches)) {
+    for (const a of l.agencies) if (orgs.has(a)) emit.add(a);
+  }
+  for (const code of [...emit]) collectAncestors(code, orgs, emit);
+
   const vocabOrgs: QueryVocabArtifact['orgs'] = {};
-  for (const code of [...inOrbitOwners].sort()) {
-    const o = orgs.get(code)!;
+  for (const code of [...emit].sort()) {
+    const o = orgs.get(code);
+    if (!o) continue;
     vocabOrgs[code] = {
       n: o.name,
       ...(o.aliases && o.aliases.length > 0 ? { a: o.aliases } : {}),
+      ...(o.parent ? { p: o.parent } : {}),
     };
   }
-  return { launches, orgs: vocabOrgs };
+  return { launches, orgs: vocabOrgs, owners: [...owners].sort() };
 }

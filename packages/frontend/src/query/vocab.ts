@@ -11,12 +11,24 @@
 // ============================================================
 
 import { fetchQueryVocab, type QueryVocab } from '../data/query-vocab-client';
-import { extendAliasTable, displayNameKeys, type AliasEntry } from './aliases';
+import {
+  extendAliasTable,
+  displayNameKeys,
+  normalizeAliasKey,
+  type AliasEntry,
+} from './aliases';
 
 export interface VocabIndexes {
   vehicleTags: Map<string, Set<string>>; // lvFamily value → launch tags
   siteTags: Map<string, Set<string>>;    // siteName value → launch tags
   yearTags: Map<string, Set<string>>;    // 'YYYY' → launch tags
+  // Owner name-key → owner org codes, FAMILY-expanded (an org + its parent-tree
+  // descendants) and accumulated across every org that produces the key. This
+  // is what makes "spacex" (SPX+SPXS) and "nasa" (NASA + all centers) resolve
+  // to the whole fleet instead of one arbitrary code.
+  ownerCodes: Map<string, Set<string>>;
+  // Agency name-key → launch tags (the launches that org conducted).
+  agencyTags: Map<string, Set<string>>;
 }
 
 let indexes: VocabIndexes | null = null;
@@ -30,23 +42,33 @@ export function hasQueryVocab(): boolean {
   return indexes !== null;
 }
 
-/** Pure — one pass over vocab.launches building the three inverted indexes. */
-export function buildVocabIndexes(vocab: QueryVocab): VocabIndexes {
+function addTo(m: Map<string, Set<string>>, key: string, value: string): void {
+  let s = m.get(key);
+  if (!s) m.set(key, (s = new Set<string>()));
+  s.add(value);
+}
+
+/**
+ * Pure — build the launch-side inverted indexes (vehicle/site/year) + the
+ * agency-code → tags map used by installQueryVocab to resolve agency names.
+ */
+export function buildVocabIndexes(
+  vocab: QueryVocab,
+): { vehicleTags: Map<string, Set<string>>; siteTags: Map<string, Set<string>>;
+     yearTags: Map<string, Set<string>>; agencyCodeToTags: Map<string, Set<string>> } {
   const vehicleTags = new Map<string, Set<string>>();
   const siteTags = new Map<string, Set<string>>();
   const yearTags = new Map<string, Set<string>>();
-  const add = (m: Map<string, Set<string>>, key: string, tag: string) => {
-    let s = m.get(key);
-    if (!s) m.set(key, (s = new Set<string>()));
-    s.add(tag);
-  };
-  for (const [tag, [lvFamily, siteName]] of Object.entries(vocab.launches)) {
-    if (lvFamily && lvFamily !== 'UNK') add(vehicleTags, lvFamily, tag);
-    if (siteName) add(siteTags, siteName, tag);
+  const agencyCodeToTags = new Map<string, Set<string>>();
+  for (const [tag, tuple] of Object.entries(vocab.launches)) {
+    const [lvFamily, siteName, agencyCodes] = tuple;
+    if (lvFamily && lvFamily !== 'UNK') addTo(vehicleTags, lvFamily, tag);
+    if (siteName) addTo(siteTags, siteName, tag);
     const year = tag.slice(0, 4); // "2019-074" | "1957 ALP" → "2019" | "1957"
-    if (/^\d{4}$/.test(year)) add(yearTags, year, tag);
+    if (/^\d{4}$/.test(year)) addTo(yearTags, year, tag);
+    for (const code of agencyCodes ?? []) addTo(agencyCodeToTags, code, tag);
   }
-  return { vehicleTags, siteTags, yearTags };
+  return { vehicleTags, siteTags, yearTags, agencyCodeToTags };
 }
 
 /**
@@ -85,27 +107,111 @@ function derivedOrgKeyAllowed(normKey: string): boolean {
 }
 
 /**
+ * Normalized alias keys for an org: its full display name (UNCONDITIONAL — so a
+ * pivot's injected exact name always resolves), plus derived short-forms/variants
+ * that clear the generic-word guardrail.
+ */
+function orgNameKeys(o: { n: string; a?: string[] }): string[] {
+  const keys = new Set<string>();
+  const full = normalizeAliasKey(o.n);
+  if (full) keys.add(full);
+  const derivedRaw = [
+    ...displayNameKeys(o.n),
+    ...(o.a ?? []).flatMap((a) => [a, ...displayNameKeys(a)]),
+  ];
+  for (const raw of derivedRaw) {
+    const k = normalizeAliasKey(raw);
+    if (k && derivedOrgKeyAllowed(k)) keys.add(k);
+  }
+  return [...keys];
+}
+
+function titleCase(key: string): string {
+  return key.replace(/\b[a-z]/g, (c) => c.toUpperCase());
+}
+
+/** Prefer an org name that IS this key (exact base match) as the chip label. */
+function preferLabel(labels: Map<string, string>, key: string, name: string): void {
+  if (normalizeAliasKey(name) === key) labels.set(key, name);
+  else if (!labels.has(key)) labels.set(key, titleCase(key));
+}
+
+/**
  * Build the indexes + register the alias entries. Registration ORDER is
  * load-bearing (first-writer-wins within the dynamic set): vehicles → sites →
- * pre-1963 tags → orgs LAST, so an org alias can never shadow a vehicle/site
- * word. Static entries were registered at module load and beat everything here.
+ * pre-1963 tags → owners → agencies, so agency never shadows an owner word and
+ * neither shadows a vehicle/site word. Static entries (registered at module
+ * load) beat everything here.
+ *
+ * Operators resolve to their whole org FAMILY: a name-key maps to every in-orbit
+ * owner in the parent-tree subtree of any org producing that key. This is what
+ * makes "spacex" (SPX + SPXS via a shared name token) and "nasa" (NASA + its
+ * centers via the parent tree) return the full fleet.
  */
 export function installQueryVocab(vocab: QueryVocab): void {
-  indexes = buildVocabIndexes(vocab);
-  const entries: [string, AliasEntry][] = [];
+  const built = buildVocabIndexes(vocab);
+  const ownerSet = new Set(vocab.owners);
 
+  // Parent tree over emitted orgs → each org's descendant codes.
+  const childrenOf = new Map<string, string[]>();
+  for (const [code, o] of Object.entries(vocab.orgs)) {
+    if (o.p) (childrenOf.get(o.p) ?? childrenOf.set(o.p, []).get(o.p)!).push(code);
+  }
+  const familyOwners = (code: string): string[] => {
+    const out: string[] = [];
+    const stack = [code];
+    const seen = new Set<string>();
+    let guard = 0;
+    while (stack.length && guard++ < 10000) {
+      const c = stack.pop()!;
+      if (seen.has(c)) continue;
+      seen.add(c);
+      if (ownerSet.has(c)) out.push(c);
+      for (const child of childrenOf.get(c) ?? []) stack.push(child);
+    }
+    return out;
+  };
+
+  // Owner name-key → family owner codes; agency name-key → launch tags.
+  const ownerCodes = new Map<string, Set<string>>();
+  const agencyTags = new Map<string, Set<string>>();
+  const ownerLabels = new Map<string, string>();
+  const agencyLabels = new Map<string, string>();
+  for (const [code, o] of Object.entries(vocab.orgs)) {
+    const keys = orgNameKeys(o);
+    const owners = familyOwners(code);
+    const agencyTagSet = built.agencyCodeToTags.get(code);
+    for (const key of keys) {
+      for (const c of owners) addTo(ownerCodes, key, c);
+      if (owners.length > 0) preferLabel(ownerLabels, key, o.n);
+      if (agencyTagSet) {
+        for (const t of agencyTagSet) addTo(agencyTags, key, t);
+        preferLabel(agencyLabels, key, o.n);
+      }
+    }
+  }
+
+  indexes = {
+    vehicleTags: built.vehicleTags,
+    siteTags: built.siteTags,
+    yearTags: built.yearTags,
+    ownerCodes,
+    agencyTags,
+  };
+
+  const entries: [string, AliasEntry][] = [];
   // 1. Vehicles (family names + spaced variants; 'UNK' already excluded).
-  for (const family of indexes.vehicleTags.keys()) {
+  for (const family of built.vehicleTags.keys()) {
     for (const k of familyKeys(family)) {
       entries.push([k, { group: 'vehicle', value: family, label: family }]);
     }
   }
   // 2. Sites (canonical names + a tiny hand synonym map for famous spellings).
-  for (const site of indexes.siteTags.keys()) {
+  for (const site of built.siteTags.keys()) {
     entries.push([site, { group: 'site', value: site, label: site }]);
   }
   for (const [typed, canonical] of Object.entries(SITE_HAND_SYNONYMS)) {
-    if (indexes.siteTags.has(canonical)) {
+    if (built.siteTags.has(canonical)) {
       entries.push([typed, { group: 'site', value: canonical, label: canonical }]);
     }
   }
@@ -115,19 +221,14 @@ export function installQueryVocab(vocab: QueryVocab): void {
       entries.push([tag, { group: 'launch', value: tag, label: `Launch ${tag}` }]);
     }
   }
-  // 4. Orgs LAST. Full display name registered unconditionally (guarantees the
-  //    InfoCard pivot's injected exact name longest-matches to ITS code); the
-  //    derived short forms + variants pass the generic-word guardrail.
-  for (const [code, o] of Object.entries(vocab.orgs)) {
-    const entry: AliasEntry = { group: 'owner', value: code, label: o.n };
-    entries.push([o.n, entry]);
-    const derived = [
-      ...displayNameKeys(o.n),
-      ...(o.a ?? []).flatMap((a) => [a, ...displayNameKeys(a)]),
-    ];
-    for (const k of derived) {
-      if (derivedOrgKeyAllowed(k.trim().toLowerCase())) entries.push([k, entry]);
-    }
+  // 4. Owners (value = name-key; the executor expands it via ownerCodes).
+  for (const key of ownerCodes.keys()) {
+    entries.push([key, { group: 'owner', value: key, label: ownerLabels.get(key) ?? titleCase(key) }]);
+  }
+  // 5. Agencies LAST — owner wins any shared name (owns what it launches);
+  //    unique provider names (Arianespace, Rocket Lab) survive as agency.
+  for (const key of agencyTags.keys()) {
+    entries.push([key, { group: 'agency', value: key, label: agencyLabels.get(key) ?? titleCase(key) }]);
   }
 
   extendAliasTable(entries);

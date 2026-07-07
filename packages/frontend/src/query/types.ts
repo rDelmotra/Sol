@@ -29,7 +29,10 @@ export type FacetGroup =
   | 'site'
   | 'launch'
   | 'launch_year'
-  | 'owner';
+  | 'owner'
+  // Launch agency (who conducted the launch) — compiles to launchFilter tags,
+  // distinct from 'owner' (who operates the object).
+  | 'agency';
 
 /** One consumed span of the query → one interpretation chip. */
 export interface QueryMatch {

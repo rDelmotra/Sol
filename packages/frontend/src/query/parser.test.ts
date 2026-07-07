@@ -153,22 +153,23 @@ describe('parseQuery — year pattern rule (vocab-gated)', () => {
   });
 
   it('after installQueryVocab a plausible year compiles to launch_year', () => {
-    installQueryVocab({ launches: { '2021-001': ['Falcon9', 'Canaveral'] }, orgs: {} });
+    installQueryVocab({ launches: { '2021-001': ['Falcon9', 'Canaveral', []] }, orgs: {}, owners: [] });
     const ir = parseQuery('2021');
     assert.deepEqual(groups(ir.matches), [['launch_year', '2021']]);
     assert.equal(ir.matches[0].label, 'Launched 2021');
   });
 
   it('rejects out-of-range years even with vocab loaded', () => {
-    installQueryVocab({ launches: { '2021-001': ['Falcon9', 'Canaveral'] }, orgs: {} });
+    installQueryVocab({ launches: { '2021-001': ['Falcon9', 'Canaveral', []] }, orgs: {}, owners: [] });
     assert.deepEqual(parseQuery('1949'), { matches: [], text: '1949' });
     assert.deepEqual(parseQuery('2199'), { matches: [], text: '2199' });
   });
 
   it('flagship vehicle + site + year with stopword "from" consumed', () => {
     installQueryVocab({
-      launches: { '2021-005': ['Falcon9', 'Vandenberg'] },
+      launches: { '2021-005': ['Falcon9', 'Vandenberg', []] },
       orgs: {},
+      owners: [],
     });
     const ir = parseQuery('falcon 9 from vandenberg 2021');
     assert.deepEqual(groups(ir.matches), [
@@ -180,7 +181,7 @@ describe('parseQuery — year pattern rule (vocab-gated)', () => {
   });
 
   it('chip splice + re-parse works across a pattern match', () => {
-    installQueryVocab({ launches: { '2021-001': ['Falcon9', 'Canaveral'] }, orgs: {} });
+    installQueryVocab({ launches: { '2021-001': ['Falcon9', 'Canaveral', []] }, orgs: {}, owners: [] });
     const ir = parseQuery('starlink 2021');
     const year = ir.matches.find((m) => m.group === 'launch_year')!;
     const spliced = ('starlink 2021'.slice(0, year.start) + 'starlink 2021'.slice(year.end))
