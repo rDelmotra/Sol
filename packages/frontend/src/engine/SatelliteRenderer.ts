@@ -336,11 +336,15 @@ export class SatelliteRenderer {
     const facetCounts = makeFacetCounts();
 
     // Destructure once (the gate runs per object over the whole catalog).
-    const { typeFilters, statusFilters, sectorFilters, purposeFilters, regimeFilters, countryFilter, programFilter } = filters;
+    const { typeFilters, statusFilters, sectorFilters, purposeFilters, regimeFilters, countryFilter, programFilter, launchFilter, ownerFilter } = filters;
     const countryAll = countryFilter.mode === 'all';
     const countryCodes = countryFilter.mode === 'only' ? countryFilter.codes : null;
     const programAll = programFilter.mode === 'all';
     const programIds = programFilter.mode === 'only' ? programFilter.ids : null;
+    const launchAll = launchFilter.mode === 'all';
+    const launchTags = launchFilter.mode === 'only' ? launchFilter.tags : null;
+    const ownerAll = ownerFilter.mode === 'all';
+    const ownerCodes = ownerFilter.mode === 'only' ? ownerFilter.codes : null;
 
     const observerAvailable = observerPos !== null;
     const obsX = observerPos?.x ?? 0;
@@ -389,6 +393,15 @@ export class SatelliteRenderer {
       // program filter is active — "starlink" means only Starlink.
       if (isVisibleBase && !programAll) {
         isVisibleBase = programIds!.has(obj.program ?? '');
+      }
+      // Launch/owner (query-driven, G3): same exclude-when-absent semantics as
+      // program. Vehicle/site/year queries have already been compiled to a
+      // launch-tag set upstream (executor), so this stays a single O(1) lookup.
+      if (isVisibleBase && !launchAll) {
+        isVisibleBase = launchTags!.has(obj.launchTag ?? '');
+      }
+      if (isVisibleBase && !ownerAll) {
+        isVisibleBase = ownerCodes!.has(obj.owner ?? '');
       }
 
       this.filterMask[i] = isVisibleBase ? 1 : 0;

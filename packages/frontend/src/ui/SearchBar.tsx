@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import type { EnrichedTLEObject, ObjectCategory } from '../data/types';
 import { parseQuery } from '../query/parser';
 import { irToFilterPatch } from '../query/executor';
+import { ensureQueryVocab } from '../query/vocab';
 import { EMPTY_IR, type QueryIR } from '../query/types';
 
 const CATEGORY_COLORS: Record<ObjectCategory, string> = {
@@ -24,6 +25,7 @@ export function SearchBar() {
   const hasSelection = useStore((s) => !!(s.selectedSatellite || s.selectedDso));
   const applyQueryFilters = useStore((s) => s.applyQueryFilters);
   const clearQueryFilters = useStore((s) => s.clearQueryFilters);
+  const setInjectSearchQuery = useStore((s) => s.setInjectSearchQuery);
   const visibleFacetCounts = useStore((s) => s.visibleFacetCounts);
   const facetCounts = useStore((s) => s.facetCounts);
 
@@ -147,6 +149,36 @@ export function SearchBar() {
       clearQueryFilters();
     };
   }, [clearQueryFilters]);
+
+  // Fetch + install the launch-graph vocab once (non-blocking). On arrival,
+  // retro-compile whatever is already typed so a vehicle/site/owner word entered
+  // before the vocab landed becomes a chip. Refs keep this a one-shot mount effect.
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  const runQueryRef = useRef(runQuery);
+  runQueryRef.current = runQuery;
+  useEffect(() => {
+    void ensureQueryVocab().then(() => {
+      if (queryRef.current.trim()) runQueryRef.current(queryRef.current);
+    });
+  }, []);
+
+  // Register the programmatic-injection slot the InfoCard pivots drive: REPLACE
+  // the query, bypass the debounce, run the pipeline immediately, open the chips.
+  useEffect(() => {
+    setInjectSearchQuery((text: string) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      setQuery(text);
+      if (!text.trim()) {
+        resetQueryState();
+        return;
+      }
+      runQuery(text);
+      setIsOpen(true);
+      inputRef.current?.focus();
+    });
+    return () => setInjectSearchQuery(null);
+  }, [setInjectSearchQuery, runQuery, resetQueryState]);
 
   // "/" global shortcut
   useEffect(() => {

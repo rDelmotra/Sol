@@ -110,6 +110,9 @@ interface AppState {
 
   catalogData: EnrichedTLEObject[];
   selectByIndex: ((index: number) => void) | null;
+  // Registered by SearchBar (G3): replace the search text + run the query
+  // pipeline immediately. InfoCard pivots call it. null until SearchBar mounts.
+  injectSearchQuery: ((text: string) => void) | null;
   triggerFlyTo: ((index: number) => void) | null;
   triggerJoyride: ((index: number) => void) | null;
   triggerResetCamera: (() => void) | null;
@@ -197,11 +200,12 @@ interface AppState {
    * SatellitesLayer diff (no per-keystroke recomputes).
    */
   applyQueryFilters: (patch: QueryFilterPatch) => void;
-  /** Restore all seven query-controlled slices to all-on / mode:'all'. */
+  /** Restore all query-controlled slices to all-on / mode:'all'. */
   clearQueryFilters: () => void;
   setVisibleFacetCounts: (counts: FacetCounts) => void;
   setCatalogData: (data: EnrichedTLEObject[]) => void;
   setSelectByIndex: (fn: (index: number) => void) => void;
+  setInjectSearchQuery: (fn: ((text: string) => void) | null) => void;
   setSelectedSatellite: (
     index: number | null,
     data: EnrichedTLEObject | null,
@@ -288,6 +292,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   catalogData: [],
   selectByIndex: null,
+  injectSearchQuery: null,
   triggerFlyTo: null,
   triggerJoyride: null,
   triggerResetCamera: null,
@@ -437,6 +442,7 @@ export const useStore = create<AppState>((set, get) => ({
     })),
   setCatalogData: (data) => set({ catalogData: data }),
   setSelectByIndex: (fn) => set({ selectByIndex: fn }),
+  setInjectSearchQuery: (fn) => set({ injectSearchQuery: fn }),
   setSelectedSatellite: (index, data, altitude) =>
     set((state) => ({
       selectedIndex: index,

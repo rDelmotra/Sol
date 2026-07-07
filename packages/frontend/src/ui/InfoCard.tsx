@@ -37,6 +37,26 @@ const labelStyle: React.CSSProperties = {
   color: 'rgba(255, 255, 255, 0.45)',
 };
 
+// A pivot-able value: accent-tinted + pointer so it reads as clickable (the
+// panel is all inline styles, so no :hover — the color is the affordance).
+const pivotValueStyle: React.CSSProperties = {
+  color: '#00E5FF',
+  cursor: 'pointer',
+};
+
+// Pivot buttons — the inactive action-button pattern (matches "Go to" etc.).
+const pivotButtonStyle: React.CSSProperties = {
+  flex: 1,
+  padding: '6px 0',
+  background: 'rgba(255, 255, 255, 0.06)',
+  border: '1px solid rgba(255, 255, 255, 0.12)',
+  borderRadius: 4,
+  color: 'rgba(255, 255, 255, 0.7)',
+  fontFamily: 'monospace',
+  fontSize: '11px',
+  cursor: 'pointer',
+};
+
 const headerStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
@@ -63,6 +83,42 @@ function Row({ label, value }: { label: string; value: string | number | null })
     <div style={rowStyle}>
       <span style={labelStyle}>{label}</span>
       <span>{value}</span>
+    </div>
+  );
+}
+
+/**
+ * A Row whose value, when a `pivot` term + `onPivot` handler are both present,
+ * drives the search (search-first: injects the term into the SearchBar). Falls
+ * back to a plain Row when there's nothing to pivot on.
+ */
+function ClickableRow({
+  label,
+  value,
+  pivot,
+  onPivot,
+}: {
+  label: string;
+  value: string | number | null;
+  pivot: string | null | undefined;
+  onPivot: ((text: string) => void) | null;
+}) {
+  if (value === null || value === '') return null;
+  const active = Boolean(onPivot && pivot);
+  return (
+    <div style={rowStyle}>
+      <span style={labelStyle}>{label}</span>
+      {active ? (
+        <span
+          style={pivotValueStyle}
+          onClick={() => onPivot!(pivot!)}
+          title={`Show all ${value}`}
+        >
+          {value}
+        </span>
+      ) : (
+        <span>{value}</span>
+      )}
     </div>
   );
 }
@@ -103,7 +159,13 @@ function formatDimensions(m: ObjectMetadataResponse): string | null {
 }
 
 /** GCAT+UCS detail rows for the selected TLE object (lazy-fetched). */
-function MetadataRows({ meta }: { meta: ObjectMetadataResponse | null }) {
+function MetadataRows({
+  meta,
+  onPivot,
+}: {
+  meta: ObjectMetadataResponse | null;
+  onPivot: ((text: string) => void) | null;
+}) {
   if (!meta) return null;
   const launch = meta.launch;
   return (
@@ -123,8 +185,19 @@ function MetadataRows({ meta }: { meta: ObjectMetadataResponse | null }) {
       <Row label="Ops ended" value={meta.endOpDate ?? null} />
       {launch && (
         <>
-          <Row label="Vehicle" value={launch.lvType || null} />
-          <Row label="Launch site" value={launch.siteName ?? launch.site} />
+          {/* Vehicle pivots on the lvFamily (only families have query aliases). */}
+          <ClickableRow
+            label="Vehicle"
+            value={launch.lvType || null}
+            pivot={launch.lvFamily}
+            onPivot={onPivot}
+          />
+          <ClickableRow
+            label="Launch site"
+            value={launch.siteName ?? launch.site}
+            pivot={launch.siteName}
+            onPivot={onPivot}
+          />
           <Row label="Launch agency" value={launch.agencyNames?.join(', ') || null} />
           <Row label="Outcome" value={launch.success === false ? 'Launch failure' : null} />
         </>
@@ -155,6 +228,7 @@ export function InfoCard() {
   const cameraMode = useStore((s) => s.cameraMode);
   const setCameraMode = useStore((s) => s.setCameraMode);
   const trackingStyle = useStore((s) => s.trackingStyle);
+  const injectSearchQuery = useStore((s) => s.injectSearchQuery);
   const meta = useObjectMetadata(selectedSatellite?.noradId ?? null);
 
   if (!selectedSatellite && !selectedDso) return null;
@@ -296,11 +370,42 @@ export function InfoCard() {
       <Row label="Inclination" value={`${s.inclination.toFixed(1)}°`} />
       <Row label="Apogee" value={`${Math.round(s.apogee).toLocaleString()} km`} />
       <Row label="Perigee" value={`${Math.round(s.perigee).toLocaleString()} km`} />
-      <Row label="Program" value={s.program ? (PROGRAM_LABELS[s.program] ?? s.program) : null} />
+      <ClickableRow
+        label="Program"
+        value={s.program ? (PROGRAM_LABELS[s.program] ?? s.program) : null}
+        pivot={s.program ? (PROGRAM_LABELS[s.program] ?? s.program) : null}
+        onPivot={injectSearchQuery}
+      />
       <Row label="Country" value={s.countryCode} />
       <Row label="Launch" value={s.launchDate} />
       <Row label="Epoch" value={s.epoch?.slice(0, 10) ?? null} />
-      <MetadataRows meta={meta} />
+      <MetadataRows meta={meta} onPivot={injectSearchQuery} />
+
+      {/* Pivot actions: drive the search from the selected object (search-first —
+          chips appear + stay editable). "Same operator" needs an inlined owner
+          on the object, else the filter would hide everything incl. the selection. */}
+      {injectSearchQuery && meta && (meta.launch?.tag || (meta.ownerOrg?.name && s.owner)) && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          {meta.launch?.tag && (
+            <button
+              style={pivotButtonStyle}
+              onClick={() => injectSearchQuery(meta.launch!.tag)}
+              title="Show every object from this launch"
+            >
+              Same launch
+            </button>
+          )}
+          {meta.ownerOrg?.name && s.owner && (
+            <button
+              style={pivotButtonStyle}
+              onClick={() => injectSearchQuery(meta.ownerOrg!.name)}
+              title="Show every object by this operator"
+            >
+              Same operator
+            </button>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
         <button

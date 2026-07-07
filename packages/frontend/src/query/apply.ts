@@ -30,7 +30,7 @@ type SetFilter<F extends string> =
   | { mode: 'all' }
   | ({ mode: 'only' } & Record<F, Set<string>>);
 
-/** The query-controlled slices, shaped like the store's SatelliteFilterState. */
+/** The nine query-controlled slices, shaped like the store's SatelliteFilterState. */
 export interface QuerySlices {
   typeFilters: Record<CatalogType, boolean>;
   statusFilters: Record<OrbitalStatus, boolean>;
