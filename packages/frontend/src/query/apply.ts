@@ -30,7 +30,7 @@ type SetFilter<F extends string> =
   | { mode: 'all' }
   | ({ mode: 'only' } & Record<F, Set<string>>);
 
-/** The seven query-controlled slices, shaped like the store's SatelliteFilterState. */
+/** The query-controlled slices, shaped like the store's SatelliteFilterState. */
 export interface QuerySlices {
   typeFilters: Record<CatalogType, boolean>;
   statusFilters: Record<OrbitalStatus, boolean>;
@@ -39,6 +39,8 @@ export interface QuerySlices {
   regimeFilters: Record<OrbitalRegime, boolean>;
   countryFilter: SetFilter<'codes'>;
   programFilter: SetFilter<'ids'>;
+  launchFilter: SetFilter<'tags'>;   // G3
+  ownerFilter: SetFilter<'codes'>;   // G3
 }
 
 function allOn<K extends string>(keys: readonly K[]): Record<K, boolean> {
@@ -124,6 +126,36 @@ export function reconcileFilterSlices(
   ) {
     delta.programFilter = desProgramIds
       ? { mode: 'only', ids: new Set(desProgramIds) }
+      : { mode: 'all' };
+  }
+
+  const curLaunch = current.launchFilter;
+  const desLaunchTags = patch.launchFilter?.tags ?? null;
+  if (
+    !setFilterEquals(
+      desLaunchTags ? 'only' : 'all',
+      desLaunchTags,
+      curLaunch.mode,
+      curLaunch.mode === 'only' ? curLaunch.tags : null,
+    )
+  ) {
+    delta.launchFilter = desLaunchTags
+      ? { mode: 'only', tags: new Set(desLaunchTags) }
+      : { mode: 'all' };
+  }
+
+  const curOwner = current.ownerFilter;
+  const desOwnerCodes = patch.ownerFilter?.codes ?? null;
+  if (
+    !setFilterEquals(
+      desOwnerCodes ? 'only' : 'all',
+      desOwnerCodes,
+      curOwner.mode,
+      curOwner.mode === 'only' ? curOwner.codes : null,
+    )
+  ) {
+    delta.ownerFilter = desOwnerCodes
+      ? { mode: 'only', codes: new Set(desOwnerCodes) }
       : { mode: 'all' };
   }
 

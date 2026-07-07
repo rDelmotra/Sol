@@ -22,12 +22,23 @@ import {
   PROGRAM_LABELS,
   type Purpose,
 } from '../data/metadata-types';
+import { tokenize } from './tokenize';
 import type { FacetGroup } from './types';
 
 export interface AliasEntry {
   group: FacetGroup;
   value: string;
   label: string;
+}
+
+/**
+ * Normalize an alias key through the SAME pipeline the tokenizer applies to
+ * input tokens (lowercase, dots stripped, edge punctuation trimmed per token,
+ * whitespace collapsed). Guarantees a multi-word key with punctuation
+ * ("Ministry of Defence, London") lines up with the parser's token stream.
+ */
+export function normalizeAliasKey(key: string): string {
+  return tokenize(key).map((t) => t.norm).join(' ');
 }
 
 /** Words consumed silently: never matched, never passed to the residual. */
@@ -57,13 +68,13 @@ function put(
   key: string,
   entry: AliasEntry,
 ): void {
-  const norm = key.toLowerCase().replace(/\s+/g, ' ').trim();
+  const norm = normalizeAliasKey(key);
   if (!norm) return;
   if (!table.has(norm)) table.set(norm, entry); // first writer wins
 }
 
 /** "GPS (Navstar)" → ['gps']; "SES / Astra" → ['ses', 'astra']. */
-function displayNameKeys(display: string): string[] {
+export function displayNameKeys(display: string): string[] {
   return display
     .replace(/\([^)]*\)/g, ' ')
     .split('/')
@@ -173,12 +184,44 @@ function buildTable(): Map<string, AliasEntry> {
 
 export const ALIAS_TABLE: Map<string, AliasEntry> = buildTable();
 
-/** Longest key in words — the parser's n-gram window. */
-export const MAX_NGRAM: number = (() => {
+function computeMaxNgram(): number {
   let max = 1;
   for (const key of ALIAS_TABLE.keys()) {
     const words = key.split(' ').length;
     if (words > max) max = words;
   }
   return max;
-})();
+}
+
+// Longest key in words — the parser's n-gram window. A `let` (not a frozen
+// const) because extendAliasTable can add longer dynamic keys (org names) at
+// runtime; the parser reads it through maxNgram() so the window grows with them.
+let maxNgramWords = computeMaxNgram();
+
+/** The parser's n-gram window — longest alias key in words (grows dynamically). */
+export function maxNgram(): number {
+  return maxNgramWords;
+}
+
+/**
+ * Merge runtime alias entries (G3 launch/vehicle/site/owner vocabulary) into the
+ * table. First-writer-wins: the static entries registered at module load always
+ * beat a colliding dynamic key ('astra' stays the SES program, 'usa' the
+ * country). Keys are normalized through the same tokenizer pipeline as input.
+ */
+export function extendAliasTable(entries: Iterable<[key: string, entry: AliasEntry]>): void {
+  for (const [key, entry] of entries) {
+    const norm = normalizeAliasKey(key);
+    if (!norm || ALIAS_TABLE.has(norm)) continue; // static (and earlier dynamic) wins
+    ALIAS_TABLE.set(norm, entry);
+    const words = norm.split(' ').length;
+    if (words > maxNgramWords) maxNgramWords = words;
+  }
+}
+
+/** Test-only: restore the pristine static table (drops all dynamic entries). */
+export function resetAliasTableForTests(): void {
+  ALIAS_TABLE.clear();
+  for (const [k, v] of buildTable()) ALIAS_TABLE.set(k, v);
+  maxNgramWords = computeMaxNgram();
+}

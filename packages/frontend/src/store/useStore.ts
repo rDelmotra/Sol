@@ -61,6 +61,14 @@ export type CountryFilter = { mode: 'all' } | { mode: 'only'; codes: Set<string>
  *  Query-only for now — the FilterPanel has no program group yet. */
 export type ProgramFilter = { mode: 'all' } | { mode: 'only'; ids: Set<string> };
 
+/** Launch filter (query-only, G3): every object, or only those from an allow-set
+ *  of GCAT launch tags — the compiled target of vehicle/site/launch/year facets. */
+export type LaunchFilter = { mode: 'all' } | { mode: 'only'; tags: Set<string> };
+
+/** Owner filter (query-only, G3): every object, or only those owned by an allow-set
+ *  of GCAT org codes — the compiled target of the operator facet. */
+export type OwnerFilter = { mode: 'all' } | { mode: 'only'; codes: Set<string> };
+
 /**
  * The slice of state the satellite render-side filter pass reads. The full store
  * state structurally satisfies this, so callers pass `useStore.getState()` directly.
@@ -73,6 +81,8 @@ export interface SatelliteFilterState {
   countryFilter: CountryFilter;
   programFilter: ProgramFilter;
   regimeFilters: Record<OrbitalRegime, boolean>;
+  launchFilter: LaunchFilter;   // G3
+  ownerFilter: OwnerFilter;     // G3
 }
 
 const ALL_TYPE_ON: Record<CatalogType, boolean> = {
@@ -145,6 +155,8 @@ interface AppState {
   purposeFilters: Record<Purpose, boolean>;
   countryFilter: CountryFilter;
   programFilter: ProgramFilter;
+  launchFilter: LaunchFilter;   // G3 — query-only
+  ownerFilter: OwnerFilter;     // G3 — query-only
   facetCounts: FacetCounts;
   visibleFacetCounts: FacetCounts;
 
@@ -340,6 +352,8 @@ export const useStore = create<AppState>((set, get) => ({
   purposeFilters: { ...ALL_PURPOSE_ON },
   countryFilter: { mode: 'all' },
   programFilter: { mode: 'all' },
+  launchFilter: { mode: 'all' },
+  ownerFilter: { mode: 'all' },
   facetCounts: emptyFacetCounts(),
   visibleFacetCounts: emptyFacetCounts(),
 
@@ -403,6 +417,8 @@ export const useStore = create<AppState>((set, get) => ({
         regimeFilters: s.regimeFilters,
         countryFilter: s.countryFilter,
         programFilter: s.programFilter,
+        launchFilter: s.launchFilter,
+        ownerFilter: s.ownerFilter,
       },
       patch,
     );

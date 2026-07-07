@@ -8,33 +8,38 @@
 // incomplete token that exactly equals an alias ("leo") does match.
 // ============================================================
 
-import { ALIAS_TABLE, MAX_NGRAM, STOPWORDS } from './aliases';
+import { ALIAS_TABLE, maxNgram, STOPWORDS } from './aliases';
+import { hasQueryVocab } from './vocab';
+import { tokenize } from './tokenize';
 import type { QueryIR, QueryMatch } from './types';
 
-interface Token {
-  raw: string;   // original text, original casing
-  norm: string;  // lowercase, dots stripped, edge punctuation trimmed
-  start: number; // char span in the raw input
-  end: number;
-}
+// ── Single-token pattern rules ────────────────────────────────────────────────
+// Run only AFTER the alias n-gram scan fails at a position, so a matched alias
+// always wins. Single-token → the chip span is tokens[i], same splice-safe
+// invariant as a 1-gram alias match.
 
-/**
- * Maximal non-whitespace runs with char spans. Normalization: lowercase,
- * dots stripped ('u.s.' → 'us'), leading/trailing punctuation trimmed —
- * but '/' and '-' preserved inside tokens ('r/b', 'sitro-ais').
- */
-function tokenize(raw: string): Token[] {
-  const tokens: Token[] = [];
-  const re = /\S+/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(raw)) !== null) {
-    const norm = m[0]
-      .toLowerCase()
-      .replace(/\./g, '')
-      .replace(/^[,;:!?"'()]+|[,;:!?"'()]+$/g, '');
-    if (norm) tokens.push({ raw: m[0], norm, start: m.index, end: m.index + m[0].length });
+// Launch tag ("2019-074") or a pasted COSPAR designator ("1998-067a"); `norm`
+// is already lowercased. Trailing piece letters are stripped to the tag.
+const LAUNCH_TAG_RE = /^(19|20)\d{2}-\d{3}[a-z]{0,3}$/;
+const YEAR_RE = /^\d{4}$/;
+
+function patternMatch(norm: string): Pick<QueryMatch, 'group' | 'value' | 'label'> | null {
+  if (LAUNCH_TAG_RE.test(norm)) {
+    const tag = norm.replace(/[a-z]+$/, '');
+    // Vocab-free: works offline and for the InfoCard "Same launch" pivot.
+    return { group: 'launch', value: tag, label: `Launch ${tag}` };
   }
-  return tokens;
+  if (YEAR_RE.test(norm) && hasQueryVocab()) {
+    // Vocab-GATED: without the tag→year index a year would compile to an empty
+    // set (blank globe). Before the vocab loads it rides to Fuse (finds names
+    // like "COSMOS 2021"). Caveat: a 4-digit token inside a name also matches
+    // once loaded — the chip is visible and removable.
+    const y = parseInt(norm, 10);
+    if (y >= 1957 && y <= new Date().getFullYear() + 1) {
+      return { group: 'launch_year', value: norm, label: `Launched ${norm}` };
+    }
+  }
+  return null;
 }
 
 export function parseQuery(raw: string): QueryIR {
@@ -45,7 +50,7 @@ export function parseQuery(raw: string): QueryIR {
   let i = 0;
   outer: while (i < tokens.length) {
     // Longest n-gram first so "low earth orbit" beats stopword 'orbit'.
-    const maxN = Math.min(MAX_NGRAM, tokens.length - i);
+    const maxN = Math.min(maxNgram(), tokens.length - i);
     for (let n = maxN; n >= 1; n--) {
       const key = tokens
         .slice(i, i + n)
@@ -62,6 +67,18 @@ export function parseQuery(raw: string): QueryIR {
         i += n;
         continue outer;
       }
+    }
+    // No alias matched at this position — try the single-token pattern rules.
+    const pat = patternMatch(tokens[i].norm);
+    if (pat) {
+      matches.push({
+        ...pat,
+        token: raw.slice(tokens[i].start, tokens[i].end),
+        start: tokens[i].start,
+        end: tokens[i].end,
+      });
+      i += 1;
+      continue;
     }
     if (!STOPWORDS.has(tokens[i].norm)) residual.push(tokens[i].raw);
     i += 1;

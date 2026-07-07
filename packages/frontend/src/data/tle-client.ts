@@ -7,6 +7,11 @@ import {
   type VisualListResolvedResult,
 } from './visualList';
 
+// COSPAR international designator ("1998-067A") → launch tag ("1998-067"): the
+// modern GYYYY-NNN form with a trailing piece letter. Pre-1963 "1957 ALP" tags
+// aren't COSPAR-shaped and are already inlined by the backend where relevant.
+const COSPAR_TO_TAG_RE = /^((?:19|20)\d{2}-\d{3})[A-Z]*$/;
+
 // ── TLE Catalog Fetch ─────────────────────────────────────────────────────
 
 export interface TleCatalogResult {
@@ -30,10 +35,18 @@ export function buildCatalogResult(catalogData: EnrichedTLEObject[]): TleCatalog
   // cache / old IndexedDB copy) would lack sectors/purpose/status, and the render
   // path reads them unconditionally. Coalesce in place so nothing reads undefined.
   for (const obj of catalogData) {
-    const o = obj as Partial<Pick<EnrichedTLEObject, 'sectors' | 'purpose' | 'status'>> & EnrichedTLEObject;
+    const o = obj as Partial<Pick<EnrichedTLEObject, 'sectors' | 'purpose' | 'status' | 'launchTag'>> & EnrichedTLEObject;
     if (!o.sectors) o.sectors = [] as Sector[];
     if (!o.purpose) o.purpose = 'other' as Purpose;
     if (!o.status) o.status = 'unknown' as OrbitalStatus;
+    // G3: objects lacking the backend-inlined launchTag (catalogs cached before
+    // G3, post-snapshot launches) derive it from the COSPAR OBJECT_ID so the
+    // launch/vehicle/site query facets reach them. `owner` has no client-side
+    // source — an owner query over-filters a pre-G3 catalog until it refreshes.
+    if (!o.launchTag) {
+      const m = COSPAR_TO_TAG_RE.exec(obj.omm.OBJECT_ID.trim());
+      if (m) o.launchTag = m[1];
+    }
   }
 
   const tles: TLEInput[] = catalogData.map((d) => ({

@@ -93,6 +93,8 @@ export interface InlineMetadataFacets {
   purpose: Purpose;
   status: OrbitalStatus;
   program?: string;
+  launchTag?: string;   // GCAT launch tag ("2019-074") — launch/vehicle/site facet (G3)
+  owner?: string;       // primary owner org code ("SPXS") — operator facet (G3)
 }
 
 /** Full record, lazy-loaded from /api/metadata/:noradId for the InfoCard (Phase C). */

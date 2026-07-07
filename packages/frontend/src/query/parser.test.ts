@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { describe, it, afterEach } from 'node:test';
 import { parseQuery } from './parser';
+import { installQueryVocab, resetQueryVocabForTests } from './vocab';
+import { resetAliasTableForTests } from './aliases';
 import type { QueryMatch } from './types';
 
 function groups(matches: QueryMatch[]): Array<[string, string]> {
@@ -106,5 +108,84 @@ describe('parseQuery', () => {
       ['country', 'US'],
       ['type', 'satellite'],
     ]);
+  });
+});
+
+// ── G3: single-token pattern rules (launch tag + year) ────────────────────────
+
+describe('parseQuery — launch-tag pattern rule', () => {
+  it('matches a bare launch tag with an exact single-token span', () => {
+    const ir = parseQuery('2019-074');
+    assert.deepEqual(groups(ir.matches), [['launch', '2019-074']]);
+    assert.equal(ir.matches[0].label, 'Launch 2019-074');
+    assert.equal(ir.matches[0].token, '2019-074');
+    assert.equal(ir.matches[0].start, 0);
+    assert.equal(ir.matches[0].end, '2019-074'.length);
+    assert.equal(ir.text, '');
+  });
+
+  it('strips a pasted COSPAR piece letter to the tag', () => {
+    assert.deepEqual(groups(parseQuery('1998-067A').matches), [['launch', '1998-067']]);
+    assert.deepEqual(groups(parseQuery('1998-067abc').matches), [['launch', '1998-067']]);
+  });
+
+  it('rejects malformed tags → residual (not a launch match)', () => {
+    assert.deepEqual(parseQuery('2019-0745'), { matches: [], text: '2019-0745' });
+    assert.deepEqual(parseQuery('20190-74'), { matches: [], text: '20190-74' });
+    assert.deepEqual(parseQuery('1899-074'), { matches: [], text: '1899-074' });
+  });
+
+  it('works with no vocab loaded (offline / pre-fetch pivot)', () => {
+    resetQueryVocabForTests();
+    assert.deepEqual(groups(parseQuery('2019-074').matches), [['launch', '2019-074']]);
+  });
+});
+
+describe('parseQuery — year pattern rule (vocab-gated)', () => {
+  afterEach(() => {
+    resetQueryVocabForTests();
+    resetAliasTableForTests();
+  });
+
+  it('a 4-digit year is residual until the vocab loads', () => {
+    resetQueryVocabForTests();
+    assert.deepEqual(parseQuery('2021'), { matches: [], text: '2021' });
+  });
+
+  it('after installQueryVocab a plausible year compiles to launch_year', () => {
+    installQueryVocab({ launches: { '2021-001': ['Falcon9', 'Canaveral'] }, orgs: {} });
+    const ir = parseQuery('2021');
+    assert.deepEqual(groups(ir.matches), [['launch_year', '2021']]);
+    assert.equal(ir.matches[0].label, 'Launched 2021');
+  });
+
+  it('rejects out-of-range years even with vocab loaded', () => {
+    installQueryVocab({ launches: { '2021-001': ['Falcon9', 'Canaveral'] }, orgs: {} });
+    assert.deepEqual(parseQuery('1949'), { matches: [], text: '1949' });
+    assert.deepEqual(parseQuery('2199'), { matches: [], text: '2199' });
+  });
+
+  it('flagship vehicle + site + year with stopword "from" consumed', () => {
+    installQueryVocab({
+      launches: { '2021-005': ['Falcon9', 'Vandenberg'] },
+      orgs: {},
+    });
+    const ir = parseQuery('falcon 9 from vandenberg 2021');
+    assert.deepEqual(groups(ir.matches), [
+      ['vehicle', 'Falcon9'],
+      ['site', 'Vandenberg'],
+      ['launch_year', '2021'],
+    ]);
+    assert.equal(ir.text, '');
+  });
+
+  it('chip splice + re-parse works across a pattern match', () => {
+    installQueryVocab({ launches: { '2021-001': ['Falcon9', 'Canaveral'] }, orgs: {} });
+    const ir = parseQuery('starlink 2021');
+    const year = ir.matches.find((m) => m.group === 'launch_year')!;
+    const spliced = ('starlink 2021'.slice(0, year.start) + 'starlink 2021'.slice(year.end))
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    assert.deepEqual(groups(parseQuery(spliced).matches), [['program', 'starlink']]);
   });
 });

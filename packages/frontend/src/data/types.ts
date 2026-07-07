@@ -76,6 +76,13 @@ export interface EnrichedTLEObject {
   status: OrbitalStatus;
   // Program membership slug (e.g. 'starlink'); omitted when unmatched.
   program?: string;
+  // GCAT launch tag ("2019-074") — the launch/vehicle/site query facets' join
+  // key (G3). Inlined by the backend; the frontend fills it from omm.OBJECT_ID
+  // for stale-cache / post-snapshot objects (see data/tle-client.ts).
+  launchTag?: string;
+  // Primary owner org code ("SPXS") — the operator query facet (G3). Backend-only
+  // (no client-side derivation); absent on catalogs cached before G3.
+  owner?: string;
 }
 
 export type WorkerInMessage =

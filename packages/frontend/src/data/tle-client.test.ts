@@ -111,4 +111,28 @@ describe('buildCatalogResult', () => {
     assert.equal(facetCounts.country.PRC, 1);
     assert.equal(facetCounts.country.US, 1);
   });
+
+  // ── G3: launchTag COSPAR fallback stamp ────────────────────────────────────
+
+  it('stamps launchTag from OBJECT_ID when the backend did not inline it', () => {
+    const a = obj(20, 'active_satellite', 'LEO'); // OBJECT_ID '2000-001A'
+    assert.equal(a.launchTag, undefined);
+    buildCatalogResult([a]);
+    assert.equal(a.launchTag, '2000-001'); // trailing piece letter stripped
+  });
+
+  it('preserves an already-inlined launchTag (never overwrites the backend value)', () => {
+    const a = obj(21, 'active_satellite', 'LEO');
+    a.launchTag = '1998-067';           // backend value, OBJECT_ID says 2000-001A
+    buildCatalogResult([a]);
+    assert.equal(a.launchTag, '1998-067');
+  });
+
+  it('leaves a non-COSPAR OBJECT_ID unstamped and never invents owner', () => {
+    const a = obj(22, 'active_satellite', 'LEO');
+    a.omm.OBJECT_ID = 'UNKNOWN';
+    buildCatalogResult([a]);
+    assert.equal(a.launchTag, undefined);
+    assert.equal(a.owner, undefined);
+  });
 });

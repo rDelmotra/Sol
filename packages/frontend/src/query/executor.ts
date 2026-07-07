@@ -10,6 +10,7 @@
 
 import { emptyFacetCounts, type CatalogType, type OrbitalRegime } from '../data/types';
 import type { Purpose, SectorFilterKey, OrbitalStatus } from '../data/metadata-types';
+import { getVocabIndexes } from './vocab';
 import type { QueryIR, QueryFilterPatch, FacetGroup } from './types';
 
 // Key universes derived from the one canonical source (emptyFacetCounts) so
@@ -50,5 +51,35 @@ export function irToFilterPatch(ir: QueryIR): QueryFilterPatch {
   if (countries) patch.countryFilter = { mode: 'only', codes: new Set(countries) };
   const programs = byGroup.get('program');
   if (programs) patch.programFilter = { mode: 'only', ids: new Set(programs) };
+
+  // ── G3: operator (union) + launch-graph (intersection across subgroups) ──────
+  const owners = byGroup.get('owner');
+  if (owners) patch.ownerFilter = { mode: 'only', codes: new Set(owners) };
+
+  const vehicles = byGroup.get('vehicle');
+  const sites = byGroup.get('site');
+  const launches = byGroup.get('launch');
+  const years = byGroup.get('launch_year');
+  if (vehicles || sites || launches || years) {
+    const idx = getVocabIndexes();
+    const unionTags = (index: Map<string, Set<string>> | undefined, values: Set<string>) => {
+      const out = new Set<string>();
+      for (const v of values) for (const t of index?.get(v) ?? []) out.add(t);
+      return out;
+    };
+    // Each subgroup contributes ONE tag set (union of its values); the final
+    // allow-set is the INTERSECTION across subgroups. "falcon 9 from vandenberg
+    // 2021" = tags(Falcon9) ∩ tags(Vandenberg) ∩ tags(2021).
+    const subsets: Set<string>[] = [];
+    if (launches) subsets.push(new Set(launches)); // tags match directly (vocab-free)
+    if (vehicles) subsets.push(unionTags(idx?.vehicleTags, vehicles));
+    if (sites) subsets.push(unionTags(idx?.siteTags, sites));
+    if (years) subsets.push(unionTags(idx?.yearTags, years));
+    let tags = subsets[0];
+    for (let s = 1; s < subsets.length; s++) {
+      tags = new Set([...tags].filter((t) => subsets[s].has(t)));
+    }
+    patch.launchFilter = { mode: 'only', tags };
+  }
   return patch;
 }

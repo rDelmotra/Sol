@@ -21,6 +21,8 @@ function freshAllOnSlices(): QuerySlices {
     regimeFilters: allOn(REGIME_KEYS),
     countryFilter: { mode: 'all' },
     programFilter: { mode: 'all' },
+    launchFilter: { mode: 'all' },
+    ownerFilter: { mode: 'all' },
   };
 }
 
@@ -80,5 +82,45 @@ describe('reconcileFilterSlices', () => {
       typeFilters: { ...current.typeFilters },
     });
     assert.deepEqual(delta, {});
+  });
+
+  // ── G3: launchFilter + ownerFilter reference identity ──────────────────────
+
+  it('G3: new launchFilter emits a fresh set; equal re-emit → empty delta', () => {
+    const current = freshAllOnSlices();
+    const first = reconcileFilterSlices(current, {
+      launchFilter: { mode: 'only', tags: new Set(['2019-074']) },
+    });
+    assert.deepEqual(Object.keys(first), ['launchFilter']);
+    assert.deepEqual(first.launchFilter, { mode: 'only', tags: new Set(['2019-074']) });
+
+    current.launchFilter = { mode: 'only', tags: new Set(['2019-074']) };
+    assert.deepEqual(
+      reconcileFilterSlices(current, {
+        launchFilter: { mode: 'only', tags: new Set(['2019-074']) },
+      }),
+      {},
+    );
+  });
+
+  it('G3: ownerFilter change emits only that group as a new object', () => {
+    const current = freshAllOnSlices();
+    current.ownerFilter = { mode: 'only', codes: new Set(['SPXS']) };
+    const delta = reconcileFilterSlices(current, {
+      ownerFilter: { mode: 'only', codes: new Set(['SPXS', 'NASA']) },
+    });
+    assert.deepEqual(Object.keys(delta), ['ownerFilter']);
+    assert.notEqual(delta.ownerFilter, current.ownerFilter);
+    assert.deepEqual(delta.ownerFilter, { mode: 'only', codes: new Set(['SPXS', 'NASA']) });
+  });
+
+  it('G3: constrained launch/owner → empty patch restores fresh mode:all', () => {
+    const current = freshAllOnSlices();
+    current.launchFilter = { mode: 'only', tags: new Set(['2019-074']) };
+    current.ownerFilter = { mode: 'only', codes: new Set(['SPXS']) };
+    const delta = reconcileFilterSlices(current, {});
+    assert.deepEqual(Object.keys(delta).sort(), ['launchFilter', 'ownerFilter']);
+    assert.deepEqual(delta.launchFilter, { mode: 'all' });
+    assert.deepEqual(delta.ownerFilter, { mode: 'all' });
   });
 });

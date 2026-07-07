@@ -21,7 +21,15 @@ export type FacetGroup =
   | 'purpose'
   | 'regime'
   | 'country'
-  | 'program';
+  | 'program'
+  // ── G3 launch-graph facets ──────────────────────────────────────────────────
+  // vehicle/site/launch/launch_year all COMPILE DOWN to a launch-tag set in the
+  // executor (see launchFilter); owner is its own org-code set.
+  | 'vehicle'
+  | 'site'
+  | 'launch'
+  | 'launch_year'
+  | 'owner';
 
 /** One consumed span of the query → one interpretation chip. */
 export interface QueryMatch {
@@ -64,4 +72,8 @@ export interface QueryFilterPatch {
   regimeFilters?: Record<OrbitalRegime, boolean>;
   countryFilter?: { mode: 'only'; codes: Set<string> };
   programFilter?: { mode: 'only'; ids: Set<string> };
+  // G3: vehicle/site/launch/year facets resolve to a launch-tag allow-set;
+  // owner resolves to an org-code allow-set. Same union shapes as above.
+  launchFilter?: { mode: 'only'; tags: Set<string> };
+  ownerFilter?: { mode: 'only'; codes: Set<string> };
 }
