@@ -45,6 +45,7 @@ import {
   LaunchRecord,
 } from './gcat/launches.js';
 import { applyGraphInheritance } from './gcat/inherit.js';
+import { buildQueryVocab } from './query-vocab.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
@@ -65,6 +66,7 @@ const OUT_PROGRAMS = resolve(GEN_DIR, 'programs-summary.json');
 const OUT_REPORT = resolve(GEN_DIR, 'gcat-mapping-report.json');
 const OUT_LAUNCHES = resolve(GEN_DIR, 'launches.json');
 const OUT_ORGS = resolve(GEN_DIR, 'orgs.json');
+const OUT_VOCAB = resolve(GEN_DIR, 'query-vocab.json');
 
 const GCAT_CITATION = 'GCAT (J. McDowell, planet4589.org/space/gcat)';
 const UCS_SNAPSHOT = '2023-05-01';
@@ -316,6 +318,9 @@ function main(): void {
     if (o) referencedOrgs[code] = o;
   }
 
+  // G3: the client-side query tier's compact vocabulary (served via /api/query/vocab).
+  const queryVocab = buildQueryVocab(map.values(), orgs, referencedLaunches);
+
   const objects: Record<number, ObjectMetadata> = {};
   for (const [norad, rec] of map) objects[norad] = rec;
 
@@ -372,6 +377,11 @@ function main(): void {
     OUT_ORGS,
     JSON.stringify({ meta: meta(Object.keys(referencedOrgs).length), orgs: referencedOrgs }, slim),
   );
+  // Plain stringify — no slim: the launches tuple's nulls are positional data.
+  writeFileSync(
+    OUT_VOCAB,
+    JSON.stringify({ meta: meta(Object.keys(queryVocab.launches).length), ...queryVocab }),
+  );
 
   const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : '—');
   const reportCounts = (r: Record<string, number>) =>
@@ -394,6 +404,8 @@ function main(): void {
       `program ${finalAll.program} (${pct(finalAll.program, finalAll.total)})\n` +
       `Entities: ${Object.keys(referencedLaunches).length} launches → ${OUT_LAUNCHES}\n` +
       `          ${Object.keys(referencedOrgs).length} orgs → ${OUT_ORGS}\n` +
+      `Query vocab: ${Object.keys(queryVocab.launches).length} launches + ` +
+      `${Object.keys(queryVocab.orgs).length} in-orbit owner orgs → ${OUT_VOCAB}\n` +
       `Inheritance: owner-sector ${inheritance.ownerSector}  ` +
       `owner-org-name ${inheritance.ownerOrgName}  parent-walk ${inheritance.parentWalkFills}  ` +
       `launch-majority ${inheritance.launchMajorityFills}\n` +

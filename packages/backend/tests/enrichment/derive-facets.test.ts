@@ -93,4 +93,42 @@ describe('deriveInlineFacets', () => {
     assert.equal(m.purpose, 'other');
     assert.equal(m.program, undefined);
   });
+
+  // ── G3: launchTag + owner inline keys ──────────────────────────────────────
+
+  it('stamps launchTag + primary owner code (multi-valued, ?-stripped)', () => {
+    const m = record({ launchTag: '1998-067', gcat: { owner: 'RAKA/DASA?' } });
+    const f = deriveInlineFacets(m);
+    assert.equal(f.launchTag, '1998-067');
+    assert.equal(f.owner, 'RAKA');
+  });
+
+  it('omits both keys when the record has neither (and when no record)', () => {
+    const f = deriveInlineFacets(record({}));
+    assert.equal(f.launchTag, undefined);
+    assert.equal(f.owner, undefined);
+    const none = deriveInlineFacets(undefined, 'STARLINK-32001', true);
+    assert.equal(none.launchTag, undefined);
+    assert.equal(none.owner, undefined);
+  });
+
+  it('stamp survives the program early return (Starlink-class records)', () => {
+    const m = record({
+      program: 'starlink',
+      launchTag: '2019-074',
+      gcat: { owner: 'SPXS' },
+    });
+    const f = deriveInlineFacets(m, 'STARLINK-1007', true);
+    assert.equal(f.program, 'starlink');
+    assert.equal(f.launchTag, '2019-074');
+    assert.equal(f.owner, 'SPXS');
+  });
+
+  it('stamp survives the non-payload early return (debris/rocket bodies)', () => {
+    const m = record({ launchTag: '1999-025', gcat: { owner: 'PLA' } });
+    const f = deriveInlineFacets(m, 'FENGYUN 1C DEB', false);
+    assert.equal(f.program, undefined);
+    assert.equal(f.launchTag, '1999-025');
+    assert.equal(f.owner, 'PLA');
+  });
 });

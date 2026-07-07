@@ -96,6 +96,8 @@ function buildFromSpaceTrack(
       purpose:      facets.purpose,
       status:       facets.status,
       ...(facets.program ? { program: facets.program } : {}),
+      ...(facets.launchTag ? { launchTag: facets.launchTag } : {}),
+      ...(facets.owner ? { owner: facets.owner } : {}),
     });
   }
 
@@ -152,6 +154,8 @@ function buildFromCelesTrak(gpElements: CelesTrakGPElement[]): EnrichedTLEObject
       purpose:      facets.purpose,
       status:       facets.status,
       ...(facets.program ? { program: facets.program } : {}),
+      ...(facets.launchTag ? { launchTag: facets.launchTag } : {}),
+      ...(facets.owner ? { owner: facets.owner } : {}),
     });
   }
 

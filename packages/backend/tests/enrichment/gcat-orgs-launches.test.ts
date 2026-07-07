@@ -19,6 +19,7 @@ const ORGS = [
   'SPXS\tSPX\tUS\tO/LV\tB\t2002\t*\tSpaceX\tSpace Exploration Technologies\tHawthorne\t-118.32\t33.92\t0.01\t-\t-\tSpaceX\tSpaceX',
   'RVSN\tRVSN\tSU\tO\tD\t1959\t-\tRVSN\tRaketnye Voyska\tMoskva\t-\t-\t0.1\tMO\t-\t-\tRVSN',
   'TUG\tTUG\tAT\tO/PL\tA\t-\t-\tTU Graz\tTechnische Universitaet Graz\tGraz\t15.45\t47.06\t0.01\t-\t-\t-\tTU Graz',
+  'NASA\tNASA\tUS\tO\tC\t1958\t*\tNASA\tNASA\tWashington\t-77.02\t38.88\t0.01\t-\tNASA\tNASA\tNASA',
 ].join('\n');
 
 test('orgs: display-name pick order, AP skip, class fold, fields', () => {
@@ -35,6 +36,16 @@ test('orgs: display-name pick order, AP skip, class fold, fields', () => {
   assert.deepEqual(rvsn.sectors, ['military']);
   assert.equal(rvsn.parent, 'MO');
   assert.deepEqual(orgs.get('TUG')!.sectors, ['civil']);  // A → civil fold
+});
+
+test('orgs: aliases keep the name variants the display pick drops (G3)', () => {
+  const orgs = parseGcatOrgs(ORGS);
+  // SPXS: EName 'SpaceX' is the display; ShortName dedups into it; Name survives.
+  assert.deepEqual(orgs.get('SPXS')!.aliases, ['Space Exploration Technologies']);
+  // RVSN: ShortName is the display; the native-language Name survives as alias.
+  assert.deepEqual(orgs.get('RVSN')!.aliases, ['Raketnye Voyska']);
+  // NASA: every variant equals the display → no aliases key at all.
+  assert.equal(orgs.get('NASA')!.aliases, undefined);
 });
 
 // ── launches ──────────────────────────────────────────────────────────────────

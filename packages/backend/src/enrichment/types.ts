@@ -196,6 +196,12 @@ export interface InlineMetadataFacets {
   // Program membership (registry id). Optional + omitted when absent to keep
   // the hot /api/tle/all payload lean.
   program?: string;
+  // GCAT launch tag ("2019-074", pre-1963 "1957 ALP") — the launch/vehicle/site
+  // query facets' join key (G3). Omitted when the record has none.
+  launchTag?: string;
+  // Primary owner org code (first token of gcat.owner, '?' stripped) — the
+  // operator query facet (G3). Omitted when unknown.
+  owner?: string;
 }
 
 /** Fresh all-unknown join record — shared by the GCAT and UCS ingest passes. */

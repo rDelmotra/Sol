@@ -15,6 +15,7 @@ import { clasToSectors } from './vocab.js';
 export interface OrgRecord {
   code: string;
   name: string;               // display pick: EName || ShortEName || ShortName || Name
+  aliases?: string[];         // remaining name variants (search vocab, G3)
   stateCode: string | null;   // GCAT state code (canonicalize at use sites)
   cls: string | null;         // raw Class (B/D/C/A)
   sectors: Sector[];          // Class folded like psatcat Clas (A→civil)
@@ -43,9 +44,13 @@ export function parseGcatOrgs(text: string): Map<string, OrgRecord> {
     if (!row.Code) continue;
     const types = (row.Type ?? '').split('/').filter(Boolean);
     if (types.includes('AP')) continue;
+    const name = row.EName || row.ShortEName || row.ShortName || row.Name || row.Code;
+    const aliases = [...new Set([row.ShortEName, row.ShortName, row.Name].filter(Boolean))]
+      .filter((a) => a !== name);
     out.set(row.Code, {
       code: row.Code,
-      name: row.EName || row.ShortEName || row.ShortName || row.Name || row.Code,
+      name,
+      ...(aliases.length > 0 ? { aliases } : {}),
       stateCode: row.StateCode || null,
       cls: row.Class || null,
       sectors: clasToSectors(row.Class || null).sectors,

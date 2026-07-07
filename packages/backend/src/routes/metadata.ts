@@ -6,6 +6,7 @@ import {
   getOrg,
   getLaunchObjectIndex,
   primaryOwnerCode,
+  loadQueryVocabRaw,
 } from '../enrichment/store.js';
 import type { OrgRecord } from '../enrichment/gcat/orgs.js';
 
@@ -17,16 +18,18 @@ import type { OrgRecord } from '../enrichment/gcat/orgs.js';
 //   GET /api/catalog/decayed     — paginated decayed/deorbited browser rows
 //   GET /api/launch/:tag         — LaunchRecord + the noradIds it produced
 //   GET /api/org/:code           — OrgRecord
+//   GET /api/query/vocab         — search-vocab artifact (raw pass-through)
 //
-// Mounted at /api/metadata, /api/catalog, /api/launch, /api/org in index.ts.
-// Launch/org context is COMPOSED at request time from the boot-loaded entity
-// maps (launches.json / orgs.json) — the per-object artifact stays normalized.
+// Mounted at /api/metadata, /api/catalog, /api/launch, /api/org, /api/query in
+// index.ts. Launch/org context is COMPOSED at request time from the boot-loaded
+// entity maps (launches.json / orgs.json) — the per-object artifact stays normalized.
 // ============================================================
 
 export const metadataRouter = Router();
 export const catalogRouter = Router();
 export const launchRouter = Router();
 export const orgRouter = Router();
+export const queryRouter = Router();
 
 /** Slim org projection embedded in responses (full record via /api/org/:code). */
 function orgRef(code: string | null): { code: string; name: string; sectors: OrgRecord['sectors'] } | undefined {
@@ -92,6 +95,17 @@ orgRouter.get('/:code', (req: Request, res: Response) => {
   }
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.json(org);
+});
+
+// ── GET /api/query/vocab ──────────────────────────────────────────────────────
+queryRouter.get('/vocab', (_req: Request, res: Response) => {
+  const raw = loadQueryVocabRaw();
+  if (!raw) {
+    res.status(404).json({ error: 'Query vocab unavailable.' });
+    return;
+  }
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type('application/json').send(raw);
 });
 
 // ── GET /api/catalog/decayed?offset&limit&q ───────────────────────────────────

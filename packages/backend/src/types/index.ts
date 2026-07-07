@@ -153,6 +153,11 @@ export interface EnrichedTLEObject {
   // Program membership (programs.ts registry slug, e.g. 'starlink'). Omitted
   // when the object matches no program, keeping the hot payload lean.
   program?: string;
+  // GCAT launch tag ("2019-074") — the launch/vehicle/site query facets' join
+  // key (G3). Omitted when the enrichment record has none.
+  launchTag?: string;
+  // Primary owner org code ("SPXS") — the operator query facet (G3).
+  owner?: string;
 }
 
 // Written to data/version.json

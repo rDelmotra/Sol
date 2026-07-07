@@ -8,7 +8,13 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import tleRouter from './routes/tle.js';
 import dsoRouter, { summarizeDsoHealth } from './routes/dso.js';
-import { metadataRouter, catalogRouter, launchRouter, orgRouter } from './routes/metadata.js';
+import {
+  metadataRouter,
+  catalogRouter,
+  launchRouter,
+  orgRouter,
+  queryRouter,
+} from './routes/metadata.js';
 import { isCacheFresh, readVersion, readCache } from './cache/file-cache.js';
 import { primeTlePayload } from './cache/tle-payload-cache.js';
 import { loadEnrichment, getDecayedCatalog } from './enrichment/store.js';
@@ -80,6 +86,7 @@ app.use('/api/metadata', metadataRouter);
 app.use('/api/catalog', catalogRouter);
 app.use('/api/launch', launchRouter);
 app.use('/api/org', orgRouter);
+app.use('/api/query', queryRouter);
 // Optional history routes — 503 cleanly when DATABASE_URL is unset, so mounting
 // unconditionally is safe.
 app.use('/api/history', historyRouter);

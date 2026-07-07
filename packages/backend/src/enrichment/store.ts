@@ -34,6 +34,7 @@ const METADATA_PATH = resolve(DATA_DIR, 'metadata-enrichment.json');
 const DECAYED_PATH = resolve(DATA_DIR, 'decayed-catalog.json');
 const LAUNCHES_PATH = resolve(DATA_DIR, 'launches.json');
 const ORGS_PATH = resolve(DATA_DIR, 'orgs.json');
+const QUERY_VOCAB_PATH = resolve(DATA_DIR, 'query-vocab.json');
 
 let metadataCache: Map<number, ObjectMetadata> | null = null;
 let decayedCache: DecayedCatalogRow[] | null = null;
@@ -102,6 +103,13 @@ export function deriveInlineFacets(
     purpose: m?.purpose ?? 'other',
     status: m?.orbitalStatus ?? 'unknown',
   };
+  // G3 keys — stamped BEFORE the early returns below: the program return skips
+  // ~15k program objects (every Starlink) and the payload gate skips all
+  // debris/rocket bodies, which are exactly the objects launch/owner queries
+  // must reach. Record-only — no registry fallback exists for these.
+  if (m?.launchTag) facets.launchTag = m.launchTag;
+  const owner = m ? primaryOwnerCode(m) : null;
+  if (owner) facets.owner = owner;
   if (m?.program) {
     facets.program = m.program;
     return facets;
@@ -164,6 +172,23 @@ export function loadOrgs(): Map<string, OrgRecord> {
 
 export function getLaunch(tag: string): LaunchRecord | undefined {
   return loadLaunches().get(tag);
+}
+
+let queryVocabRawCache: string | null | undefined;
+
+/**
+ * Raw query-vocab.json string for the pass-through /api/query/vocab route —
+ * never parsed on the request path (~330 KB). Lazy + cached; null when missing.
+ */
+export function loadQueryVocabRaw(): string | null {
+  if (queryVocabRawCache !== undefined) return queryVocabRawCache;
+  try {
+    queryVocabRawCache = readFileSync(QUERY_VOCAB_PATH, 'utf8');
+  } catch (err) {
+    logger.warn(`Query vocab unavailable (${(err as Error).message}).`);
+    queryVocabRawCache = null;
+  }
+  return queryVocabRawCache;
 }
 
 export function getOrg(code: string): OrgRecord | undefined {
