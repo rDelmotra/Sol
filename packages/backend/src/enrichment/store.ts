@@ -12,6 +12,7 @@
 // ============================================================
 
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import type {
@@ -30,7 +31,9 @@ export { primaryOwnerCode };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = resolve(__dirname, '../../enrichment-data');
-const METADATA_PATH = resolve(DATA_DIR, 'metadata-enrichment.json');
+// Committed GZIPPED (~2.7 MB vs ~52 MB) to stay under GitHub's file limits;
+// gunzipped once here at boot. See build-enrichment.ts.
+const METADATA_PATH = resolve(DATA_DIR, 'metadata-enrichment.json.gz');
 const DECAYED_PATH = resolve(DATA_DIR, 'decayed-catalog.json');
 const LAUNCHES_PATH = resolve(DATA_DIR, 'launches.json');
 const ORGS_PATH = resolve(DATA_DIR, 'orgs.json');
@@ -48,8 +51,10 @@ export function loadEnrichment(): Map<number, ObjectMetadata> {
 
   const map = new Map<number, ObjectMetadata>();
   try {
-    // { meta, objects } envelope (G1+); tolerate the legacy flat map too.
-    const parsed = JSON.parse(readFileSync(METADATA_PATH, 'utf8')) as {
+    // Gzipped on disk (see METADATA_PATH) — gunzip then parse. { meta, objects }
+    // envelope (G1+); tolerate the legacy flat map too.
+    const json = gunzipSync(readFileSync(METADATA_PATH)).toString('utf8');
+    const parsed = JSON.parse(json) as {
       meta?: EnrichmentArtifactMeta;
       objects?: Record<string, ObjectMetadata>;
     } & Record<string, ObjectMetadata>;

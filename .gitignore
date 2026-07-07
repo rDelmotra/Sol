@@ -56,3 +56,5 @@ yarn-debug.log*
 pnpm-debug.log*
 *.md
 my_plans
+# Large gzipped build artifact is committed as .json.gz; never the plain JSON
+packages/backend/enrichment-data/metadata-enrichment.json

@@ -4,7 +4,7 @@
 // Reads the two static snapshots (the full GCAT satcat+psatcat + the UCS
 // Satellite Database), normalizes each to ObjectMetadata, unions them keyed by
 // NORAD ID, and writes the committed runtime artifacts:
-//   enrichment-data/metadata-enrichment.json  — { meta, objects } full join
+//   enrichment-data/metadata-enrichment.json.gz — { meta, objects } full join (gzipped)
 //   enrichment-data/decayed-catalog.json      — { meta, rows } decayed browser
 //   enrichment-data/gcat-mapping-report.json  — every unmapped code/collision
 //   enrichment-data/programs-summary.json     — registry roll-up
@@ -23,6 +23,7 @@
 // ============================================================
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import {
@@ -60,7 +61,9 @@ const UCS_TXT = resolve(REPO_ROOT, 'my_plans/UCS-Satellite-Database 5-1-2023 (te
 // Committed artifact dir — anchored at the backend package root (../../enrichment-data),
 // resolving the same under src (tsx) and dist (node), mirroring how file-cache.ts anchors data/.
 const GEN_DIR = resolve(__dirname, '../../enrichment-data');
-const OUT_JSON = resolve(GEN_DIR, 'metadata-enrichment.json');
+// The full join is committed GZIPPED (~52 MB → ~2.7 MB) to stay well under
+// GitHub's file-size limits; store.ts gunzips it at boot. Backend-only artifact.
+const OUT_JSON_GZ = resolve(GEN_DIR, 'metadata-enrichment.json.gz');
 const OUT_DECAYED = resolve(GEN_DIR, 'decayed-catalog.json');
 const OUT_PROGRAMS = resolve(GEN_DIR, 'programs-summary.json');
 const OUT_REPORT = resolve(GEN_DIR, 'gcat-mapping-report.json');
@@ -362,7 +365,10 @@ function main(): void {
   };
 
   mkdirSync(GEN_DIR, { recursive: true });
-  writeFileSync(OUT_JSON, JSON.stringify({ meta: meta(map.size), objects }, slim));
+  writeFileSync(
+    OUT_JSON_GZ,
+    gzipSync(JSON.stringify({ meta: meta(map.size), objects }, slim), { level: 9 }),
+  );
   writeFileSync(OUT_DECAYED, JSON.stringify({ meta: meta(decayed.length), rows: decayed }, slim));
   writeFileSync(OUT_PROGRAMS, JSON.stringify(programsSummary, null, 2));
   writeFileSync(OUT_REPORT, JSON.stringify(mappingReport, null, 2));
@@ -390,7 +396,7 @@ function main(): void {
   // eslint-disable-next-line no-console
   console.log(
     `GCAT snapshot: ${snapshotDate}\n` +
-      `Enrichment built: ${map.size} metadata records → ${OUT_JSON}\n` +
+      `Enrichment built: ${map.size} metadata records → ${OUT_JSON_GZ}\n` +
       `Decayed catalog: ${decayed.length} rows → ${OUT_DECAYED}\n` +
       `Live in-orbit payloads (${final.total}):\n` +
       `  sectors  ${final.sectors} (${pct(final.sectors, final.total)})  ` +
