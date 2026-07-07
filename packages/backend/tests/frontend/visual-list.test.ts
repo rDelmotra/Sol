@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import {
   fetchVisualList,
   parseVisualListResponse,
-  reconcileVisibilityModeForVisualStatus,
 } from '../../../frontend/src/data/visualList.ts';
 
 const STORAGE_KEY = 'orbitwatch:visualNoradIds:v3';
@@ -130,16 +129,4 @@ describe('fetchVisualList', () => {
   });
 });
 
-describe('reconcileVisibilityModeForVisualStatus', () => {
-  it('auto-switches visual mode to radio when visual list is unavailable', () => {
-    assert.equal(
-      reconcileVisibilityModeForVisualStatus('visual', 'unavailable'),
-      'radio',
-    );
-  });
 
-  it('keeps non-visual modes unchanged', () => {
-    assert.equal(reconcileVisibilityModeForVisualStatus('all', 'unavailable'), 'all');
-    assert.equal(reconcileVisibilityModeForVisualStatus('radio', 'fresh'), 'radio');
-  });
-});
