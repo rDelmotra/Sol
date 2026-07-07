@@ -259,9 +259,11 @@ export interface DecayedCatalogRow {
 export interface EnrichmentArtifactMeta {
   source: string;         // "GCAT (J. McDowell, planet4589.org/space/gcat)"
   license: string;        // "CC-BY 4.0"
-  gcatSnapshot: string | null;  // from the file's "# Updated …" line
+  gcatSnapshot: string | null;  // from the file's "# Updated …" line — the real provenance
   ucsSnapshot: string;    // "2023-05-01"
-  builtAt: string;        // ISO timestamp of the build run
+  // NOTE: no wall-clock build timestamp on purpose — it would make every rebuild
+  // of unchanged data produce different bytes (→ pointless git churn on the
+  // gzipped artifact). gcatSnapshot/ucsSnapshot record which data this is from.
   recordCount: number;
 }
 

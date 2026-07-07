@@ -333,12 +333,13 @@ function main(): void {
   const slim = (_key: string, value: unknown) =>
     value === null || (Array.isArray(value) && value.length === 0) ? undefined : value;
 
+  // Deterministic meta — NO wall-clock timestamp, so rebuilding the same snapshot
+  // yields byte-identical artifacts (gzip is deterministic) and git sees no change.
   const meta = (recordCount: number): EnrichmentArtifactMeta => ({
     source: GCAT_CITATION,
     license: 'CC-BY 4.0',
     gcatSnapshot: snapshotDate,
     ucsSnapshot: UCS_SNAPSHOT,
-    builtAt: new Date().toISOString(),
     recordCount,
   });
 
