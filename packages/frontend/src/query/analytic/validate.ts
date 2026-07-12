@@ -175,13 +175,21 @@ function checkExpr(ctx: Ctx, e: unknown, path: string, depth: number): FieldKind
       }
       return 'number';
     }
-    case '>': case '>=': case '<': case '<=': case '==': case '!=': {
+    case '>': case '>=': case '<': case '<=': case '==': case '!=': case 'like': {
       if (!Array.isArray(e.args) || e.args.length !== 2) {
         return issue(ctx, 'V-SHAPE', path, `'${e.op}' needs exactly 2 args`);
       }
       const a = checkExpr(ctx, e.args[0], `${path}.args[0]`, depth + 1);
       const b = checkExpr(ctx, e.args[1], `${path}.args[1]`, depth + 1);
       if (a === null || b === null) return null;
+      
+      if (e.op === 'like') {
+        if (a !== 'string' || b !== 'string') {
+          return issue(ctx, 'V-TYPE', path, `'like' needs string operands, got ${a} and ${b}`);
+        }
+        return 'bool';
+      }
+
       const equality = e.op === '==' || e.op === '!=';
       if (equality) {
         if (!equalityCompatible(a, b)) {

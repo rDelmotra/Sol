@@ -8,6 +8,7 @@ import {
   primaryOwnerCode,
   loadQueryVocabRaw,
 } from '../enrichment/store.js';
+import { compileNlToIr } from '../services/llm-compiler.js';
 import type { OrgRecord } from '../enrichment/gcat/orgs.js';
 
 // ============================================================
@@ -106,6 +107,22 @@ queryRouter.get('/vocab', (_req: Request, res: Response) => {
   }
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.type('application/json').send(raw);
+});
+
+// ── POST /api/query/compile ───────────────────────────────────────────────────
+queryRouter.post('/compile', async (req: Request, res: Response) => {
+  try {
+    const { query } = req.body;
+    if (typeof query !== 'string' || !query.trim()) {
+      res.status(400).json({ error: 'Missing or empty query.' });
+      return;
+    }
+    const program = await compileNlToIr(query.trim());
+    res.json(program);
+  } catch (err) {
+    console.error('LLM Compile Error:', err);
+    res.status(500).json({ error: 'Failed to compile natural language query.' });
+  }
 });
 
 // ── GET /api/catalog/decayed?offset&limit&q ───────────────────────────────────

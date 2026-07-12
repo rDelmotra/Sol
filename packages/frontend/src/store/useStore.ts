@@ -167,6 +167,7 @@ interface AppState {
   launchFilter: LaunchFilter;   // G3 — query-only
   ownerFilter: OwnerFilter;     // G3 — query-only
   analyticFilter: AnalyticFilter; // P1 — set only by analytic program runs
+  isCompilingQuery: boolean;
   facetCounts: FacetCounts;
   visibleFacetCounts: FacetCounts;
 
@@ -212,6 +213,7 @@ interface AppState {
   /** Apply (or clear, with null) an analytic program's noradId allow-set. Semantic
    *  equality is checked inline so an identical re-run never triggers a recompute. */
   setAnalyticFilter: (ids: Set<number> | null) => void;
+  setIsCompilingQuery: (isCompiling: boolean) => void;
   setVisibleFacetCounts: (counts: FacetCounts) => void;
   setCatalogData: (data: EnrichedTLEObject[]) => void;
   setSelectByIndex: (fn: (index: number) => void) => void;
@@ -370,6 +372,7 @@ export const useStore = create<AppState>((set, get) => ({
   launchFilter: { mode: 'all' },
   ownerFilter: { mode: 'all' },
   analyticFilter: { mode: 'all' },
+  isCompilingQuery: false,
   facetCounts: emptyFacetCounts(),
   visibleFacetCounts: emptyFacetCounts(),
 
@@ -456,6 +459,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
     set({ analyticFilter: { mode: 'only', ids: new Set(ids) } });
   },
+  setIsCompilingQuery: (isCompiling) => set({ isCompilingQuery: isCompiling }),
   setVisibleFacetCounts: (counts) =>
     // The satellite render pass counts only TLE objects, so its type.deep_space is
     // always 0. DSOs (the only deep_space objects, owned by a separate layer) are

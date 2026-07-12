@@ -353,7 +353,7 @@ class Runner {
           if (e.op === '*') return a * b;
           return b === 0 ? null : a / b;
         }
-        case '>': case '>=': case '<': case '<=': case '==': case '!=': {
+        case '>': case '>=': case '<': case '<=': case '==': case '!=': case 'like': {
           const a = this.evalObj(e.args[0], rel, pos, tMs);
           const b = this.evalObj(e.args[1], rel, pos, tMs);
           return compareOp(e.op, a, b);
@@ -420,10 +420,10 @@ class Runner {
     if ('op' in e) {
       switch (e.op) {
         case '+': case '-': case '*': case '/': case '>': case '>=': case '<': case '<=':
-        case '==': case '!=': {
+        case '==': case '!=': case 'like': {
           const a = this.evalGrp(e.args[0], row);
           const b = this.evalGrp(e.args[1], row);
-          if (e.op === '==' || e.op === '!=' || e.op === '>' || e.op === '>=' || e.op === '<' || e.op === '<=') {
+          if (e.op === '==' || e.op === '!=' || e.op === '>' || e.op === '>=' || e.op === '<' || e.op === '<=' || e.op === 'like') {
             return compareOp(e.op, a, b);
           }
           if (typeof a !== 'number' || typeof b !== 'number') return null;
@@ -560,7 +560,7 @@ class Runner {
 // ── Value comparison (shared by cmp ops and sort) ─────────────────────────────
 
 function compareOp(
-  op: '>' | '>=' | '<' | '<=' | '==' | '!=',
+  op: '>' | '>=' | '<' | '<=' | '==' | '!=' | 'like',
   a: FieldValue,
   b: FieldValue,
 ): boolean | null {
@@ -574,6 +574,7 @@ function compareOp(
     return a <= b;
   }
   if (typeof a === 'string' && typeof b === 'string') {
+    if (op === 'like') return a.toLowerCase().includes(b.toLowerCase());
     // Dates are ISO strings — lexicographic order is chronological.
     if (op === '>') return a > b;
     if (op === '>=') return a >= b;

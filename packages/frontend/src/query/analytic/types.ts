@@ -85,7 +85,7 @@ export type Agg =
 // ── Expressions ───────────────────────────────────────────────────────────────
 
 export type ArithOp = '+' | '-' | '*' | '/';
-export type CmpOp = '>' | '>=' | '<' | '<=' | '==' | '!=';
+export type CmpOp = '>' | '>=' | '<' | '<=' | '==' | '!=' | 'like';
 
 /** Observer for the parameterized physics functions. 'user' = store location. */
 export type ObserverRef = 'user' | { latDeg: number; lonDeg: number; altKm?: number };

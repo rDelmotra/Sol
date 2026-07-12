@@ -193,35 +193,48 @@ export class SatellitesLayer implements Layer {
     // an 'ids' result becomes the globe allow-set. __analytic(null) clears it.
     // The P2 compile endpoint replaces this as the user-facing entry; the hook
     // stays as the engineer's REPL. Removed in dispose().
-    if (import.meta.env.DEV) {
-      (window as unknown as Record<string, unknown>).__analytic = (program: unknown) => {
-        const store = useStore.getState();
-        if (program == null) {
-          store.setAnalyticFilter(null);
-          return { cleared: true };
+    (window as unknown as Record<string, unknown>).__analytic = (program: unknown) => {
+      const store = useStore.getState();
+      if (program == null) {
+        store.setAnalyticFilter(null);
+        return { cleared: true };
+      }
+      const nowMs = simClock.now();
+      const v = validateProgram(program, { nowMs });
+      if (!v.ok) {
+        console.error('[analytic] Validation failed:', v.issues);
+        return { issues: v.issues };
+      }
+      const src = createLiveAnalyticSource({
+        catalog: this.catalog,
+        getBuffers: () => this.latestBuffers,
+        getVocab: () => getRawQueryVocab(),
+        getVisualNoradIds: () => callbacks.getVisualNoradIds(),
+      });
+      const obs = store.observerLocation;
+      const out = execute(v.program, { live: src }, {
+        nowMs,
+        observer: obs ? { latDeg: obs.lat, lonDeg: obs.lon, altKm: obs.alt } : null,
+      });
+      if (!out.ok) return { error: out.error };
+      
+      console.log('[analytic] window.__analytic executed successfully. Result:', out.result);
+      if (out.result.shape === 'ids' && out.result.ids) {
+        store.setAnalyticFilter(new Set(out.result.ids));
+      } else if (out.result.shape === 'table' || out.result.shape === 'object') {
+        const ids = new Set<number>();
+        if (out.result.rows) {
+          for (const row of out.result.rows) {
+            if (typeof row.noradId === 'number') ids.add(row.noradId);
+          }
         }
-        const nowMs = simClock.now();
-        const v = validateProgram(program, { nowMs });
-        if (!v.ok) return { issues: v.issues };
-        const src = createLiveAnalyticSource({
-          catalog: this.catalog,
-          getBuffers: () => this.latestBuffers,
-          getVocab: () => getRawQueryVocab(),
-          getVisualNoradIds: () => callbacks.getVisualNoradIds(),
-        });
-        const obs = store.observerLocation;
-        const out = execute(v.program, { live: src }, {
-          nowMs,
-          observer: obs ? { latDeg: obs.lat, lonDeg: obs.lon, altKm: obs.alt } : null,
-        });
-        if (!out.ok) return { error: out.error };
-        if (out.result.shape === 'ids' && out.result.ids) {
-          store.setAnalyticFilter(new Set(out.result.ids));
-        }
-        return out.result;
-      };
-      console.info('[analytic] window.__analytic(program) ready — null clears the allow-set');
-    }
+        store.setAnalyticFilter(ids.size > 0 ? ids : null);
+      } else {
+        store.setAnalyticFilter(null);
+      }
+      return out.result;
+    };
+    console.info('[analytic] window.__analytic(program) ready — null clears the allow-set');
   }
 
   /**

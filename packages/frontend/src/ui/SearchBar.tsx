@@ -6,6 +6,7 @@ import { parseQuery } from '../query/parser';
 import { irToFilterPatch } from '../query/executor';
 import { ensureQueryVocab } from '../query/vocab';
 import { EMPTY_IR, type QueryIR } from '../query/types';
+import { compileNaturalLanguageQuery } from '../query/analytic/client';
 
 const CATEGORY_COLORS: Record<ObjectCategory, string> = {
   active_satellite: '#4CAF50',
@@ -28,6 +29,8 @@ export function SearchBar() {
   const setInjectSearchQuery = useStore((s) => s.setInjectSearchQuery);
   const visibleFacetCounts = useStore((s) => s.visibleFacetCounts);
   const facetCounts = useStore((s) => s.facetCounts);
+  const isCompilingQuery = useStore((s) => s.isCompilingQuery);
+  const setIsCompilingQuery = useStore((s) => s.setIsCompilingQuery);
 
   const [query, setQuery] = useState('');
   const [ir, setIr] = useState<QueryIR>(EMPTY_IR);
@@ -119,19 +122,53 @@ export function SearchBar() {
     [selectByIndex, resetQueryState],
   );
 
+  const askAi = useCallback(async () => {
+    const rawQuery = query.trim();
+    if (!rawQuery) return;
+    setIsCompilingQuery(true);
+    setQuery('');
+    setIsOpen(false);
+    inputRef.current?.blur();
+    
+    // Clear previous filters/results before running the new query
+    if (typeof (window as any).__analytic === 'function') {
+      (window as any).__analytic(null);
+    }
+    
+    try {
+      const program = await compileNaturalLanguageQuery(rawQuery);
+      console.log(`[analytic] Compiled program for "${rawQuery}":\n\n__analytic(${JSON.stringify(program, null, 2)});`);
+      if (typeof (window as any).__analytic === 'function') {
+        (window as any).__analytic(program);
+      } else {
+        console.warn('__analytic is not defined on window');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to compile query: ' + (err as Error).message);
+    } finally {
+      setIsCompilingQuery(false);
+    }
+  }, [query, setIsCompilingQuery]);
+
   // Keyboard navigation
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setHighlightedIndex((i) => Math.min(i + 1, results.length - 1));
+        const maxIdx = query.trim() ? results.length : results.length - 1;
+        setHighlightedIndex((i) => Math.min(i + 1, maxIdx));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setHighlightedIndex((i) => Math.max(i - 1, 0));
-      } else if (e.key === 'Enter' && results.length > 0) {
+      } else if (e.key === 'Enter') {
         e.preventDefault();
-        const hit = results[highlightedIndex];
-        if (hit?.refIndex != null) selectResult(hit.refIndex);
+        if (highlightedIndex === results.length && query.trim()) {
+          void askAi();
+        } else if (results.length > 0 && highlightedIndex < results.length) {
+          const hit = results[highlightedIndex];
+          if (hit?.refIndex != null) selectResult(hit.refIndex);
+        }
       } else if (e.key === 'Escape') {
         setQuery('');
         resetQueryState();
@@ -139,7 +176,7 @@ export function SearchBar() {
         inputRef.current?.blur();
       }
     },
-    [results, highlightedIndex, selectResult, resetQueryState],
+    [results, highlightedIndex, selectResult, resetQueryState, query, askAi],
   );
 
   // Unmount / hot-reload safety: never strand a collapsed swarm.
@@ -210,7 +247,7 @@ export function SearchBar() {
 
   if (loadingPhase !== 'ready') return null;
 
-  const showDropdown = isOpen && results.length > 0;
+  const showDropdown = isOpen && (results.length > 0 || query.trim() !== '');
   const showChips = ir.matches.length > 0 && query.trim() !== '';
   const visibleTotal = Object.values(visibleFacetCounts.type).reduce((a, b) => a + b, 0);
   const catalogTotal = Object.values(facetCounts.type).reduce((a, b) => a + b, 0);
@@ -228,12 +265,13 @@ export function SearchBar() {
         <input
           ref={inputRef}
           type="text"
-          placeholder="Search satellites...  (/)"
+          placeholder={isCompilingQuery ? "Asking AI..." : "Search satellites...  (/)"}
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           onFocus={() => setIsOpen(true)}
           onKeyDown={onKeyDown}
-          style={dynamicInputStyle}
+          style={{ ...dynamicInputStyle, opacity: isCompilingQuery ? 0.5 : 1.0 }}
+          disabled={isCompilingQuery}
         />
       </div>
       {showChips && (
@@ -295,6 +333,24 @@ export function SearchBar() {
               </div>
             );
           })}
+          {query.trim() !== '' && (
+             <div
+               style={{
+                 ...resultItemStyle,
+                 background: highlightedIndex === results.length ? 'rgba(255,255,255,0.08)' : 'transparent',
+                 borderTop: results.length > 0 ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                 color: '#bb86fc'
+               }}
+               onMouseEnter={() => setHighlightedIndex(results.length)}
+               onMouseDown={(e) => {
+                 e.preventDefault();
+                 void askAi();
+               }}
+             >
+                <span style={{ marginRight: 8 }}>🤖</span>
+                <span style={{ flex: 1 }}>Ask AI: "{query.trim()}"</span>
+             </div>
+          )}
         </div>
       )}
     </div>
