@@ -32,9 +32,17 @@ export interface VocabIndexes {
 }
 
 let indexes: VocabIndexes | null = null;
+// Raw vocab retained for consumers that need per-tag/per-code values rather than
+// inverted indexes (the analytic live source's dotted launch.*/owner.* fields).
+let rawVocab: QueryVocab | null = null;
 
 export function getVocabIndexes(): VocabIndexes | null {
   return indexes;
+}
+
+/** The raw installed vocab (launch tag → [family, site, agencies]; org code → {n,a,p}). */
+export function getRawQueryVocab(): QueryVocab | null {
+  return rawVocab;
 }
 
 /** True once the vocab has been fetched + installed (gates the year parse rule). */
@@ -149,6 +157,7 @@ function preferLabel(labels: Map<string, string>, key: string, name: string): vo
  * centers via the parent tree) return the full fleet.
  */
 export function installQueryVocab(vocab: QueryVocab): void {
+  rawVocab = vocab;
   const built = buildVocabIndexes(vocab);
   const ownerSet = new Set(vocab.owners);
 
@@ -251,5 +260,6 @@ export function ensureQueryVocab(): Promise<void> {
 /** Test-only: drop the installed indexes + in-flight promise. */
 export function resetQueryVocabForTests(): void {
   indexes = null;
+  rawVocab = null;
   fetchPromise = null;
 }

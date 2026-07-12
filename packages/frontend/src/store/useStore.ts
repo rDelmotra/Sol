@@ -69,6 +69,11 @@ export type LaunchFilter = { mode: 'all' } | { mode: 'only'; tags: Set<string> }
  *  of GCAT org codes — the compiled target of the operator facet. */
 export type OwnerFilter = { mode: 'all' } | { mode: 'only'; codes: Set<string> };
 
+/** Analytic result filter (P1): every object, or only the noradIds an Analytic IR
+ *  program returned. Set via setAnalyticFilter, NOT the query-patch reconcile path —
+ *  programs run once per ask, so there is no keystroke churn to dedupe. */
+export type AnalyticFilter = { mode: 'all' } | { mode: 'only'; ids: Set<number> };
+
 /**
  * The slice of state the satellite render-side filter pass reads. The full store
  * state structurally satisfies this, so callers pass `useStore.getState()` directly.
@@ -83,6 +88,7 @@ export interface SatelliteFilterState {
   regimeFilters: Record<OrbitalRegime, boolean>;
   launchFilter: LaunchFilter;   // G3
   ownerFilter: OwnerFilter;     // G3
+  analyticFilter: AnalyticFilter; // P1 — analytic program allow-set
 }
 
 const ALL_TYPE_ON: Record<CatalogType, boolean> = {
@@ -160,6 +166,7 @@ interface AppState {
   programFilter: ProgramFilter;
   launchFilter: LaunchFilter;   // G3 — query-only
   ownerFilter: OwnerFilter;     // G3 — query-only
+  analyticFilter: AnalyticFilter; // P1 — set only by analytic program runs
   facetCounts: FacetCounts;
   visibleFacetCounts: FacetCounts;
 
@@ -202,6 +209,9 @@ interface AppState {
   applyQueryFilters: (patch: QueryFilterPatch) => void;
   /** Restore all query-controlled slices to all-on / mode:'all'. */
   clearQueryFilters: () => void;
+  /** Apply (or clear, with null) an analytic program's noradId allow-set. Semantic
+   *  equality is checked inline so an identical re-run never triggers a recompute. */
+  setAnalyticFilter: (ids: Set<number> | null) => void;
   setVisibleFacetCounts: (counts: FacetCounts) => void;
   setCatalogData: (data: EnrichedTLEObject[]) => void;
   setSelectByIndex: (fn: (index: number) => void) => void;
@@ -359,6 +369,7 @@ export const useStore = create<AppState>((set, get) => ({
   programFilter: { mode: 'all' },
   launchFilter: { mode: 'all' },
   ownerFilter: { mode: 'all' },
+  analyticFilter: { mode: 'all' },
   facetCounts: emptyFacetCounts(),
   visibleFacetCounts: emptyFacetCounts(),
 
@@ -430,6 +441,21 @@ export const useStore = create<AppState>((set, get) => ({
     if (Object.keys(delta).length > 0) set(delta);
   },
   clearQueryFilters: () => get().applyQueryFilters({}),
+  setAnalyticFilter: (ids) => {
+    const cur = get().analyticFilter;
+    if (ids === null) {
+      if (cur.mode !== 'all') set({ analyticFilter: { mode: 'all' } });
+      return;
+    }
+    if (cur.mode === 'only' && cur.ids.size === ids.size) {
+      let same = true;
+      for (const id of ids) {
+        if (!cur.ids.has(id)) { same = false; break; }
+      }
+      if (same) return; // reference preserved — no renderer recompute
+    }
+    set({ analyticFilter: { mode: 'only', ids: new Set(ids) } });
+  },
   setVisibleFacetCounts: (counts) =>
     // The satellite render pass counts only TLE objects, so its type.deep_space is
     // always 0. DSOs (the only deep_space objects, owned by a separate layer) are
