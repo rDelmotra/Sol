@@ -6,7 +6,7 @@
 // (data/types.ts); the full ObjectMetadata is fetched lazily from
 // /api/metadata/:noradId for the InfoCard "Specifications" section (Phase C).
 //
-// See my_plans/metadata_enrichment.md.
+// See my_plans/old/metadata_enrichment.md.
 // ============================================================
 
 export type Sector = 'commercial' | 'government' | 'military' | 'civil';

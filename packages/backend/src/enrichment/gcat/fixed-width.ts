@@ -16,7 +16,7 @@
 // shift between snapshots as name widths change, so they are NEVER hardcoded.
 // Field i spans [offset_i, offset_{i+1}); the last field runs to end-of-line.
 //
-// Cell conventions (see my_plans/gcat_ingestion_architecture.md §1):
+// Cell conventions (see my_plans/architecture.audit.reports/gcat_ingestion_architecture.md §1):
 //   '-' or ''      → missing
 //   trailing '?'   → uncertainty flag, INSIDE the cell ("2000  ?", "GSFC?")
 //   vague dates    → "1998 Nov 20 0649:47" with varying precision; kept raw

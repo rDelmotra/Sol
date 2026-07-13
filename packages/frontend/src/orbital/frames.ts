@@ -13,7 +13,7 @@ import * as THREE from 'three';
  * This is purely a rendering concern: the SGP4 / DSO workers stay frame-agnostic and
  * emit raw TEME (see src/workers/sgp4.worker.ts) — the swap happens here, on the
  * render side, so there is a single place to read or change the convention.
- * See my_plans/reference/02_COORDINATES_AND_TIME.txt.
+ * See my_plans/webgl takram reference/02_COORDINATES_AND_TIME.txt.
  */
 
 /** Swap a source-frame (TEME/ECI/ECEF) vector into a new scene-frame Vector3. */

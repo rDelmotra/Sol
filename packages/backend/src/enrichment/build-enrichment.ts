@@ -18,8 +18,8 @@
 //
 // Output lands in packages/backend/enrichment-data/ (committed, NOT the gitignored
 // runtime data/ dir) so it ships to prod and the loader resolves it identically
-// under tsx (dev) and node dist (prod). See my_plans/metadata_enrichment.md §4
-// and my_plans/gcat_ingestion_architecture.md.
+// under tsx (dev) and node dist (prod). See my_plans/old/metadata_enrichment.md §4
+// and my_plans/architecture.audit.reports/gcat_ingestion_architecture.md.
 // ============================================================
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';

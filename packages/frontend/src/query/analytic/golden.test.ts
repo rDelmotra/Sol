@@ -1,7 +1,7 @@
 // ============================================================
 // Analytic IR v1 — golden corpus (P0 paper-validation, now executable).
 //
-// Valid programs: hand-compilations of my_plans/perceptor_question_corpus.md
+// Valid programs: hand-compilations of my_plans/marvin/perceptor_question_corpus.md
 // questions (spec §10 + the rest of the v1-scope A–I classes) — every one
 // must pass validation. Invalid programs: J-class refusals and cap/type
 // violations — each must fail with the EXACT error code the repair loop

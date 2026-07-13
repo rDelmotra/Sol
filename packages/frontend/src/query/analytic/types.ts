@@ -1,5 +1,5 @@
 // ============================================================
-// Analytic IR v1 — program types (spec: my_plans/perceptor_ir_v1.md §1–§7).
+// Analytic IR v1 — program types (spec: my_plans/marvin/perceptor_ir_v1.md §1–§7).
 //
 // A program is a JSON logical query plan: pure data, schema-validatable,
 // cacheable by hash, engine-neutral. Any compiler may emit it (tier-0 local

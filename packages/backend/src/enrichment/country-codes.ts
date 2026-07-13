@@ -8,7 +8,7 @@
 //
 // The starter table seeds the top spacefaring entities; the long tail falls
 // back to the raw code via resolveCountry()/displayCountry(). Finish the tail
-// before the country filter ships. See my_plans/metadata_enrichment.md §3.
+// before the country filter ships. See my_plans/old/metadata_enrichment.md §3.
 // ============================================================
 
 export interface CountryDisplay {
