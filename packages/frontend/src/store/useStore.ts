@@ -9,6 +9,7 @@ import type { DsoLabelPosition } from '../engine/DsoRenderer';
 import { simClock } from '../engine/SimClock';
 import { reconcileFilterSlices } from '../query/apply';
 import type { QueryFilterPatch } from '../query/types';
+import type { AnalyticProgram, ExecuteOutcome } from '@orbitwatch/analytic';
 
 export type LoadingPhase = 'fetching' | 'initializing' | 'propagating' | 'ready';
 export type CameraMode = 'free' | 'flying' | 'following' | 'returning';
@@ -122,6 +123,10 @@ interface AppState {
   triggerFlyTo: ((index: number) => void) | null;
   triggerJoyride: ((index: number) => void) | null;
   triggerResetCamera: (() => void) | null;
+  // P2 — run a validated analytic program on the engine; returns the executor
+  // outcome (or null if the layer isn't ready). Side-effect-free re: the globe;
+  // the caller (useAnalyticAsk) applies the allow-set + answer slice.
+  triggerRunAnalytic: ((program: AnalyticProgram) => ExecuteOutcome | null) | null;
 
   selectedIndex: number | null;
   selectedSatellite: EnrichedTLEObject | null;
@@ -175,6 +180,7 @@ interface AppState {
   setTriggerFlyTo: (fn: (index: number) => void) => void;
   setTriggerJoyride: (fn: (index: number) => void) => void;
   setTriggerResetCamera: (fn: () => void) => void;
+  setTriggerRunAnalytic: (fn: (program: AnalyticProgram) => ExecuteOutcome | null) => void;
   setLoadingPhase: (phase: LoadingPhase) => void;
   setLoadingError: (error: string) => void;
   setCatalogInfo: (info: {
@@ -306,6 +312,7 @@ export const useStore = create<AppState>((set, get) => ({
   triggerFlyTo: null,
   triggerJoyride: null,
   triggerResetCamera: null,
+  triggerRunAnalytic: null,
 
   selectedIndex: null,
   selectedSatellite: null,
@@ -378,6 +385,7 @@ export const useStore = create<AppState>((set, get) => ({
   setTriggerFlyTo: (fn) => set({ triggerFlyTo: fn }),
   setTriggerJoyride: (fn) => set({ triggerJoyride: fn }),
   setTriggerResetCamera: (fn) => set({ triggerResetCamera: fn }),
+  setTriggerRunAnalytic: (fn) => set({ triggerRunAnalytic: fn }),
   setLoadingPhase: (phase) => set({ loadingPhase: phase }),
   setLoadingError: (error) => set({ loadingError: error }),
   setCatalogInfo: (info) => {

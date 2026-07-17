@@ -1,4 +1,5 @@
 import { useStore } from '../../store/useStore';
+import type { AnalyticProgram, ExecuteOutcome } from '@orbitwatch/analytic';
 
 /**
  * The Engine's imperative command surface — the actions UI (and, later, a voicebot)
@@ -30,6 +31,8 @@ export interface EngineCommands {
   scrubPreview: () => void;
   /** Animate the view-clock smoothly back to the live present (store invokes from "Now"). */
   returnToPresent: () => void;
+  /** Run a validated analytic program on the live engine; null if not ready yet. */
+  runAnalytic: (program: AnalyticProgram) => ExecuteOutcome | null;
 }
 
 /** Register the command surface into the store's slots in one shot. */
@@ -44,4 +47,5 @@ export function registerEngineCommands(commands: EngineCommands): void {
   store.setTriggerSimTimeJump(commands.simTimeJump);
   store.setTriggerScrubPreview(commands.scrubPreview);
   store.setTriggerReturnToPresent(commands.returnToPresent);
+  store.setTriggerRunAnalytic(commands.runAnalytic);
 }

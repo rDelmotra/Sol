@@ -8,8 +8,7 @@ import { simClock } from '../../SimClock';
 import { useStore, isObserverMode, type VisibilityMode } from '../../../store/useStore';
 import type { EnrichedTLEObject } from '../../../data/types';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
-import { validateProgram } from '@orbitwatch/analytic';
-import { execute } from '@orbitwatch/analytic';
+import { validateProgram, execute, type AnalyticProgram, type ExecuteOutcome } from '@orbitwatch/analytic';
 import { createLiveAnalyticSource, type LiveBuffers } from '../../../query/analytic/live-source';
 import { getRawQueryVocab } from '../../../query/vocab';
 
@@ -189,10 +188,10 @@ export class SatellitesLayer implements Layer {
     });
 
     // ── Dev-only analytic console (P1) ────────────────────────────────────────
-    // window.__analytic(program) — validate → execute over the LIVE data source →
-    // an 'ids' result becomes the globe allow-set. __analytic(null) clears it.
-    // The P2 compile endpoint replaces this as the user-facing entry; the hook
-    // stays as the engineer's REPL. Removed in dispose().
+    // window.__analytic(program) — validate → runAnalyticProgram → an 'ids'
+    // result becomes the globe allow-set. __analytic(null) clears it. The P2
+    // compile endpoint is now the user-facing entry (via the runAnalytic command);
+    // this hook stays as the engineer's REPL. Removed in dispose().
     if (import.meta.env.DEV) {
       (window as unknown as Record<string, unknown>).__analytic = (program: unknown) => {
         const store = useStore.getState();
@@ -200,20 +199,10 @@ export class SatellitesLayer implements Layer {
           store.setAnalyticFilter(null);
           return { cleared: true };
         }
-        const nowMs = simClock.now();
-        const v = validateProgram(program, { nowMs });
+        const v = validateProgram(program, { nowMs: simClock.now() });
         if (!v.ok) return { issues: v.issues };
-        const src = createLiveAnalyticSource({
-          catalog: this.catalog,
-          getBuffers: () => this.latestBuffers,
-          getVocab: () => getRawQueryVocab(),
-          getVisualNoradIds: () => callbacks.getVisualNoradIds(),
-        });
-        const obs = store.observerLocation;
-        const out = execute(v.program, { live: src }, {
-          nowMs,
-          observer: obs ? { latDeg: obs.lat, lonDeg: obs.lon, altKm: obs.alt } : null,
-        });
+        const out = this.runAnalyticProgram(v.program);
+        if ('notReady' in out) return { notReady: true };
         if (!out.ok) return { error: out.error };
         if (out.result.shape === 'ids' && out.result.ids) {
           store.setAnalyticFilter(new Set(out.result.ids));
@@ -222,6 +211,29 @@ export class SatellitesLayer implements Layer {
       };
       console.info('[analytic] window.__analytic(program) ready — null clears the allow-set');
     }
+  }
+
+  /**
+   * Execute a VALIDATED program over the live data source at the current sim
+   * instant + the store observer. **Side-effect-free**: does NOT touch
+   * `analyticFilter` — callers decide what to do with the result (globe highlight,
+   * AnswerCard, …). Returns `{ notReady: true }` before `activate()` has run or
+   * before the first worker buffers arrive.
+   */
+  runAnalyticProgram(program: AnalyticProgram): ExecuteOutcome | { notReady: true } {
+    if (!this.callbacks || !this.latestBuffers) return { notReady: true };
+    const callbacks = this.callbacks;
+    const src = createLiveAnalyticSource({
+      catalog: this.catalog,
+      getBuffers: () => this.latestBuffers,
+      getVocab: () => getRawQueryVocab(),
+      getVisualNoradIds: () => callbacks.getVisualNoradIds(),
+    });
+    const obs = useStore.getState().observerLocation;
+    return execute(program, { live: src }, {
+      nowMs: simClock.now(),
+      observer: obs ? { latDeg: obs.lat, lonDeg: obs.lon, altKm: obs.alt } : null,
+    });
   }
 
   /**
