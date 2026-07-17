@@ -16,6 +16,7 @@
     "history:migrate": "tsx src/history/db/migrate-cli.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.2",
     "@orbitwatch/analytic": "*",
     "axios": "^1.7.0",
     "compression": "^1.7.0",
