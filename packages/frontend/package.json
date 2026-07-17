@@ -12,6 +12,7 @@
     "textures:optimize": "node scripts/optimize-textures.mjs"
   },
   "dependencies": {
+    "@orbitwatch/analytic": "*",
     "fuse.js": "^7.1.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",

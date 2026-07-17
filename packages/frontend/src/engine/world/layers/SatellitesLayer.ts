@@ -8,8 +8,8 @@ import { simClock } from '../../SimClock';
 import { useStore, isObserverMode, type VisibilityMode } from '../../../store/useStore';
 import type { EnrichedTLEObject } from '../../../data/types';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
-import { validateProgram } from '../../../query/analytic/validate';
-import { execute } from '../../../query/analytic/execute';
+import { validateProgram } from '@orbitwatch/analytic';
+import { execute } from '@orbitwatch/analytic';
 import { createLiveAnalyticSource, type LiveBuffers } from '../../../query/analytic/live-source';
 import { getRawQueryVocab } from '../../../query/vocab';
 

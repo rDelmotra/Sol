@@ -13,7 +13,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { validateProgram, type ValidationCode } from './validate';
+import { validateProgram, type ValidationCode } from './validate.js';
 
 const NOW = Date.parse('2026-07-10T12:00:00Z');
 

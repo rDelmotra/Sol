@@ -16,8 +16,8 @@ import type { QueryVocab } from '../../data/query-vocab-client';
 import { getSunDirection } from '../../orbital/time';
 import { getObserverScenePosition } from '../../orbital/coordinates';
 import { createLiveAnalyticSource, type LiveBuffers } from './live-source';
-import { validateProgram } from './validate';
-import { execute } from './execute';
+import { validateProgram } from '@orbitwatch/analytic';
+import { execute } from '@orbitwatch/analytic';
 
 const NOW = Date.parse('2026-07-10T12:00:00Z');
 

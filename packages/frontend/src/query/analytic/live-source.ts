@@ -34,7 +34,7 @@ import { getGAST, getSunDirection } from '../../orbital/time';
 import { getObserverScenePosition } from '../../orbital/coordinates';
 import { isEclipsedFromComponents, isObserverInDarkFromComponents } from '../../orbital/lighting';
 import { evaluateVisualVisibility } from '../../orbital/visual-visibility';
-import type { AnalyticDataSource, FieldValue, ResolvedObserver } from './execute';
+import type { AnalyticDataSource, FieldValue, ResolvedObserver } from '@orbitwatch/analytic';
 
 const EARTH_RADIUS_KM = 6371;
 const MU_KM3_S2 = 398600.4418;

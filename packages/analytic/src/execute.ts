@@ -26,8 +26,8 @@ import type {
   Stage,
   ObserverRef,
   Universe,
-} from './types';
-import { MAX_GROUPS } from './validate';
+} from './types.js';
+import { MAX_GROUPS } from './validate.js';
 
 // ── Data-source port ──────────────────────────────────────────────────────────
 

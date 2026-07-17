@@ -6,10 +6,12 @@
 // parser, tier-1 LLM compiler, a hand-written test); one validator gates it;
 // executors run it (browser typed-array interpreter first).
 //
-// Tier rule: src/query/analytic/* imports ONLY from src/query/analytic/*,
-// src/data/* and (executor, later) src/orbital/* — never store/ or engine/ —
-// so everything runs under plain node:test and doubles as the response type
-// of the future POST /api/query/compile.
+// Tier rule: @orbitwatch/analytic is the PURE tier — files in this package
+// import only each other (no node builtins, no runtime deps, no I/O), so
+// everything runs under plain node:test in any consumer (frontend live
+// executor, backend prompt-gen/validate) and doubles as the response type
+// of POST /api/query/compile. The impure live adapter (live-source.ts, which
+// needs orbital/ + data/ + satellite.js) stays in the frontend.
 //
 // v1 scope: live + static planes. Series/history operators are RESERVED
 // (spec §11) and intentionally absent from these unions.

@@ -12,9 +12,9 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { validateProgram } from './validate';
-import { execute, type AnalyticDataSource, type FieldValue, type ExecuteOutcome } from './execute';
-import type { AnalyticResult } from './types';
+import { validateProgram } from './validate.js';
+import { execute, type AnalyticDataSource, type FieldValue, type ExecuteOutcome } from './execute.js';
+import type { AnalyticResult } from './types.js';
 
 const NOW = Date.parse('2026-07-10T12:00:00Z');
 const OBSERVER = { latDeg: 51.5, lonDeg: 0 };

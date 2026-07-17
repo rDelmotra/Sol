@@ -10,8 +10,8 @@
 // Date.now() unless the caller omits opts.nowMs (tests pass a fixed clock).
 // ============================================================
 
-import type { AnalyticProgram, Universe } from './types';
-import { FIELD_REGISTRY, FN_SPECS, SORTABLE_KINDS, type FieldKind } from './schema';
+import type { AnalyticProgram, Universe } from './types.js';
+import { FIELD_REGISTRY, FN_SPECS, SORTABLE_KINDS, type FieldKind } from './schema.js';
 
 // ── Caps (spec §8) ────────────────────────────────────────────────────────────
 
