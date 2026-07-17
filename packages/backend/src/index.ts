@@ -15,6 +15,7 @@ import {
   orgRouter,
   queryRouter,
 } from './routes/metadata.js';
+import queryCompileRouter from './routes/query.js';
 import { isCacheFresh, readVersion, readCache } from './cache/file-cache.js';
 import { primeTlePayload } from './cache/tle-payload-cache.js';
 import { loadEnrichment, getDecayedCatalog } from './enrichment/store.js';
@@ -87,6 +88,7 @@ app.use('/api/catalog', catalogRouter);
 app.use('/api/launch', launchRouter);
 app.use('/api/org', orgRouter);
 app.use('/api/query', queryRouter);
+app.use('/api/query', queryCompileRouter); // POST /api/query/compile (NL→IR)
 // Optional history routes — 503 cleanly when DATABASE_URL is unset, so mounting
 // unconditionally is safe.
 app.use('/api/history', historyRouter);
