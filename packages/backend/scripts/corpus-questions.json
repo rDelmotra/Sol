@@ -1,0 +1,412 @@
+[
+  {
+    "id": "A1",
+    "class": "A",
+    "question": "How fast is the ISS moving right now?",
+    "expectRefusal": false
+  },
+  {
+    "id": "A2",
+    "class": "A",
+    "question": "How many objects are in Earth's shadow right now?",
+    "expectRefusal": false
+  },
+  {
+    "id": "A3",
+    "class": "A",
+    "question": "What is currently directly above me?",
+    "expectRefusal": false
+  },
+  {
+    "id": "A4",
+    "class": "A",
+    "question": "Which satellites are over the Pacific right now?",
+    "expectRefusal": true,
+    "note": "region-polygon gap"
+  },
+  {
+    "id": "A5",
+    "class": "A",
+    "question": "What's the closest object to the ISS right now?",
+    "expectRefusal": false
+  },
+  {
+    "id": "A6",
+    "class": "A",
+    "question": "How many Starlink satellites are above my horizon right now?",
+    "expectRefusal": false
+  },
+  {
+    "id": "A7",
+    "class": "A",
+    "question": "What fraction of the catalog is south of the equator right now?",
+    "expectRefusal": false
+  },
+  {
+    "id": "A8",
+    "class": "A",
+    "question": "Which GEO satellites are currently over longitude 0?",
+    "expectRefusal": false
+  },
+  {
+    "id": "B1",
+    "class": "B",
+    "question": "Which satellites are currently slowing down?",
+    "expectRefusal": false,
+    "note": "live fast-path meanMotionDot"
+  },
+  {
+    "id": "B2",
+    "class": "B",
+    "question": "What's the rate of change of the rate of change of the ISS's altitude?",
+    "expectRefusal": true,
+    "note": "hist"
+  },
+  {
+    "id": "B3",
+    "class": "B",
+    "question": "Which orbits decayed fastest this month?",
+    "expectRefusal": true,
+    "note": "hist"
+  },
+  {
+    "id": "B4",
+    "class": "B",
+    "question": "Which satellites raised their orbit last week?",
+    "expectRefusal": true,
+    "note": "hist"
+  },
+  {
+    "id": "B5",
+    "class": "B",
+    "question": "How has the ISS's altitude changed since January?",
+    "expectRefusal": true,
+    "note": "hist"
+  },
+  {
+    "id": "B6",
+    "class": "B",
+    "question": "Which GEO birds drifted more than 1 degree of longitude this month?",
+    "expectRefusal": true,
+    "note": "hist"
+  },
+  {
+    "id": "B7",
+    "class": "B",
+    "question": "Which objects have the most unstable orbits?",
+    "expectRefusal": true,
+    "note": "hist"
+  },
+  {
+    "id": "B8",
+    "class": "B",
+    "question": "When will this satellite reenter?",
+    "expectRefusal": true,
+    "note": "hist/extrapolation"
+  },
+  {
+    "id": "B9",
+    "class": "B",
+    "question": "Which satellites maneuvered this week?",
+    "expectRefusal": true,
+    "note": "hist"
+  },
+  {
+    "id": "B10",
+    "class": "B",
+    "question": "Is anything approaching the ISS's orbit over the past month?",
+    "expectRefusal": true,
+    "note": "hist+plane-distance gap"
+  },
+  {
+    "id": "C1",
+    "class": "C",
+    "question": "Which satellites can I see with my naked eye right now?",
+    "expectRefusal": false
+  },
+  {
+    "id": "C2",
+    "class": "C",
+    "question": "Which satellites are in sunlight while I'm in darkness?",
+    "expectRefusal": false
+  },
+  {
+    "id": "C3",
+    "class": "C",
+    "question": "What fraction of Starlink is eclipsed right now?",
+    "expectRefusal": false
+  },
+  {
+    "id": "C4",
+    "class": "C",
+    "question": "How long until the ISS exits Earth's shadow?",
+    "expectRefusal": false
+  },
+  {
+    "id": "C5",
+    "class": "C",
+    "question": "Which satellites pass over Sydney in the next hour?",
+    "expectRefusal": false,
+    "note": "timeScan-adjacent; sweep is v2 \u2014 refusal also acceptable, see eval notes",
+    "refusalAcceptable": true
+  },
+  {
+    "id": "C6",
+    "class": "C",
+    "question": "Where will the ISS be at 21:00 tonight?",
+    "expectRefusal": false
+  },
+  {
+    "id": "D1",
+    "class": "D",
+    "question": "What else went up on the same launch as NOAA-18?",
+    "expectRefusal": false
+  },
+  {
+    "id": "D2",
+    "class": "D",
+    "question": "Which rocket type has put the most still-tracked objects in orbit?",
+    "expectRefusal": false
+  },
+  {
+    "id": "D3",
+    "class": "D",
+    "question": "Which operators run the oldest active fleets?",
+    "expectRefusal": false
+  },
+  {
+    "id": "D4",
+    "class": "D",
+    "question": "How many objects does SpaceX operate vs Amazon?",
+    "expectRefusal": false
+  },
+  {
+    "id": "D5",
+    "class": "D",
+    "question": "Which country's debris dominates LEO?",
+    "expectRefusal": false
+  },
+  {
+    "id": "D6",
+    "class": "D",
+    "question": "What's the average launch mass of Indian satellites?",
+    "expectRefusal": false
+  },
+  {
+    "id": "D7",
+    "class": "D",
+    "question": "Which launch sites produced the most still-orbiting debris?",
+    "expectRefusal": false
+  },
+  {
+    "id": "D8",
+    "class": "D",
+    "question": "What debris came from Kosmos-1408?",
+    "expectRefusal": false
+  },
+  {
+    "id": "D9",
+    "class": "D",
+    "question": "Which programs grew the most this year?",
+    "expectRefusal": false
+  },
+  {
+    "id": "D10",
+    "class": "D",
+    "question": "Who built the satellites that fail fastest?",
+    "expectRefusal": false,
+    "note": "manufacturer join is a gap; refusal also acceptable",
+    "refusalAcceptable": true
+  },
+  {
+    "id": "E1",
+    "class": "E",
+    "question": "What's the total mass currently in orbit?",
+    "expectRefusal": false
+  },
+  {
+    "id": "E2",
+    "class": "E",
+    "question": "What is the average altitude of each mega-constellation?",
+    "expectRefusal": false
+  },
+  {
+    "id": "E3",
+    "class": "E",
+    "question": "How many objects were launched per year since 1957?",
+    "expectRefusal": true,
+    "note": "needs universe all"
+  },
+  {
+    "id": "E4",
+    "class": "E",
+    "question": "What's the median age of LEO debris?",
+    "expectRefusal": false
+  },
+  {
+    "id": "E5",
+    "class": "E",
+    "question": "Which 100 km altitude band is most crowded?",
+    "expectRefusal": false
+  },
+  {
+    "id": "E6",
+    "class": "E",
+    "question": "What share of active satellites are commercial?",
+    "expectRefusal": false
+  },
+  {
+    "id": "E7",
+    "class": "E",
+    "question": "What is the eccentricity distribution of Molniya-type orbits?",
+    "expectRefusal": false
+  },
+  {
+    "id": "F1",
+    "class": "F",
+    "question": "What's the oldest object still in orbit?",
+    "expectRefusal": false
+  },
+  {
+    "id": "F2",
+    "class": "F",
+    "question": "What's the heaviest single object up there?",
+    "expectRefusal": false
+  },
+  {
+    "id": "F3",
+    "class": "F",
+    "question": "Which satellite has the most eccentric orbit?",
+    "expectRefusal": false
+  },
+  {
+    "id": "F4",
+    "class": "F",
+    "question": "What's the fastest-moving object right now?",
+    "expectRefusal": false
+  },
+  {
+    "id": "F5",
+    "class": "F",
+    "question": "Which active satellite is closest to reentry?",
+    "expectRefusal": false
+  },
+  {
+    "id": "F6",
+    "class": "F",
+    "question": "What is the highest apogee ever cataloged?",
+    "expectRefusal": true,
+    "note": "'ever' needs universe all"
+  },
+  {
+    "id": "G1",
+    "class": "G",
+    "question": "Compare Starlink vs OneWeb orbital decay over the past year",
+    "expectRefusal": true,
+    "note": "hist"
+  },
+  {
+    "id": "G2",
+    "class": "G",
+    "question": "Is the ISS above or below the LEO average altitude?",
+    "expectRefusal": false
+  },
+  {
+    "id": "G3",
+    "class": "G",
+    "question": "Which is growing faster in LEO, China or the US?",
+    "expectRefusal": false,
+    "note": "launchYear trend over live objects; hist refusal also acceptable",
+    "refusalAcceptable": true
+  },
+  {
+    "id": "G4",
+    "class": "G",
+    "question": "How much has the LEO population grown since 2020?",
+    "expectRefusal": false,
+    "note": "survivorship semantics must be stated"
+  },
+  {
+    "id": "H1",
+    "class": "H",
+    "question": "How many objects were in orbit on 12 March 1995?",
+    "expectRefusal": true,
+    "note": "needs universe all + decay dates"
+  },
+  {
+    "id": "H2",
+    "class": "H",
+    "question": "Where was the ISS at 15:00 yesterday?",
+    "expectRefusal": false
+  },
+  {
+    "id": "H3",
+    "class": "H",
+    "question": "What did the GEO belt look like in 2010?",
+    "expectRefusal": true,
+    "note": "hist"
+  },
+  {
+    "id": "I1",
+    "class": "I",
+    "question": "Which satellites are falling?",
+    "expectRefusal": false
+  },
+  {
+    "id": "I2",
+    "class": "I",
+    "question": "What's the biggest satellite?",
+    "expectRefusal": false
+  },
+  {
+    "id": "I3",
+    "class": "I",
+    "question": "How many dead satellites are there?",
+    "expectRefusal": false
+  },
+  {
+    "id": "I4",
+    "class": "I",
+    "question": "Which satellites are close to each other?",
+    "expectRefusal": true,
+    "note": "all-pairs proximity gap"
+  },
+  {
+    "id": "I5",
+    "class": "I",
+    "question": "Which satellites are about to crash?",
+    "expectRefusal": false,
+    "note": "reentry proxy w/ stated interpretation; refusal also acceptable",
+    "refusalAcceptable": true
+  },
+  {
+    "id": "J1",
+    "class": "J",
+    "question": "Why did Kosmos-1408 break up?",
+    "expectRefusal": true
+  },
+  {
+    "id": "J2",
+    "class": "J",
+    "question": "Will anything collide with Starlink-3021 this week?",
+    "expectRefusal": true
+  },
+  {
+    "id": "J3",
+    "class": "J",
+    "question": "Show me a heatmap of orbital density",
+    "expectRefusal": true
+  },
+  {
+    "id": "J4",
+    "class": "J",
+    "question": "Which satellites are spying on my house?",
+    "expectRefusal": true
+  },
+  {
+    "id": "J5",
+    "class": "J",
+    "question": "Simulate a Kessler cascade at 800 km",
+    "expectRefusal": true
+  }
+]

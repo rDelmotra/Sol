@@ -102,14 +102,17 @@ describe('createAnalyticCompiler', () => {
   });
 
   it('is unavailable with no key and no injected llmCall', async () => {
-    const saved = process.env.ANTHROPIC_API_KEY;
+    const savedAnthropic = process.env.ANTHROPIC_API_KEY;
+    const savedGemini = process.env.GEMINI_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.GEMINI_API_KEY;
     try {
       const c = createAnalyticCompiler({ persist: false });
       const res = await c.compile('anything');
       assert.ok(!res.ok && res.kind === 'unavailable');
     } finally {
-      if (saved !== undefined) process.env.ANTHROPIC_API_KEY = saved;
+      if (savedAnthropic !== undefined) process.env.ANTHROPIC_API_KEY = savedAnthropic;
+      if (savedGemini !== undefined) process.env.GEMINI_API_KEY = savedGemini;
     }
   });
 

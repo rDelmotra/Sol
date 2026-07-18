@@ -133,7 +133,45 @@ const HARD_RULES = `HARD RULES:
    catalog+functions (NOT_DERIVABLE) or is not about the orbital domain / asks for
    opinion or prediction beyond physics (OFF_DOMAIN). A precise refusal IS a correct answer.
 8. Common named objects: ISS = noradId 25544. Constellations are name/program matches
-   (e.g. {"op":"in","field":"program","values":["Starlink"]}), not id lists.`;
+   (e.g. {"op":"in","field":"program","values":["Starlink"]}), not id lists.
+9. The 'at' time binding covers the RECENT PAST too (up to 60 days back): "yesterday",
+   "last night", "an hour ago", "21:00 tonight" → {"mode":"at","t":"<resolved ISO>"} using
+   the current-time line in the question. Do NOT refuse these as NEEDS_HISTORY — that code
+   is for trends/changes-over-time and dates outside the window.
+10. Visualization/UI commands are not questions: "show me a heatmap/map/chart", "draw",
+   "animate", "simulate" → refuse OFF_DOMAIN (briefly say what you CAN compute instead).
+11. "closest to <object>" / "distance from <object>" → derive {"fn":"distToKm","target":<noradId>}
+   (distToKm is a FUNCTION expression, never an "op"; rangeKm is observer-to-object only).
+12. Named geographic regions ("over the Pacific/Europe/Asia/America") → refuse NOT_DERIVABLE.
+   There are no region polygons; do NOT invent lat/lon bounding boxes for named regions
+   (dateline wrap makes them silently wrong). Offer a latitude band or an observer-based
+   question as the alternative in the reason. BUT explicit numeric coordinates ARE directly
+   filterable: "over longitude 0" / "south of the equator" / "above 45°N" → filter on
+   lonDeg / latDeg (e.g. abs(lonDeg) < 1 for "over longitude 0"). Only NAMED places refuse.
+13. Past-window CHANGE questions ("this month", "last week", "since January", "over the past
+   year" — decayed fastest, raised orbit, drifted, maneuvered, second derivative of
+   altitude) → refuse NEEDS_HISTORY. Orbit STABILITY questions ("most unstable orbits")
+   also → NEEDS_HISTORY: stability = element variance over a time window; the current
+   meanMotionDot is a decay rate, not stability. The ONLY live decay fast-path is the
+   CURRENT decay rate (rule 3). Never dress meanMotionDot up as a past-window comparison,
+   and never use meanMotionDdot as an altitude derivative.
+14. "this year" phrasing OVERRIDES rule 13 — it is answerable from launchYear, not history:
+   "launched/grew (the most) this year" → filter launchYear == <current year from the time
+   line> (for "grew the most per program": groupBy program over that filter, count, sort).
+   "How much has X grown since <year>" IS answerable as TWO JUXTAPOSED COUNTS: main
+   pipeline = the population now (filter + aggregate count, shape scalar); compare
+   {"label":"launched ≤ <year>, still tracked"} = same filter plus launchYear <= <year> +
+   aggregate count. Do NOT compute the difference/ratio in the program (no arithmetic
+   across pipelines; no derive after aggregate) — the UI juxtaposes the two numbers.
+   The interpretation MUST state the survivorship bias (only still-tracked objects).
+15. NOT expressible in v1 → refuse NOT_DERIVABLE: pass prediction over a place ("which
+   satellites pass over <city> in the next hour" — timeScan is a single-object countdown,
+   ≤5 objects, not a sweep) and all-pairs proximity ("which satellites are close to each
+   other" — distToKm needs ONE fixed target).
+16. "what else went up on the same launch as <object>" → filter launchTag equality with that
+   launch's COSPAR-style tag (e.g. NOAA-18 → "2005-018"), output {"shape":"ids"} — never an
+   unbounded table. Only use a tag you are confident of; otherwise refuse NOT_DERIVABLE and
+   say the launch tag lookup is the missing step.`;
 
 // ── §6 Few-shot examples (hand-picked constants) ──────────────────────────────
 
@@ -229,6 +267,22 @@ const FEW_SHOTS: FewShot[] = [
           ],
         },
         output: { shape: 'object', columns: ['name', 'meanAltitudeKm'] },
+      },
+    },
+  },
+  {
+    question: "What's the closest object to the ISS right now?",
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation: 'Nearest tracked object to the ISS (25544) by straight-line distance at sim-time; the ISS itself excluded.',
+        pipeline: [
+          { op: 'derive', fields: { dKm: { fn: 'distToKm', target: 25544 } } },
+          { op: 'filter', where: { op: '!=', args: [{ field: 'noradId' }, { lit: 25544 }] } },
+          { op: 'sort', by: 'dKm', dir: 'asc' },
+          { op: 'limit', n: 1 },
+        ],
+        output: { shape: 'object', columns: ['name', 'dKm', 'altitudeKm'] },
       },
     },
   },

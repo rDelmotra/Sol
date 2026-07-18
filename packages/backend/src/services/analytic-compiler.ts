@@ -121,6 +121,9 @@ function parseEmit(input: unknown): ParsedEmit {
     return { kind: 'malformed', message: 'refuse must have string code and reason' };
   }
   if ('program' in input && input.program !== undefined) return { kind: 'program', program: input.program };
+  // Resilience: a model sometimes emits the bare program without the wrapper.
+  // The validator remains the gate either way.
+  if (input.v === 1 && Array.isArray(input.pipeline)) return { kind: 'program', program: input };
   return { kind: 'malformed', message: 'tool call had neither program nor refuse' };
 }
 
@@ -137,7 +140,15 @@ export function createAnalyticCompiler(deps: CompilerDeps = {}): AnalyticCompile
   const cachePath = path.join(dataDir, 'compile-cache.json');
   const gapLogPath = path.join(dataDir, 'gap-log.jsonl');
 
-  const llmCall = deps.llmCall ?? (process.env.ANTHROPIC_API_KEY ? createAnthropicLlmCall() : undefined);
+  // Provider pick: injected seam > Gemini key > Anthropic key. Both adapters
+  // satisfy the same LlmCall contract; the validator gates them identically.
+  const llmCall =
+    deps.llmCall ??
+    (process.env.GEMINI_API_KEY
+      ? createGeminiLlmCall()
+      : process.env.ANTHROPIC_API_KEY
+        ? createAnthropicLlmCall()
+        : undefined);
 
   // LRU: Map preserves insertion order; touch = delete+set to move to newest.
   const cache = new Map<string, CachedEntry>();
@@ -186,13 +197,17 @@ export function createAnalyticCompiler(deps: CompilerDeps = {}): AnalyticCompile
     }
 
     if (!llmCall) {
-      logger.warn('[analytic-compile] unavailable (no ANTHROPIC_API_KEY and no injected llmCall)');
+      logger.warn('[analytic-compile] unavailable (no GEMINI_API_KEY/ANTHROPIC_API_KEY and no injected llmCall)');
       return { ok: false, kind: 'unavailable' };
     }
 
     const started = nowMs();
     const system = buildCompilerSystemPrompt();
-    const messages: LlmMessage[] = [{ role: 'user', content: question }];
+    // Time context rides in the USER turn (after cache-key computation) so
+    // "tonight"/"yesterday" resolve to real dates without touching promptVersion.
+    const messages: LlmMessage[] = [
+      { role: 'user', content: `${question}\n(current UTC time: ${new Date(nowMs()).toISOString()})` },
+    ];
 
     // ── LLM call #1 ──
     const call1 = await llmCall({ system, messages });
@@ -290,6 +305,94 @@ function saveCache(cachePath: string, cache: Map<string, CachedEntry>): void {
   } catch (err) {
     logger.warn('compile-cache save failed (non-fatal):', err);
   }
+}
+
+// ── Production Gemini adapter ─────────────────────────────────────────────────
+// JSON-mode rather than function calling: Gemini's function-declaration schema
+// rejects free-form `{type:'object'}` params (non-empty properties required),
+// and the validator is the real gate anyway. The adapter owns the wire shapes;
+// the compiler's Anthropic-shaped repair blocks are translated here.
+
+const geminiModel = () => {
+  const m = process.env.ANALYTIC_COMPILER_MODEL;
+  return m && m.startsWith('gemini') ? m : 'gemini-3.1-flash-lite';
+};
+
+const GEMINI_JSON_SUFFIX =
+  '\n\nOUTPUT FORMAT: respond with ONLY one JSON object — either {"program": {...}} or ' +
+  '{"refuse": {"code": "...", "reason": "..."}}. No prose, no markdown fences.';
+
+interface GeminiPart {
+  text?: string;
+  [k: string]: unknown;
+}
+
+function toGeminiContents(messages: LlmMessage[]): { role: 'user' | 'model'; parts: GeminiPart[] }[] {
+  return messages.map((m) => {
+    if (m.role === 'assistant') {
+      // assistantContent round-trips in Gemini-native parts form.
+      return { role: 'model' as const, parts: m.content as GeminiPart[] };
+    }
+    if (typeof m.content === 'string') {
+      return { role: 'user' as const, parts: [{ text: m.content }] };
+    }
+    // Anthropic-shaped tool_result repair block → plain text turn.
+    const blocks = Array.isArray(m.content) ? (m.content as { content?: unknown }[]) : [];
+    const text = blocks.map((b) => (typeof b.content === 'string' ? b.content : JSON.stringify(b))).join('\n');
+    return { role: 'user' as const, parts: [{ text }] };
+  });
+}
+
+export function createGeminiLlmCall(): LlmCall {
+  return async ({ system, messages }) => {
+    const mdl = geminiModel();
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${mdl}:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': process.env.GEMINI_API_KEY ?? '',
+        },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: system + GEMINI_JSON_SUFFIX }] },
+          contents: toGeminiContents(messages),
+          generationConfig: {
+            temperature: 0,
+            maxOutputTokens: 4000,
+            responseMimeType: 'application/json',
+          },
+        }),
+      },
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Gemini API ${res.status}: ${body.slice(0, 300)}`);
+    }
+    const data = (await res.json()) as {
+      candidates?: { content?: { parts?: GeminiPart[] } }[];
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+    };
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    const text = parts.map((p) => p.text ?? '').join('');
+    let input: unknown;
+    try {
+      input = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
+    } catch {
+      // parseEmit maps this to 'malformed' → the repair round tells the model.
+      input = { parseError: text.slice(0, 200) };
+    }
+    return {
+      input,
+      toolUseId: 'gemini-json',
+      assistantContent: parts.length > 0 ? parts : [{ text }],
+      model: mdl,
+      usage: {
+        inputTokens: data.usageMetadata?.promptTokenCount ?? 0,
+        outputTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
+      },
+    };
+  };
 }
 
 // ── Production Anthropic adapter ──────────────────────────────────────────────
