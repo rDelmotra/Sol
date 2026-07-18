@@ -132,3 +132,34 @@ export function getLocationErrorMessage(err: GeolocationPositionError): string {
 // Toggle moved to the primitives layer (design-token driven, with hover/focus).
 // Re-exported here so existing `./Lens/shared` imports keep working.
 export { Toggle } from '../primitives/Toggle';
+
+// ── Lens sheet shared chrome (Phase 2) ────────────────────────────────────────
+
+import type { CSSProperties } from 'react';
+
+/** Section header inside the Lens sheet (View / Regimes / Types / ...). */
+export const lensSectionTitleStyle: CSSProperties = {
+  fontFamily: 'var(--ow-font-display)',
+  fontSize: 11,
+  fontWeight: 500,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  color: 'var(--ow-text-faint)',
+  marginBottom: 10,
+};
+
+/** Hairline section divider inside the Lens sheet. */
+export const lensDividerStyle: CSSProperties = {
+  height: 1,
+  background: 'var(--ow-stroke)',
+  margin: '16px 0',
+};
+
+/** snake_case facet key -> "Title Case" label (Status/Sector/Purpose have no
+ *  explicit LABELS map — their keys are already words, just under_scored). */
+export function humanizeKey(key: string): string {
+  return key
+    .split('_')
+    .map((w) => (w.length > 0 ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(' ');
+}

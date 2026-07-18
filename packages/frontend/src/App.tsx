@@ -6,7 +6,7 @@ import { useStore } from './store/useStore';
 // Post-`ready` overlay UI — none of it renders until loadingPhase === 'ready',
 // so it's split out of the first-paint chunk and streamed in at mount. Named
 // exports are mapped to default for React.lazy.
-const TopTaskbar = lazy(() => import('./ui/TopTaskbar').then((m) => ({ default: m.TopTaskbar })));
+const TopBar = lazy(() => import('./ui/TopBar').then((m) => ({ default: m.TopBar })));
 const InfoCard = lazy(() => import('./ui/InfoCard').then((m) => ({ default: m.InfoCard })));
 const AnswerCard = lazy(() => import('./ui/AnswerCard').then((m) => ({ default: m.AnswerCard })));
 const Tooltip = lazy(() => import('./ui/Tooltip').then((m) => ({ default: m.Tooltip })));
@@ -141,7 +141,7 @@ export default function App() {
           }}
         >
           <HudDimGroup>
-            <TopTaskbar />
+            <TopBar />
             <div
               style={{
                 position: 'absolute',

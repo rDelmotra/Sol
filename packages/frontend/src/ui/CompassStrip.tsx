@@ -25,8 +25,8 @@ const POINT_LABELS: Record<number, string> = {
   270: 'W',
   315: 'NW',
 };
-const NORTH_COLOR = '#ff6b4a';
-const TICK_COLOR = 'rgba(143, 227, 255, 0.85)';
+const NORTH_COLOR = 'var(--ow-star)';
+const TICK_COLOR = 'var(--ow-telemetry-line)';
 
 /** Shortest signed angular difference, wrapped to [-180, 180]. */
 function wrapDelta(deg: number): number {
@@ -64,7 +64,7 @@ export function CompassStrip() {
     <div
       style={{
         position: 'absolute',
-        top: 14,
+        top: 76,
         left: '50%',
         transform: 'translateX(-50%)',
         width: 'min(620px, 78vw)',
@@ -97,11 +97,11 @@ export function CompassStrip() {
             {t.label ? (
               <span
                 style={{
-                  fontFamily: 'monospace',
+                  fontFamily: 'var(--ow-font-mono)',
                   fontSize: t.major ? (t.label.length > 1 ? 12 : 15) : 11,
                   fontWeight: 700,
-                  color: isNorth ? NORTH_COLOR : 'rgba(220, 244, 255, 0.95)',
-                  textShadow: '0 1px 4px rgba(0,0,0,0.9)',
+                  color: isNorth ? NORTH_COLOR : 'var(--ow-text-hi)',
+                  textShadow: 'var(--ow-text-shadow-ambient)',
                   letterSpacing: '0.04em',
                 }}
               >
@@ -133,7 +133,7 @@ export function CompassStrip() {
           height: 0,
           borderLeft: '5px solid transparent',
           borderRight: '5px solid transparent',
-          borderBottom: '7px solid rgba(255, 255, 255, 0.9)',
+          borderBottom: '7px solid var(--ow-text-hi)',
         }}
       />
     </div>

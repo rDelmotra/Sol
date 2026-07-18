@@ -15,7 +15,6 @@ export function SearchBar() {
   const catalogData = useStore((s) => s.catalogData);
   const selectByIndex = useStore((s) => s.selectByIndex);
   const loadingPhase = useStore((s) => s.loadingPhase);
-  const hasSelection = useStore((s) => !!(s.selectedSatellite || s.selectedDso));
   const applyQueryFilters = useStore((s) => s.applyQueryFilters);
   const clearQueryFilters = useStore((s) => s.clearQueryFilters);
   const setInjectSearchQuery = useStore((s) => s.setInjectSearchQuery);
@@ -233,12 +232,6 @@ export function SearchBar() {
   const visibleTotal = Object.values(visibleFacetCounts.type).reduce((a, b) => a + b, 0);
   const catalogTotal = Object.values(facetCounts.type).reduce((a, b) => a + b, 0);
 
-  const dynamicInputStyle: React.CSSProperties = {
-    ...inputStyle,
-    borderRadius: hasSelection && !showDropdown ? '8px 8px 0 0' : '8px',
-    borderBottom: hasSelection && !showDropdown ? 'none' : '1px solid var(--ow-stroke)',
-  };
-
   return (
     <div ref={containerRef} style={containerStyle}>
       <div style={inputWrapperStyle}>
@@ -251,7 +244,7 @@ export function SearchBar() {
           onChange={(e) => onQueryChange(e.target.value)}
           onFocus={() => setIsOpen(true)}
           onKeyDown={onKeyDown}
-          style={dynamicInputStyle}
+          style={inputStyle}
         />
       </div>
       {showChips && (
@@ -368,7 +361,7 @@ const inputStyle: React.CSSProperties = {
   backdropFilter: 'blur(var(--ow-blur-2))',
   WebkitBackdropFilter: 'blur(var(--ow-blur-2))',
   border: '1px solid var(--ow-stroke)',
-  borderRadius: 8,
+  borderRadius: 'var(--ow-r-md)',
   fontFamily: 'var(--ow-font-mono)',
   fontSize: '12px',
   color: 'var(--ow-text-hi)',
@@ -385,7 +378,7 @@ const dropdownStyle: React.CSSProperties = {
   backdropFilter: 'blur(var(--ow-blur-3))',
   WebkitBackdropFilter: 'blur(var(--ow-blur-3))',
   border: '1px solid var(--ow-stroke)',
-  borderRadius: 8,
+  borderRadius: 'var(--ow-r-md)',
   overflow: 'hidden',
   maxHeight: 360,
   zIndex: 20,
@@ -419,7 +412,7 @@ const chipStyle: React.CSSProperties = {
   backdropFilter: 'blur(var(--ow-blur-2))',
   WebkitBackdropFilter: 'blur(var(--ow-blur-2))',
   border: '1px solid var(--ow-stroke-strong)',
-  borderRadius: 10,
+  borderRadius: 'var(--ow-r-md)',
   fontFamily: 'var(--ow-font-mono)',
   fontSize: '11px',
   color: 'var(--ow-text-hi)',

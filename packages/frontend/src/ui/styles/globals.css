@@ -89,6 +89,11 @@
   /* — Elevation — */
   --ow-shadow-1: 0 4px 24px rgba(0, 0, 0, 0.40);
   --ow-shadow-2: 0 10px 44px rgba(0, 0, 0, 0.52);
+  --ow-scrim: rgba(5, 7, 14, 0.5);
+
+  /* — Legibility shadow for text floating directly over the 3D scene (no glass
+     backing) — ambient HUD labels, the compass strip. — */
+  --ow-text-shadow-ambient: 0 1px 6px rgba(0, 0, 0, 0.85);
 
   /* — Motion (soft, unhurried) — */
   --ow-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -226,4 +231,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ow-pill, .ow-icon-btn, .ow-input, .ow-toggle, .ow-toggle__knob { transition: none; }
+  .ow-lens-sheet, .ow-lens-scrim { transition: none; }
 }
