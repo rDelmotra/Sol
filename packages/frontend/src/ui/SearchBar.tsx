@@ -6,6 +6,7 @@ import { parseQuery } from '../query/parser';
 import { irToFilterPatch } from '../query/executor';
 import { ensureQueryVocab } from '../query/vocab';
 import { EMPTY_IR, type QueryIR } from '../query/types';
+import { useAnalyticAsk } from './useAnalyticAsk';
 
 const CATEGORY_COLORS: Record<ObjectCategory, string> = {
   active_satellite: '#4CAF50',
@@ -119,18 +120,42 @@ export function SearchBar() {
     [selectByIndex, resetQueryState],
   );
 
-  // Keyboard navigation
+  // ── Ask affordance (P2) ────────────────────────────────────────────────────
+  // Residual text (chips excluded) of ≥2 words offers an "Ask" row pinned FIRST
+  // in the dropdown. Dispatching moves the question into the AnswerCard and
+  // releases the tier-0 facet chips so the analytic allow-set stands alone
+  // (no confusing AND of chips × answer).
+  const ask = useAnalyticAsk();
+  const askText = ir.text.trim();
+  const canAsk = askText.split(/\s+/).filter(Boolean).length >= 2;
+  const askOffset = canAsk ? 1 : 0;
+
+  const dispatchAsk = useCallback(() => {
+    ask(askText);
+    setQuery('');
+    resetQueryState();
+    setIsOpen(false);
+    inputRef.current?.blur();
+  }, [ask, askText, resetQueryState]);
+
+  // Keyboard navigation over the unified list: index 0 = ask row (when present),
+  // Fuse results follow.
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      const listLength = askOffset + results.length;
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setHighlightedIndex((i) => Math.min(i + 1, results.length - 1));
+        setHighlightedIndex((i) => Math.min(i + 1, Math.max(listLength - 1, 0)));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setHighlightedIndex((i) => Math.max(i - 1, 0));
-      } else if (e.key === 'Enter' && results.length > 0) {
+      } else if (e.key === 'Enter' && listLength > 0) {
         e.preventDefault();
-        const hit = results[highlightedIndex];
+        if (canAsk && highlightedIndex === 0) {
+          dispatchAsk();
+          return;
+        }
+        const hit = results[highlightedIndex - askOffset];
         if (hit?.refIndex != null) selectResult(hit.refIndex);
       } else if (e.key === 'Escape') {
         setQuery('');
@@ -139,7 +164,7 @@ export function SearchBar() {
         inputRef.current?.blur();
       }
     },
-    [results, highlightedIndex, selectResult, resetQueryState],
+    [results, highlightedIndex, selectResult, resetQueryState, canAsk, askOffset, dispatchAsk],
   );
 
   // Unmount / hot-reload safety: never strand a collapsed swarm.
@@ -210,7 +235,7 @@ export function SearchBar() {
 
   if (loadingPhase !== 'ready') return null;
 
-  const showDropdown = isOpen && results.length > 0;
+  const showDropdown = isOpen && (results.length > 0 || canAsk);
   const showChips = ir.matches.length > 0 && query.trim() !== '';
   const visibleTotal = Object.values(visibleFacetCounts.type).reduce((a, b) => a + b, 0);
   const catalogTotal = Object.values(facetCounts.type).reduce((a, b) => a + b, 0);
@@ -259,17 +284,36 @@ export function SearchBar() {
       )}
       {showDropdown && (
         <div style={dropdownStyle}>
+          {canAsk && (
+            <div
+              style={{
+                ...resultItemStyle,
+                background: highlightedIndex === 0 ? 'rgba(255,255,255,0.08)' : 'transparent',
+              }}
+              onMouseEnter={() => setHighlightedIndex(0)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                dispatchAsk();
+              }}
+            >
+              <span style={{ color: '#B39DDB', marginRight: 8, flexShrink: 0 }}>✦</span>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Ask: “{askText}”
+              </span>
+            </div>
+          )}
           {results.map((hit, i) => {
             const obj = hit.item;
+            const listIndex = i + askOffset;
             return (
               <div
                 key={obj.noradId}
                 style={{
                   ...resultItemStyle,
                   background:
-                    i === highlightedIndex ? 'rgba(255,255,255,0.08)' : 'transparent',
+                    listIndex === highlightedIndex ? 'rgba(255,255,255,0.08)' : 'transparent',
                 }}
-                onMouseEnter={() => setHighlightedIndex(i)}
+                onMouseEnter={() => setHighlightedIndex(listIndex)}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   if (hit.refIndex != null) selectResult(hit.refIndex);
