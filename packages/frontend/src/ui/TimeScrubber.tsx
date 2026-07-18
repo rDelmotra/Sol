@@ -53,7 +53,7 @@ const WHEEL_HEIGHT = 300;
 const WHEEL_WIDTH = 54;
 const TICK_COUNT = Math.ceil((WHEEL_HEIGHT + 2 * TICK_PERIOD) / TICK_SPACING) + 1;
 
-const ACCENT = '#63b3ed';
+const ACCENT = 'var(--ow-telemetry)';
 
 function pad(n: number, len = 2): string {
   return String(n).padStart(len, '0');
@@ -65,19 +65,19 @@ function ensurePulseKeyframes(): void {
   const el = document.createElement('style');
   el.id = 'ow-pill-pulse-kf';
   el.textContent =
-    '@keyframes ow-pill-pulse{0%,100%{box-shadow:0 0 0 0 rgba(99,179,237,0);}50%{box-shadow:0 0 0 5px rgba(99,179,237,0.22);}}';
+    '@keyframes ow-pill-pulse{0%,100%{box-shadow:0 0 0 0 rgba(111,216,224,0);}50%{box-shadow:0 0 0 5px var(--ow-telemetry-soft);}}';
   document.head.appendChild(el);
 }
 
 // ── Styling ──────────────────────────────────────────────────────────────────
 
 const glass: React.CSSProperties = {
-  background: 'rgba(8, 12, 20, 0.62)',
-  backdropFilter: 'blur(8px)',
-  WebkitBackdropFilter: 'blur(8px)',
-  border: '1px solid rgba(255, 255, 255, 0.12)',
-  fontFamily: 'monospace',
-  color: 'rgba(255, 255, 255, 0.85)',
+  background: 'var(--ow-surface-2)',
+  backdropFilter: 'blur(var(--ow-blur-2))',
+  WebkitBackdropFilter: 'blur(var(--ow-blur-2))',
+  border: '1px solid var(--ow-stroke)',
+  fontFamily: 'var(--ow-font-mono)',
+  color: 'var(--ow-text-mid)',
   pointerEvents: 'auto',
 };
 
@@ -140,8 +140,8 @@ function TimePanel({
         cursor: 'pointer',
         padding: '1px 4px',
         borderRadius: 4,
-        color: active === f ? '#fff' : 'rgba(255,255,255,0.65)',
-        background: active === f ? 'rgba(99,179,237,0.22)' : 'transparent',
+        color: active === f ? 'var(--ow-text-hi)' : 'var(--ow-text-mid)',
+        background: active === f ? 'var(--ow-telemetry-soft)' : 'transparent',
         borderBottom: `2px solid ${active === f ? ACCENT : 'transparent'}`,
         transition: 'color 0.15s, background 0.15s',
       }}
@@ -170,15 +170,15 @@ function TimePanel({
       }}
     >
       {part('year')}
-      <span style={{ color: 'rgba(255,255,255,0.3)' }}>-</span>
+      <span style={{ color: 'var(--ow-text-faint)' }}>-</span>
       {part('month')}
-      <span style={{ color: 'rgba(255,255,255,0.3)' }}>-</span>
+      <span style={{ color: 'var(--ow-text-faint)' }}>-</span>
       {part('day')}
       <span style={{ width: 8 }} />
       {part('hour')}
-      <span style={{ color: 'rgba(255,255,255,0.3)' }}>:</span>
+      <span style={{ color: 'var(--ow-text-faint)' }}>:</span>
       {part('minute')}
-      <span style={{ marginLeft: 8, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>UTC</span>
+      <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ow-text-faint)' }}>UTC</span>
     </div>
   );
 }
@@ -304,7 +304,7 @@ function ThumbWheel({ activeRef }: { activeRef: React.MutableRefObject<Field> })
           right: 8,
           width: major ? 18 : 10,
           height: major ? 2 : 1,
-          background: `rgba(255,255,255,${major ? 0.5 : 0.25})`,
+          background: `rgba(182, 192, 216, ${major ? 0.5 : 0.25})`,
         }}
       />,
     );
@@ -345,7 +345,7 @@ function ThumbWheel({ activeRef }: { activeRef: React.MutableRefObject<Field> })
           right: 6,
           height: 2,
           marginTop: -1,
-          background: 'rgba(255,255,255,0.75)',
+          background: 'var(--ow-text-mid)',
           boxShadow: `0 0 6px ${ACCENT}`,
         }}
       />
@@ -423,8 +423,8 @@ export function TimeScrubber() {
                   textTransform: 'uppercase',
                   letterSpacing: '0.08em',
                   cursor: 'pointer',
-                  color: activeField === f ? '#fff' : 'rgba(255,255,255,0.55)',
-                  borderColor: activeField === f ? ACCENT : 'rgba(255,255,255,0.12)',
+                  color: activeField === f ? 'var(--ow-text-hi)' : 'var(--ow-text-lo)',
+                  borderColor: activeField === f ? ACCENT : 'var(--ow-stroke)',
                 }}
               >
                 {f}
@@ -446,7 +446,7 @@ export function TimeScrubber() {
             padding: '4px 12px',
             borderRadius: 8,
             fontSize: 11,
-            color: 'rgba(255,255,255,0.62)',
+            color: 'var(--ow-text-mid)',
             whiteSpace: 'nowrap',
           }}
         >
@@ -472,9 +472,9 @@ export function TimeScrubber() {
           aria-label="Toggle time scrubber"
           style={{
             ...iconBtn,
-            color: scrubberMode ? '#fff' : 'rgba(255,255,255,0.7)',
-            background: scrubberMode ? 'rgba(99,179,237,0.25)' : glass.background,
-            borderColor: scrubberMode ? ACCENT : 'rgba(255,255,255,0.12)',
+            color: scrubberMode ? 'var(--ow-text-hi)' : 'var(--ow-text-mid)',
+            background: scrubberMode ? 'var(--ow-telemetry-soft)' : glass.background,
+            borderColor: scrubberMode ? ACCENT : 'var(--ow-stroke)',
           }}
         >
           <ClockIcon />
@@ -506,8 +506,8 @@ export function TimeScrubber() {
               borderRadius: 16,
               fontSize: 11,
               letterSpacing: '0.04em',
-              color: '#fff',
-              borderColor: 'rgba(99,179,237,0.55)',
+              color: 'var(--ow-text-hi)',
+              borderColor: 'var(--ow-telemetry-line)',
               cursor: 'pointer',
               animation: pulse ? 'ow-pill-pulse 1.1s ease-in-out infinite' : 'none',
             }}

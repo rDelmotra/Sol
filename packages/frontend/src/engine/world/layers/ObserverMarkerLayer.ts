@@ -51,13 +51,24 @@ export class ObserverMarkerLayer implements Layer {
     }
   }
 
-  update(_frame: FrameContext): void {
-    // Hide the marker only while actually in the dome view: the camera sits AT the
-    // observer, so the cone would clutter the inside. During joyride/fly-to out of
-    // dome the camera is in space, so the marker should show again (like any space
-    // view with an observer set) — gate on isDomeView, not visibilityMode alone.
+  update(frame: FrameContext): void {
     if (this.marker) {
-      this.marker.visible = !isDomeView(useStore.getState());
+      const isDome = isDomeView(useStore.getState());
+      const showDome = useStore.getState().showObserverDome;
+      this.marker.visible = showDome && !isDome;
+
+      if (this.marker.visible && this.ringMesh) {
+        this.time += frame.delta;
+        
+        // Pulse scale from 1.0 (radius 0.26) to 1.5384 (radius 0.40)
+        const progress = (this.time % 2.0) / 2.0;
+        const scale = 1.0 + progress * 0.5384; 
+        this.ringMesh.scale.set(scale, scale, scale);
+        
+        // Fade out as it expands
+        const material = this.ringMesh.material as THREE.MeshBasicMaterial;
+        material.opacity = Math.max(0, 0.8 * (1.0 - progress));
+      }
     }
   }
 
@@ -66,40 +77,55 @@ export class ObserverMarkerLayer implements Layer {
     this.parent = null;
   }
 
-  private buildMarker(): THREE.Group {
-    // Frustum: 160° FOV (half-angle 80°). radius = height * tan(80°).
-    // Shallow height = 0.02 → radiusTop = 0.02 * 5.67 = 0.1134.
-    const geo = new THREE.CylinderGeometry(0.1134, 0.002, 0.02, 32, 1, true);
-    geo.translate(0, 0.01, 0); // base at (0,0,0)
+  private ringMesh: THREE.Mesh | null = null;
+  private time = 0;
 
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x00e5ff,
+  private buildMarker(): THREE.Group {
+    const group = new THREE.Group();
+
+    // 1. Skydome (Translucent glassmorphism dome & cone sides)
+    // Radius 0.28 (approx 1,812km range limit) and thetaLength of 80 degrees (10 degree elevation limit)
+    const domeGeo = new THREE.SphereGeometry(0.28, 32, 16, 0, Math.PI * 2, 0, 80 * Math.PI / 180);
+    const domeMat = new THREE.MeshBasicMaterial({
+      color: 0xB388FF, // Off-purple theme
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.12, // Slightly dimmed to avoid overlay clutter
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
       depthWrite: false,
       depthTest: true,
     });
+    const domeMesh = new THREE.Mesh(domeGeo, domeMat);
+    domeMesh.renderOrder = 1;
+    group.add(domeMesh);
 
-    const group = new THREE.Group();
+    // Cone connecting the observer (ground) to the base of the floating dome cap
+    // height = 0.28 * cos(80) = 0.04862, radiusTop = 0.28 * sin(80) = 0.27575
+    const coneGeo = new THREE.CylinderGeometry(0.27575, 0.002, 0.04862, 32, 1, true);
+    coneGeo.translate(0, 0.04862 / 2, 0); // align bottom with (0,0,0)
+    const coneMesh = new THREE.Mesh(coneGeo, domeMat);
+    coneMesh.renderOrder = 1;
+    group.add(coneMesh);
 
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.renderOrder = 1;
-    group.add(mesh);
-
-    const wireframe = new THREE.LineSegments(
-      new THREE.WireframeGeometry(geo),
-      new THREE.LineBasicMaterial({
-        color: 0xff4444, // faint red
-        transparent: true,
-        opacity: 0.25,
-        depthTest: true,
-        depthWrite: false,
-      }),
-    );
-    wireframe.renderOrder = 1;
-    group.add(wireframe);
+    // 2. Pulsing holographic ring (surface)
+    // Base radius of 0.26 (approx 1,668km ground footprint)
+    const ringGeo = new THREE.RingGeometry(0.255, 0.26, 64);
+    ringGeo.rotateX(-Math.PI / 2); // Lay flat on the surface
+    
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xB388FF,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      depthTest: true,
+    });
+    const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+    ringMesh.renderOrder = 2;
+    group.add(ringMesh);
+    
+    this.ringMesh = ringMesh;
 
     return group;
   }

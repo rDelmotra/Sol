@@ -15,9 +15,9 @@
 import { useStore } from '../store/useStore';
 import type { AnalyticResult, CoverageEntry } from '@orbitwatch/analytic';
 
-const VIOLET = '#B39DDB';
-const VIOLET_DIM = 'rgba(179, 157, 219, 0.55)';
-const AMBER = '#FFB74D';
+const VIOLET = 'var(--ow-perceptor)';
+const VIOLET_DIM = 'var(--ow-perceptor-line)';
+const AMBER = 'var(--ow-warn)';
 const COVERAGE_CAVEAT_THRESHOLD = 0.95;
 const MAX_TABLE_ROWS = 10;
 
@@ -189,13 +189,14 @@ const cardStyle: React.CSSProperties = {
   position: 'relative',
   marginTop: 8,
   padding: '10px 12px 10px',
-  background: 'rgba(0, 0, 0, 0.7)',
-  backdropFilter: 'blur(4px)',
-  border: '1px solid rgba(255, 255, 255, 0.1)',
-  borderRadius: 8,
-  fontFamily: 'monospace',
+  background: 'var(--ow-surface-2)',
+  backdropFilter: 'blur(var(--ow-blur-2))',
+  WebkitBackdropFilter: 'blur(var(--ow-blur-2))',
+  border: '1px solid var(--ow-stroke)',
+  borderRadius: 'var(--ow-r-md)',
+  fontFamily: 'var(--ow-font-display)',
   fontSize: '12px',
-  color: 'rgba(255, 255, 255, 0.85)',
+  color: 'var(--ow-text-hi)',
   pointerEvents: 'auto',
   overflow: 'hidden',
 };
@@ -217,7 +218,7 @@ const headerRowStyle: React.CSSProperties = {
 
 const questionStyle: React.CSSProperties = {
   flex: 1,
-  color: 'rgba(255, 255, 255, 0.55)',
+  color: 'var(--ow-text-lo)',
   fontStyle: 'italic',
   fontSize: '11px',
   lineHeight: 1.4,
@@ -226,7 +227,7 @@ const questionStyle: React.CSSProperties = {
 
 const closeStyle: React.CSSProperties = {
   cursor: 'pointer',
-  color: 'rgba(255, 255, 255, 0.4)',
+  color: 'var(--ow-text-faint)',
   fontSize: '15px',
   lineHeight: 1,
   flexShrink: 0,
@@ -234,7 +235,7 @@ const closeStyle: React.CSSProperties = {
 
 const compilingStyle: React.CSSProperties = {
   marginTop: 8,
-  color: 'rgba(255, 255, 255, 0.6)',
+  color: 'var(--ow-text-lo)',
   fontSize: '11px',
   letterSpacing: '0.05em',
 };
@@ -248,19 +249,20 @@ const errorStyle: React.CSSProperties = {
 
 const interpretationStyle: React.CSSProperties = {
   marginTop: 8,
-  color: 'rgba(255, 255, 255, 0.75)',
+  color: 'var(--ow-text-mid)',
   fontSize: '11px',
   lineHeight: 1.5,
 };
 
 const dividerStyle: React.CSSProperties = {
   height: 1,
-  background: 'rgba(255, 255, 255, 0.08)',
+  background: 'var(--ow-stroke)',
   margin: '9px 0',
 };
 
 const bigNumberStyle: React.CSSProperties = {
-  fontSize: '22px',
+  fontFamily: 'var(--ow-font-mono)',
+  fontSize: '24px',
   fontWeight: 600,
   color: VIOLET,
   letterSpacing: '0.02em',
@@ -268,16 +270,17 @@ const bigNumberStyle: React.CSSProperties = {
 
 const bigNumberUnitStyle: React.CSSProperties = {
   fontSize: '11px',
-  color: 'rgba(255, 255, 255, 0.6)',
+  color: 'var(--ow-text-lo)',
   marginLeft: 6,
 };
 
 const emptyStyle: React.CSSProperties = {
-  color: 'rgba(255, 255, 255, 0.5)',
+  color: 'var(--ow-text-lo)',
   fontSize: '11px',
 };
 
 const tableStyle: React.CSSProperties = {
+  fontFamily: 'var(--ow-font-mono)',
   borderCollapse: 'collapse',
   width: '100%',
   fontSize: '11px',
@@ -288,13 +291,13 @@ const thStyle: React.CSSProperties = {
   padding: '2px 8px 3px 0',
   color: VIOLET_DIM,
   fontWeight: 400,
-  borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+  borderBottom: '1px solid var(--ow-stroke-strong)',
   whiteSpace: 'nowrap',
 };
 
 const tdStyle: React.CSSProperties = {
   padding: '3px 8px 3px 0',
-  color: 'rgba(255, 255, 255, 0.85)',
+  color: 'var(--ow-text-hi)',
   whiteSpace: 'nowrap',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
@@ -303,7 +306,7 @@ const tdStyle: React.CSSProperties = {
 
 const moreRowsStyle: React.CSSProperties = {
   marginTop: 4,
-  color: 'rgba(255, 255, 255, 0.4)',
+  color: 'var(--ow-text-faint)',
   fontSize: '10px',
 };
 
@@ -316,7 +319,8 @@ const compareLabelStyle: React.CSSProperties = {
 };
 
 const metaStyle: React.CSSProperties = {
-  color: 'rgba(255, 255, 255, 0.4)',
+  fontFamily: 'var(--ow-font-mono)',
+  color: 'var(--ow-text-faint)',
   fontSize: '10px',
   lineHeight: 1.5,
 };

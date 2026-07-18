@@ -6,9 +6,7 @@ import { useStore } from './store/useStore';
 // Post-`ready` overlay UI — none of it renders until loadingPhase === 'ready',
 // so it's split out of the first-paint chunk and streamed in at mount. Named
 // exports are mapped to default for React.lazy.
-const HUD = lazy(() => import('./ui/HUD').then((m) => ({ default: m.HUD })));
-const FilterPanel = lazy(() => import('./ui/FilterPanel').then((m) => ({ default: m.FilterPanel })));
-const SearchBar = lazy(() => import('./ui/SearchBar').then((m) => ({ default: m.SearchBar })));
+const TopTaskbar = lazy(() => import('./ui/TopTaskbar').then((m) => ({ default: m.TopTaskbar })));
 const InfoCard = lazy(() => import('./ui/InfoCard').then((m) => ({ default: m.InfoCard })));
 const AnswerCard = lazy(() => import('./ui/AnswerCard').then((m) => ({ default: m.AnswerCard })));
 const Tooltip = lazy(() => import('./ui/Tooltip').then((m) => ({ default: m.Tooltip })));
@@ -37,13 +35,13 @@ function DsoLabels() {
               position: 'absolute',
               left: label.screenX + 10,
               top: label.screenY - 6,
-              color: '#00BCD4',
-              fontFamily: 'monospace',
+              color: 'var(--ow-telemetry)',
+              fontFamily: 'var(--ow-font-mono)',
               fontSize: '11px',
               fontWeight: 500,
               letterSpacing: '0.05em',
               pointerEvents: 'none',
-              textShadow: '0 0 6px rgba(0,188,212,0.7), 0 1px 3px rgba(0,0,0,0.9)',
+              textShadow: '0 0 8px rgba(111,216,224,0.6), 0 1px 3px rgba(0,0,0,0.9)',
               whiteSpace: 'nowrap',
               userSelect: 'none',
             }}
@@ -65,20 +63,12 @@ function ResetViewButton() {
 
   return (
     <button
+      className="ow-pill"
       onClick={() => triggerResetCamera?.()}
       style={{
         position: 'absolute',
         bottom: 16,
         right: 16,
-        padding: '6px 12px',
-        background: 'rgba(0, 0, 0, 0.6)',
-        backdropFilter: 'blur(4px)',
-        border: '1px solid rgba(255, 255, 255, 0.12)',
-        borderRadius: 6,
-        color: 'rgba(255, 255, 255, 0.7)',
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        cursor: 'pointer',
         pointerEvents: 'auto',
       }}
     >
@@ -151,12 +141,11 @@ export default function App() {
           }}
         >
           <HudDimGroup>
-            <HUD />
-            <FilterPanel />
+            <TopTaskbar />
             <div
               style={{
                 position: 'absolute',
-                top: 16,
+                top: 76,
                 right: 16,
                 width: 280,
                 display: 'flex',
@@ -165,7 +154,6 @@ export default function App() {
                 zIndex: 10,
               }}
             >
-              <SearchBar />
               <AnswerCard />
               <InfoCard />
             </div>

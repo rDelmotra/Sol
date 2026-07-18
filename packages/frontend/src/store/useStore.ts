@@ -118,6 +118,24 @@ const ALL_PURPOSE_ON: Record<Purpose, boolean> = {
   communications: true, earth_observation: true, navigation: true, technology_dev: true,
   space_science: true, space_observation: true, surveillance: true, meteorological: true, other: true,
 };
+const ALL_REGIME_ON: Record<OrbitalRegime, boolean> = {
+  LEO: true, MEO: true, GEO: true, HEO: true, OTHER: true,
+};
+
+function optInToggle<K extends string>(current: Record<K, boolean>, key: K, allOn: Record<K, boolean>): Record<K, boolean> {
+  const isAllOn = Object.values(current).every((v) => v === true);
+  if (isAllOn) {
+    const next = {} as Record<K, boolean>;
+    for (const k in allOn) next[k] = false;
+    next[key] = true;
+    return next;
+  }
+  const next = { ...current, [key]: !current[key] };
+  const isAllOff = Object.values(next).every((v) => v === false);
+  if (isAllOff) return allOn;
+  return next;
+}
+
 
 interface AppState {
   loadingPhase: LoadingPhase;
@@ -163,6 +181,7 @@ interface AppState {
   clusterScreenY: number;
 
   observerLocation: { lat: number; lon: number; alt: number } | null;
+  showObserverDome: boolean;
   visibilityMode: VisibilityMode;
   /** Dome-mode gaze heading (radians, from North toward East); drives the HUD compass. */
   observerHeadingRad: number;
@@ -216,6 +235,11 @@ interface AppState {
   toggleStatusFilter: (key: OrbitalStatus) => void;
   toggleSectorFilter: (key: SectorFilterKey) => void;
   togglePurposeFilter: (key: Purpose) => void;
+  clearTypeFilters: () => void;
+  clearStatusFilters: () => void;
+  clearSectorFilters: () => void;
+  clearPurposeFilters: () => void;
+  clearRegimeFilters: () => void;
   setCountryFilter: (filter: CountryFilter) => void;
   /**
    * Apply a compiled query patch with OVERWRITE semantics over the seven
@@ -249,6 +273,7 @@ interface AppState {
   setCluster: (items: { index: number; data: EnrichedTLEObject; altitude: number }[], screenX: number, screenY: number) => void;
   clearCluster: () => void;
   setObserverLocation: (loc: { lat: number; lon: number; alt: number } | null) => void;
+  setShowObserverDome: (show: boolean) => void;
   setVisibilityMode: (mode: VisibilityMode) => void;
   setObserverHeadingRad: (rad: number) => void;
   setVisualListState: (state: VisualListState) => void;
@@ -352,6 +377,7 @@ export const useStore = create<AppState>((set, get) => ({
   clusterScreenY: 0,
 
   observerLocation: null,
+  showObserverDome: true,
   visibilityMode: 'all',
   observerHeadingRad: 0,
   visualList: {
@@ -430,23 +456,25 @@ export const useStore = create<AppState>((set, get) => ({
     })),
   toggleRegimeFilter: (regime) =>
     set((state) => ({
-      regimeFilters: {
-        ...state.regimeFilters,
-        [regime]: !state.regimeFilters[regime],
-      },
+      regimeFilters: optInToggle(state.regimeFilters, regime, ALL_REGIME_ON),
     })),
+  clearRegimeFilters: () => set({ regimeFilters: ALL_REGIME_ON }),
   setVisibleCounts: (catCounts, regCounts) =>
     set({ visibleCategoryCounts: catCounts, visibleRegimeCounts: regCounts }),
 
   setColorBy: (colorBy) => set({ colorBy }),
   toggleTypeFilter: (key) =>
-    set((state) => ({ typeFilters: { ...state.typeFilters, [key]: !state.typeFilters[key] } })),
+    set((state) => ({ typeFilters: optInToggle(state.typeFilters, key, ALL_TYPE_ON) })),
   toggleStatusFilter: (key) =>
-    set((state) => ({ statusFilters: { ...state.statusFilters, [key]: !state.statusFilters[key] } })),
+    set((state) => ({ statusFilters: optInToggle(state.statusFilters, key, ALL_STATUS_ON) })),
   toggleSectorFilter: (key) =>
-    set((state) => ({ sectorFilters: { ...state.sectorFilters, [key]: !state.sectorFilters[key] } })),
+    set((state) => ({ sectorFilters: optInToggle(state.sectorFilters, key, ALL_SECTOR_ON) })),
   togglePurposeFilter: (key) =>
-    set((state) => ({ purposeFilters: { ...state.purposeFilters, [key]: !state.purposeFilters[key] } })),
+    set((state) => ({ purposeFilters: optInToggle(state.purposeFilters, key, ALL_PURPOSE_ON) })),
+  clearTypeFilters: () => set({ typeFilters: ALL_TYPE_ON }),
+  clearStatusFilters: () => set({ statusFilters: ALL_STATUS_ON }),
+  clearSectorFilters: () => set({ sectorFilters: ALL_SECTOR_ON }),
+  clearPurposeFilters: () => set({ purposeFilters: ALL_PURPOSE_ON }),
   setCountryFilter: (filter) => set({ countryFilter: filter }),
   applyQueryFilters: (patch) => {
     const s = get();
@@ -528,6 +556,7 @@ export const useStore = create<AppState>((set, get) => ({
     }),
   clearCluster: () => set({ clusterItems: [] }),
   setObserverLocation: (loc) => set({ observerLocation: loc }),
+  setShowObserverDome: (show) => set({ showObserverDome: show }),
   setVisibilityMode: (mode) => set({ visibilityMode: mode }),
   setObserverHeadingRad: (rad) => set({ observerHeadingRad: rad }),
   setVisualListState: (visualList) => set({ visualList }),

@@ -16,14 +16,15 @@ const CATEGORY_LABELS: Record<ObjectCategory, string> = {
 const panelStyle: React.CSSProperties = {
   width: '100%',
   padding: '14px 16px',
-  background: 'rgba(0, 0, 0, 0.7)',
-  backdropFilter: 'blur(4px)',
-  border: '1px solid rgba(255, 255, 255, 0.1)',
+  background: 'var(--ow-surface-2)',
+  backdropFilter: 'blur(var(--ow-blur-2))',
+  WebkitBackdropFilter: 'blur(var(--ow-blur-2))',
+  border: '1px solid var(--ow-stroke)',
   borderTop: 'none',
-  borderRadius: '0 0 8px 8px',
-  fontFamily: 'monospace',
+  borderRadius: '0 0 var(--ow-r-md) var(--ow-r-md)',
+  fontFamily: 'var(--ow-font-mono)',
   fontSize: '12px',
-  color: 'rgba(255, 255, 255, 0.85)',
+  color: 'var(--ow-text-mid)',
   pointerEvents: 'auto',
 };
 
@@ -34,13 +35,13 @@ const rowStyle: React.CSSProperties = {
 };
 
 const labelStyle: React.CSSProperties = {
-  color: 'rgba(255, 255, 255, 0.45)',
+  color: 'var(--ow-text-lo)',
 };
 
 // A pivot-able value: accent-tinted + pointer so it reads as clickable (the
 // panel is all inline styles, so no :hover — the color is the affordance).
 const pivotValueStyle: React.CSSProperties = {
-  color: '#00E5FF',
+  color: 'var(--ow-telemetry)',
   cursor: 'pointer',
 };
 
@@ -48,11 +49,11 @@ const pivotValueStyle: React.CSSProperties = {
 const pivotButtonStyle: React.CSSProperties = {
   flex: 1,
   padding: '6px 0',
-  background: 'rgba(255, 255, 255, 0.06)',
-  border: '1px solid rgba(255, 255, 255, 0.12)',
-  borderRadius: 4,
-  color: 'rgba(255, 255, 255, 0.7)',
-  fontFamily: 'monospace',
+  background: 'var(--ow-surface-hover)',
+  border: '1px solid var(--ow-stroke)',
+  borderRadius: 'var(--ow-r-sm)',
+  color: 'var(--ow-text-mid)',
+  fontFamily: 'var(--ow-font-mono)',
   fontSize: '11px',
   cursor: 'pointer',
 };
@@ -63,13 +64,13 @@ const headerStyle: React.CSSProperties = {
   alignItems: 'flex-start',
   marginBottom: 10,
   paddingBottom: 8,
-  borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+  borderBottom: '1px solid var(--ow-stroke)',
 };
 
 const closeStyle: React.CSSProperties = {
   background: 'none',
   border: 'none',
-  color: 'rgba(255, 255, 255, 0.5)',
+  color: 'var(--ow-text-lo)',
   cursor: 'pointer',
   fontSize: '16px',
   padding: '0 0 0 8px',
@@ -215,7 +216,7 @@ function MetadataRows({
         </>
       )}
       {meta.sources.includes('gcat') && (
-        <div style={{ marginTop: 6, fontSize: '10px', color: 'rgba(255,255,255,0.3)' }}>
+        <div style={{ marginTop: 6, fontSize: '10px', color: 'var(--ow-text-faint)' }}>
           Catalog data: GCAT / J. McDowell (CC-BY)
         </div>
       )}
@@ -254,10 +255,10 @@ export function InfoCard() {
       <div style={panelStyle}>
         <div style={headerStyle}>
           <div>
-            <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff', marginBottom: 2 }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ow-text-hi)', marginBottom: 2 }}>
               {dso.name}
             </div>
-            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
+            <div style={{ fontSize: '11px', color: 'var(--ow-text-faint)' }}>
               {dso.mission}
             </div>
           </div>
@@ -291,11 +292,11 @@ export function InfoCard() {
             style={{
               flex: 1,
               padding: '6px 0',
-              background: followActive ? 'rgba(0, 229, 255, 0.2)' : 'rgba(255, 255, 255, 0.06)',
-              border: `1px solid ${followActive ? 'rgba(0, 229, 255, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
-              borderRadius: 4,
-              color: followActive ? '#00E5FF' : 'rgba(255, 255, 255, 0.7)',
-              fontFamily: 'monospace',
+              background: followActive ? 'var(--ow-telemetry-soft)' : 'var(--ow-surface-hover)',
+              border: `1px solid ${followActive ? 'var(--ow-telemetry-line)' : 'var(--ow-stroke)'}`,
+              borderRadius: 'var(--ow-r-sm)',
+              color: followActive ? 'var(--ow-telemetry)' : 'var(--ow-text-mid)',
+              fontFamily: 'var(--ow-font-mono)',
               fontSize: '11px',
               cursor: 'pointer',
             }}
@@ -317,11 +318,11 @@ export function InfoCard() {
             style={{
               flex: 1,
               padding: '6px 0',
-              background: joyrideActive ? 'rgba(0, 229, 255, 0.2)' : 'rgba(255, 255, 255, 0.06)',
-              border: `1px solid ${joyrideActive ? 'rgba(0, 229, 255, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
-              borderRadius: 4,
-              color: joyrideActive ? '#00E5FF' : 'rgba(255, 255, 255, 0.7)',
-              fontFamily: 'monospace',
+              background: joyrideActive ? 'var(--ow-telemetry-soft)' : 'var(--ow-surface-hover)',
+              border: `1px solid ${joyrideActive ? 'var(--ow-telemetry-line)' : 'var(--ow-stroke)'}`,
+              borderRadius: 'var(--ow-r-sm)',
+              color: joyrideActive ? 'var(--ow-telemetry)' : 'var(--ow-text-mid)',
+              fontFamily: 'var(--ow-font-mono)',
               fontSize: '11px',
               cursor: 'pointer',
             }}
@@ -333,11 +334,11 @@ export function InfoCard() {
             style={{
               flex: 1,
               padding: '6px 0',
-              background: showOrbitTrail ? 'rgba(0, 229, 255, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-              border: `1px solid ${showOrbitTrail ? 'rgba(0, 229, 255, 0.4)' : 'rgba(255, 255, 255, 0.12)'}`,
-              borderRadius: 4,
-              color: showOrbitTrail ? '#00E5FF' : 'rgba(255, 255, 255, 0.7)',
-              fontFamily: 'monospace',
+              background: showOrbitTrail ? 'var(--ow-telemetry-soft)' : 'var(--ow-surface-hover)',
+              border: `1px solid ${showOrbitTrail ? 'var(--ow-telemetry-line)' : 'var(--ow-stroke)'}`,
+              borderRadius: 'var(--ow-r-sm)',
+              color: showOrbitTrail ? 'var(--ow-telemetry)' : 'var(--ow-text-mid)',
+              fontFamily: 'var(--ow-font-mono)',
               fontSize: '11px',
               cursor: 'pointer',
             }}
@@ -358,10 +359,10 @@ export function InfoCard() {
     <div style={panelStyle}>
       <div style={headerStyle}>
         <div>
-          <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff', marginBottom: 2 }}>
+          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--ow-text-hi)', marginBottom: 2 }}>
             {s.name}
           </div>
-          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>
+          <div style={{ fontSize: '11px', color: 'var(--ow-text-faint)' }}>
             NORAD {s.noradId}
           </div>
         </div>
@@ -435,11 +436,11 @@ export function InfoCard() {
           style={{
             flex: 1,
             padding: '6px 0',
-            background: followActive ? 'rgba(0, 229, 255, 0.2)' : 'rgba(255, 255, 255, 0.06)',
-            border: `1px solid ${followActive ? 'rgba(0, 229, 255, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
-            borderRadius: 4,
-            color: followActive ? '#00E5FF' : 'rgba(255, 255, 255, 0.7)',
-            fontFamily: 'monospace',
+            background: followActive ? 'var(--ow-telemetry-soft)' : 'var(--ow-surface-hover)',
+            border: `1px solid ${followActive ? 'var(--ow-telemetry-line)' : 'var(--ow-stroke)'}`,
+            borderRadius: 'var(--ow-r-sm)',
+            color: followActive ? 'var(--ow-telemetry)' : 'var(--ow-text-mid)',
+            fontFamily: 'var(--ow-font-mono)',
             fontSize: '11px',
             cursor: 'pointer',
           }}
@@ -463,11 +464,11 @@ export function InfoCard() {
           style={{
             flex: 1,
             padding: '6px 0',
-            background: joyrideActive ? 'rgba(0, 229, 255, 0.2)' : 'rgba(255, 255, 255, 0.06)',
-            border: `1px solid ${joyrideActive ? 'rgba(0, 229, 255, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
-            borderRadius: 4,
-            color: joyrideActive ? '#00E5FF' : 'rgba(255, 255, 255, 0.7)',
-            fontFamily: 'monospace',
+            background: joyrideActive ? 'var(--ow-telemetry-soft)' : 'var(--ow-surface-hover)',
+            border: `1px solid ${joyrideActive ? 'var(--ow-telemetry-line)' : 'var(--ow-stroke)'}`,
+            borderRadius: 'var(--ow-r-sm)',
+            color: joyrideActive ? 'var(--ow-telemetry)' : 'var(--ow-text-mid)',
+            fontFamily: 'var(--ow-font-mono)',
             fontSize: '11px',
             cursor: 'pointer',
           }}
@@ -479,11 +480,11 @@ export function InfoCard() {
           style={{
             flex: 1,
             padding: '6px 0',
-            background: showOrbitTrail ? 'rgba(0, 229, 255, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-            border: `1px solid ${showOrbitTrail ? 'rgba(0, 229, 255, 0.4)' : 'rgba(255, 255, 255, 0.12)'}`,
-            borderRadius: 4,
-            color: showOrbitTrail ? '#00E5FF' : 'rgba(255, 255, 255, 0.7)',
-            fontFamily: 'monospace',
+            background: showOrbitTrail ? 'var(--ow-telemetry-soft)' : 'var(--ow-surface-hover)',
+            border: `1px solid ${showOrbitTrail ? 'var(--ow-telemetry-line)' : 'var(--ow-stroke)'}`,
+            borderRadius: 'var(--ow-r-sm)',
+            color: showOrbitTrail ? 'var(--ow-telemetry)' : 'var(--ow-text-mid)',
+            fontFamily: 'var(--ow-font-mono)',
             fontSize: '11px',
             cursor: 'pointer',
           }}

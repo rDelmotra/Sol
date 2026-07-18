@@ -45,7 +45,7 @@ export function LoadingScreen() {
         position: 'fixed',
         inset: 0,
         zIndex: 1000,
-        background: '#000',
+        background: 'var(--ow-void)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -54,47 +54,50 @@ export function LoadingScreen() {
     >
       <h1
         style={{
-          fontFamily: 'monospace',
+          fontFamily: 'var(--ow-font-display)',
           fontSize: '2rem',
-          color: '#fff',
-          letterSpacing: '0.3em',
-          marginBottom: '2rem',
-          fontWeight: 300,
+          color: 'var(--ow-text-hi)',
+          letterSpacing: '0.32em',
+          marginBottom: '2.25rem',
+          marginRight: '-0.32em',
+          fontWeight: 400,
         }}
       >
-        ORBITWATCH
+        orbitwatch
       </h1>
 
       <div
         style={{
           width: '280px',
           height: '3px',
-          background: 'rgba(255, 255, 255, 0.15)',
-          borderRadius: '2px',
+          background: 'var(--ow-stroke-strong)',
+          borderRadius: 'var(--ow-r-pill)',
           overflow: 'hidden',
-          marginBottom: '1rem',
+          marginBottom: '1.1rem',
         }}
       >
         <div
           style={{
             width: `${progress}%`,
             height: '100%',
-            background: '#00E5FF',
-            borderRadius: '2px',
-            transition: 'width 0.4s ease-out',
+            background: 'var(--ow-telemetry)',
+            borderRadius: 'var(--ow-r-pill)',
+            boxShadow: '0 0 12px -2px var(--ow-telemetry)',
+            transition: 'width 0.4s var(--ow-ease)',
           }}
         />
       </div>
 
       <p
         style={{
-          fontFamily: 'monospace',
-          fontSize: '0.8rem',
-          color: 'rgba(255, 255, 255, 0.5)',
+          fontFamily: 'var(--ow-font-mono)',
+          fontSize: '0.78rem',
+          letterSpacing: '0.04em',
+          color: 'var(--ow-text-lo)',
         }}
       >
         {loadingError ? (
-          <span style={{ color: '#F44336' }}>{loadingError}</span>
+          <span style={{ color: 'var(--ow-danger)' }}>{loadingError}</span>
         ) : (
           PHASE_MESSAGES[loadingPhase]
         )}

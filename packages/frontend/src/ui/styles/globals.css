@@ -1,0 +1,229 @@
+/* ============================================================================
+   OrbitWatch — "Deep Field" design system
+   ----------------------------------------------------------------------------
+   The single source of truth for the overlay UI's look. Everything the HUD
+   renders reads from these tokens; components no longer hardcode glass recipes,
+   colours, radii, or type. The mood: the void is the canvas, the UI is
+   condensed starlight — soft, luminous, low-contrast, never neon.
+
+   Layers:
+     1. @font-face   — self-hosted Space Grotesk (display) + a mono stack
+     2. :root tokens — palette, surfaces, text tiers, accents, scale, motion
+     3. primitives   — .ow-* classes with real :hover / :focus-visible states
+   ============================================================================ */
+
+/* 1. Fonts ----------------------------------------------------------------- */
+
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/fonts/space-grotesk-latin-wght-normal.woff2') format('woff2');
+}
+
+/* 2. Tokens ---------------------------------------------------------------- */
+
+:root {
+  /* — Type — */
+  --ow-font-display: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ow-font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, 'Roboto Mono', monospace;
+
+  /* — Void / solid fallbacks (behind the 3D canvas these are rarely seen) — */
+  --ow-void: #05070e;
+
+  /* — Frosted surfaces (translucent, cool indigo tint; 1 = ambient → 3 = popover) — */
+  --ow-surface-1: rgba(16, 20, 34, 0.50);
+  --ow-surface-2: rgba(16, 20, 34, 0.68);
+  --ow-surface-3: rgba(20, 25, 42, 0.86);
+  --ow-surface-hover: rgba(150, 170, 220, 0.06);
+
+  /* — Blur tiers — */
+  --ow-blur-1: 8px;
+  --ow-blur-2: 16px;
+  --ow-blur-3: 24px;
+
+  /* — Hairlines — */
+  --ow-stroke: rgba(160, 180, 220, 0.12);
+  --ow-stroke-strong: rgba(160, 180, 220, 0.24);
+
+  /* — Text tiers (calm cool-white) — */
+  --ow-text-hi: rgba(233, 238, 250, 0.95);
+  --ow-text-mid: rgba(210, 218, 235, 0.72);
+  --ow-text-lo: rgba(182, 192, 216, 0.50);
+  --ow-text-faint: rgba(160, 172, 200, 0.34);
+
+  /* — Semantic accents (desaturated, luminous — the intentional cyan/violet split) — */
+  --ow-telemetry: #6fd8e0;              /* physical telemetry (HUD, InfoCard) */
+  --ow-telemetry-soft: rgba(111, 216, 224, 0.16);
+  --ow-telemetry-line: rgba(111, 216, 224, 0.45);
+  --ow-perceptor: #b9a7f0;              /* derived intelligence (the perceptor / Ask layer) */
+  --ow-perceptor-soft: rgba(185, 167, 240, 0.16);
+  --ow-perceptor-line: rgba(185, 167, 240, 0.45);
+  --ow-star: #ffcf8f;                   /* warm starlight — highlights, north, warmth */
+  --ow-danger: #ff8a80;
+  --ow-warn: #ffc27a;
+
+  /* — Object category colours (centralised; softened for calm) — */
+  --ow-cat-active: #6bd39a;
+  --ow-cat-inactive: #9aa4b2;
+  --ow-cat-rocket: #f0c66b;
+  --ow-cat-debris: #ef7d78;
+  --ow-cat-unknown: #7f8a99;
+  --ow-cat-deepspace: #6fd8e0;
+
+  /* — Radius scale — */
+  --ow-r-sm: 6px;
+  --ow-r-md: 10px;
+  --ow-r-lg: 14px;
+  --ow-r-pill: 999px;
+
+  /* — Space scale — */
+  --ow-space-1: 4px;
+  --ow-space-2: 8px;
+  --ow-space-3: 12px;
+  --ow-space-4: 16px;
+  --ow-space-5: 24px;
+  --ow-space-6: 32px;
+
+  /* — Elevation — */
+  --ow-shadow-1: 0 4px 24px rgba(0, 0, 0, 0.40);
+  --ow-shadow-2: 0 10px 44px rgba(0, 0, 0, 0.52);
+
+  /* — Motion (soft, unhurried) — */
+  --ow-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ow-ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --ow-dur-1: 140ms;
+  --ow-dur-2: 240ms;
+  --ow-dur-3: 420ms;
+}
+
+/* 3. Primitives ------------------------------------------------------------ */
+
+/* Frosted surface — the one canonical glass recipe. Elevation via data-elev. */
+.ow-glass {
+  background: var(--ow-surface-2);
+  backdrop-filter: blur(var(--ow-blur-2));
+  -webkit-backdrop-filter: blur(var(--ow-blur-2));
+  border: 1px solid var(--ow-stroke);
+  border-radius: var(--ow-r-md);
+  box-shadow: var(--ow-shadow-1);
+  color: var(--ow-text-mid);
+  font-family: var(--ow-font-display);
+}
+.ow-glass[data-elev='1'] { background: var(--ow-surface-1); backdrop-filter: blur(var(--ow-blur-1)); -webkit-backdrop-filter: blur(var(--ow-blur-1)); box-shadow: none; }
+.ow-glass[data-elev='3'] { background: var(--ow-surface-3); backdrop-filter: blur(var(--ow-blur-3)); -webkit-backdrop-filter: blur(var(--ow-blur-3)); box-shadow: var(--ow-shadow-2); }
+
+/* Pill — segmented / toggle / filter chip. Accent tone via data-accent. */
+.ow-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ow-space-2);
+  padding: 5px 12px;
+  border-radius: var(--ow-r-pill);
+  border: 1px solid var(--ow-stroke);
+  background: transparent;
+  color: var(--ow-text-lo);
+  font-family: var(--ow-font-display);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--ow-dur-1) var(--ow-ease),
+    background var(--ow-dur-1) var(--ow-ease),
+    border-color var(--ow-dur-1) var(--ow-ease),
+    box-shadow var(--ow-dur-2) var(--ow-ease);
+}
+.ow-pill:hover { color: var(--ow-text-mid); border-color: var(--ow-stroke-strong); background: var(--ow-surface-hover); }
+.ow-pill[aria-pressed='true'],
+.ow-pill[data-on='true'] {
+  color: var(--ow-perceptor);
+  border-color: var(--ow-perceptor-line);
+  background: var(--ow-perceptor-soft);
+  box-shadow: 0 0 16px -4px var(--ow-perceptor-soft);
+}
+.ow-pill[data-accent='telemetry'][data-on='true'] {
+  color: var(--ow-telemetry);
+  border-color: var(--ow-telemetry-line);
+  background: var(--ow-telemetry-soft);
+  box-shadow: 0 0 16px -4px var(--ow-telemetry-soft);
+}
+
+/* Icon button — square, quiet. */
+.ow-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: var(--ow-r-md);
+  border: 1px solid var(--ow-stroke);
+  background: var(--ow-surface-2);
+  color: var(--ow-text-mid);
+  cursor: pointer;
+  transition: color var(--ow-dur-1) var(--ow-ease), border-color var(--ow-dur-1) var(--ow-ease), background var(--ow-dur-1) var(--ow-ease);
+}
+.ow-icon-btn:hover { color: var(--ow-text-hi); border-color: var(--ow-stroke-strong); }
+
+/* Text input. */
+.ow-input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--ow-surface-2);
+  border: 1px solid var(--ow-stroke);
+  border-radius: var(--ow-r-md);
+  color: var(--ow-text-hi);
+  font-family: var(--ow-font-display);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--ow-dur-1) var(--ow-ease), box-shadow var(--ow-dur-2) var(--ow-ease);
+}
+.ow-input::placeholder { color: var(--ow-text-faint); }
+.ow-input:hover { border-color: var(--ow-stroke-strong); }
+.ow-input:focus-visible { border-color: var(--ow-perceptor-line); box-shadow: 0 0 0 3px var(--ow-perceptor-soft); }
+
+/* Focus ring for keyboard nav on any .ow-* control. */
+.ow-pill:focus-visible,
+.ow-icon-btn:focus-visible,
+.ow-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ow-perceptor-soft);
+}
+
+/* Switch. */
+.ow-toggle {
+  position: relative;
+  width: 32px;
+  height: 16px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--ow-r-pill);
+  background: rgba(150, 170, 220, 0.14);
+  cursor: pointer;
+  transition: background var(--ow-dur-1) var(--ow-ease);
+}
+.ow-toggle[data-on='true'] { background: var(--ow-perceptor-soft); box-shadow: inset 0 0 0 1px var(--ow-perceptor-line); }
+.ow-toggle__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ow-text-lo);
+  transition: left var(--ow-dur-1) var(--ow-ease), background var(--ow-dur-1) var(--ow-ease);
+}
+.ow-toggle[data-on='true'] .ow-toggle__knob { left: 18px; background: var(--ow-perceptor); }
+.ow-toggle[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* Soft thin scrollbar for menus / sheets. */
+.ow-scroll { scrollbar-width: thin; scrollbar-color: var(--ow-stroke-strong) transparent; }
+.ow-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.ow-scroll::-webkit-scrollbar-thumb { background: var(--ow-stroke-strong); border-radius: var(--ow-r-pill); }
+.ow-scroll::-webkit-scrollbar-track { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ow-pill, .ow-icon-btn, .ow-input, .ow-toggle, .ow-toggle__knob { transition: none; }
+}

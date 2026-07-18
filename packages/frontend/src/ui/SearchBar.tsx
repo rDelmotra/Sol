@@ -7,15 +7,7 @@ import { irToFilterPatch } from '../query/executor';
 import { ensureQueryVocab } from '../query/vocab';
 import { EMPTY_IR, type QueryIR } from '../query/types';
 import { useAnalyticAsk } from './useAnalyticAsk';
-
-const CATEGORY_COLORS: Record<ObjectCategory, string> = {
-  active_satellite: '#4CAF50',
-  inactive_satellite: '#9E9E9E',
-  rocket_body: '#FFC107',
-  debris: '#F44336',
-  unknown: '#757575',
-  deep_space: '#00BCD4',
-};
+import { CATEGORY_COLOR as CATEGORY_COLORS } from './styles/tokens';
 
 const DEBOUNCE_MS = 150;
 
@@ -244,7 +236,7 @@ export function SearchBar() {
   const dynamicInputStyle: React.CSSProperties = {
     ...inputStyle,
     borderRadius: hasSelection && !showDropdown ? '8px 8px 0 0' : '8px',
-    borderBottom: hasSelection && !showDropdown ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+    borderBottom: hasSelection && !showDropdown ? 'none' : '1px solid var(--ow-stroke)',
   };
 
   return (
@@ -289,7 +281,7 @@ export function SearchBar() {
             <div
               style={{
                 ...resultItemStyle,
-                background: highlightedIndex === 0 ? 'rgba(255,255,255,0.08)' : 'transparent',
+                background: highlightedIndex === 0 ? 'var(--ow-surface-hover)' : 'transparent',
               }}
               onMouseEnter={() => setHighlightedIndex(0)}
               onMouseDown={(e) => {
@@ -297,7 +289,7 @@ export function SearchBar() {
                 dispatchAsk();
               }}
             >
-              <span style={{ color: '#B39DDB', marginRight: 8, flexShrink: 0 }}>✦</span>
+              <span style={{ color: 'var(--ow-perceptor)', marginRight: 8, flexShrink: 0 }}>✦</span>
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 Ask: “{askText}”
               </span>
@@ -312,7 +304,7 @@ export function SearchBar() {
                 style={{
                   ...resultItemStyle,
                   background:
-                    listIndex === highlightedIndex ? 'rgba(255,255,255,0.08)' : 'transparent',
+                    listIndex === highlightedIndex ? 'var(--ow-surface-hover)' : 'transparent',
                 }}
                 onMouseEnter={() => setHighlightedIndex(listIndex)}
                 onMouseDown={(e) => {
@@ -334,7 +326,7 @@ export function SearchBar() {
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {obj.name}
                 </span>
-                <span style={{ color: 'rgba(255,255,255,0.35)', marginLeft: 8, flexShrink: 0 }}>
+                <span style={{ color: 'var(--ow-text-faint)', marginLeft: 8, flexShrink: 0 }}>
                   {obj.noradId}
                 </span>
               </div>
@@ -364,7 +356,7 @@ const inputWrapperStyle: React.CSSProperties = {
 const iconStyle: React.CSSProperties = {
   position: 'absolute',
   left: 10,
-  color: 'rgba(255,255,255,0.35)',
+  color: 'var(--ow-text-faint)',
   fontSize: '14px',
   pointerEvents: 'none',
 };
@@ -372,13 +364,14 @@ const iconStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '8px 12px 8px 30px',
-  background: 'rgba(0, 0, 0, 0.7)',
-  backdropFilter: 'blur(4px)',
-  border: '1px solid rgba(255, 255, 255, 0.1)',
+  background: 'var(--ow-surface-2)',
+  backdropFilter: 'blur(var(--ow-blur-2))',
+  WebkitBackdropFilter: 'blur(var(--ow-blur-2))',
+  border: '1px solid var(--ow-stroke)',
   borderRadius: 8,
-  fontFamily: 'monospace',
+  fontFamily: 'var(--ow-font-mono)',
   fontSize: '12px',
-  color: 'rgba(255, 255, 255, 0.85)',
+  color: 'var(--ow-text-hi)',
   outline: 'none',
 };
 
@@ -388,9 +381,10 @@ const dropdownStyle: React.CSSProperties = {
   left: 0,
   right: 0,
   marginTop: 4,
-  background: 'rgba(0, 0, 0, 0.85)',
-  backdropFilter: 'blur(4px)',
-  border: '1px solid rgba(255, 255, 255, 0.1)',
+  background: 'var(--ow-surface-3)',
+  backdropFilter: 'blur(var(--ow-blur-3))',
+  WebkitBackdropFilter: 'blur(var(--ow-blur-3))',
+  border: '1px solid var(--ow-stroke)',
   borderRadius: 8,
   overflow: 'hidden',
   maxHeight: 360,
@@ -402,9 +396,9 @@ const resultItemStyle: React.CSSProperties = {
   alignItems: 'center',
   padding: '7px 12px',
   cursor: 'pointer',
-  fontFamily: 'monospace',
+  fontFamily: 'var(--ow-font-mono)',
   fontSize: '12px',
-  color: 'rgba(255, 255, 255, 0.85)',
+  color: 'var(--ow-text-hi)',
 };
 
 const chipsRowStyle: React.CSSProperties = {
@@ -421,26 +415,27 @@ const chipStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: 5,
   padding: '2px 7px',
-  background: 'rgba(0, 0, 0, 0.7)',
-  backdropFilter: 'blur(4px)',
-  border: '1px solid rgba(255, 255, 255, 0.18)',
+  background: 'var(--ow-surface-2)',
+  backdropFilter: 'blur(var(--ow-blur-2))',
+  WebkitBackdropFilter: 'blur(var(--ow-blur-2))',
+  border: '1px solid var(--ow-stroke-strong)',
   borderRadius: 10,
-  fontFamily: 'monospace',
+  fontFamily: 'var(--ow-font-mono)',
   fontSize: '11px',
-  color: 'rgba(255, 255, 255, 0.85)',
+  color: 'var(--ow-text-hi)',
 };
 
 const chipRemoveStyle: React.CSSProperties = {
   cursor: 'pointer',
-  color: 'rgba(255, 255, 255, 0.4)',
+  color: 'var(--ow-text-faint)',
   fontSize: '12px',
   lineHeight: 1,
 };
 
 const countLineStyle: React.CSSProperties = {
   marginLeft: 'auto',
-  fontFamily: 'monospace',
+  fontFamily: 'var(--ow-font-mono)',
   fontSize: '10px',
-  color: 'rgba(255, 255, 255, 0.4)',
+  color: 'var(--ow-text-faint)',
   whiteSpace: 'nowrap',
 };

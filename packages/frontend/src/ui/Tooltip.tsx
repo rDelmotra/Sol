@@ -9,17 +9,17 @@ export function Tooltip() {
 
   return (
     <div
+      className="ow-glass"
+      data-elev="3"
       style={{
         position: 'fixed',
         left: x + 14,
         top: y - 10,
-        padding: '4px 8px',
-        background: 'rgba(0, 0, 0, 0.8)',
-        border: '1px solid rgba(255, 255, 255, 0.15)',
-        borderRadius: 4,
-        fontFamily: 'monospace',
+        padding: '4px 9px',
+        borderRadius: 'var(--ow-r-sm)',
+        fontFamily: 'var(--ow-font-mono)',
         fontSize: '11px',
-        color: '#fff',
+        color: 'var(--ow-text-hi)',
         whiteSpace: 'nowrap',
         pointerEvents: 'none',
         zIndex: 900,

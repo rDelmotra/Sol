@@ -1,30 +1,19 @@
 import { useStore } from '../store/useStore';
-import type { ObjectCategory } from '../data/types';
+import { CATEGORY_COLOR } from './styles/tokens';
 
-const CATEGORY_DOT: Record<ObjectCategory, string> = {
-  active_satellite: '#4CAF50',
-  inactive_satellite: '#9E9E9E',
-  rocket_body: '#FFC107',
-  debris: '#F44336',
-  unknown: '#757575',
-  deep_space: '#00BCD4',
-};
+const CATEGORY_DOT = CATEGORY_COLOR;
 
 const panelStyle: React.CSSProperties = {
   position: 'fixed',
   padding: '6px 0',
-  background: 'rgba(0, 0, 0, 0.85)',
-  backdropFilter: 'blur(6px)',
-  border: '1px solid rgba(255, 255, 255, 0.15)',
-  borderRadius: 6,
-  fontFamily: 'monospace',
-  fontSize: '11px',
-  color: 'rgba(255, 255, 255, 0.85)',
+  fontFamily: 'var(--ow-font-display)',
+  fontSize: '12px',
+  color: 'var(--ow-text-mid)',
   pointerEvents: 'auto',
   zIndex: 950,
-  maxHeight: 240,
+  maxHeight: 260,
   overflowY: 'auto',
-  minWidth: 200,
+  minWidth: 208,
 };
 
 const itemStyle: React.CSSProperties = {
@@ -36,7 +25,7 @@ const itemStyle: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-const itemHoverBg = 'rgba(255, 255, 255, 0.08)';
+const itemHoverBg = 'var(--ow-surface-hover)';
 
 export function ClusterPopup() {
   const items = useStore((s) => s.clusterItems);
@@ -54,6 +43,8 @@ export function ClusterPopup() {
 
   return (
     <div
+      className="ow-glass ow-scroll"
+      data-elev="3"
       style={{
         ...panelStyle,
         left: screenX + 10,
@@ -64,8 +55,8 @@ export function ClusterPopup() {
         style={{
           padding: '2px 12px 6px',
           fontSize: '10px',
-          color: 'rgba(255,255,255,0.35)',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          color: 'var(--ow-text-faint)',
+          borderBottom: '1px solid var(--ow-stroke)',
           marginBottom: 2,
         }}
       >
@@ -95,7 +86,7 @@ export function ClusterPopup() {
           <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {item.data.name}
           </span>
-          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '10px', marginLeft: 8 }}>
+          <span style={{ color: 'var(--ow-text-faint)', fontFamily: 'var(--ow-font-mono)', fontSize: '10px', marginLeft: 8 }}>
             {item.data.noradId}
           </span>
         </div>
