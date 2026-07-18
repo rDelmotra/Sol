@@ -121,13 +121,14 @@ export function SearchBar() {
   );
 
   // ── Ask affordance (P2) ────────────────────────────────────────────────────
-  // Residual text (chips excluded) of ≥2 words offers an "Ask" row pinned FIRST
-  // in the dropdown. Dispatching moves the question into the AnswerCard and
-  // releases the tier-0 facet chips so the analytic allow-set stands alone
-  // (no confusing AND of chips × answer).
+  // A RAW query (chips included — the compiler wants the full sentence, not the
+  // post-chip residual) of ≥2 words offers an "Ask" row pinned FIRST in the
+  // dropdown. Dispatching moves the question into the AnswerCard and releases
+  // the tier-0 facet chips so the analytic allow-set stands alone (no confusing
+  // AND of chips × answer).
   const ask = useAnalyticAsk();
-  const askText = ir.text.trim();
-  const canAsk = askText.split(/\s+/).filter(Boolean).length >= 2;
+  const askText = query.trim().replace(/\s+/g, ' ');
+  const canAsk = askText.split(' ').filter(Boolean).length >= 2;
   const askOffset = canAsk ? 1 : 0;
 
   const dispatchAsk = useCallback(() => {

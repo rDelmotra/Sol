@@ -10,6 +10,7 @@ const HUD = lazy(() => import('./ui/HUD').then((m) => ({ default: m.HUD })));
 const FilterPanel = lazy(() => import('./ui/FilterPanel').then((m) => ({ default: m.FilterPanel })));
 const SearchBar = lazy(() => import('./ui/SearchBar').then((m) => ({ default: m.SearchBar })));
 const InfoCard = lazy(() => import('./ui/InfoCard').then((m) => ({ default: m.InfoCard })));
+const AnswerCard = lazy(() => import('./ui/AnswerCard').then((m) => ({ default: m.AnswerCard })));
 const Tooltip = lazy(() => import('./ui/Tooltip').then((m) => ({ default: m.Tooltip })));
 const ClusterPopup = lazy(() => import('./ui/ClusterPopup').then((m) => ({ default: m.ClusterPopup })));
 const TimeScrubber = lazy(() =>
@@ -165,6 +166,7 @@ export default function App() {
               }}
             >
               <SearchBar />
+              <AnswerCard />
               <InfoCard />
             </div>
             <DsoLabels />
