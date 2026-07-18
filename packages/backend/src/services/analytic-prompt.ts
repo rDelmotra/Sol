@@ -35,6 +35,11 @@ You must respond by calling the tool with EITHER a program OR a refusal — neve
 
 // ── §2 Field catalog (generated) ──────────────────────────────────────────────
 
+// Fields in the frozen contract that the LIVE data source does not serve yet
+// (returns null for every object). Demoted in the prompt — not deleted from the
+// registry (demotion ≠ deletion; old programs stay valid, they just find nulls).
+const LIVE_UNSERVED_FIELDS = new Set(['operationalStatus', 'jcat', 'parentJcat']);
+
 function renderFieldCatalog(): string {
   const lines = Object.entries(FIELD_REGISTRY).map(([name, spec]) => {
     const parts: string[] = [spec.kind, spec.plane];
@@ -43,13 +48,18 @@ function renderFieldCatalog(): string {
     if (spec.coverage !== undefined && spec.coverage < 0.95) {
       parts.push(`coverage ${Math.round(spec.coverage * 100)}%`);
     }
+    if (LIVE_UNSERVED_FIELDS.has(name)) parts.push('UNSERVED — always null, see note');
     return `- ${name} (${parts.join(', ')})`;
   });
   return `FIELD CATALOG (the only fields that exist — use names verbatim):
 ${lines.join('\n')}
 
 Fields marked with a coverage % are partially populated: still use them — the executor
-reports the basis (meta.coverage) and the answer is honestly caveated downstream.`;
+reports the basis (meta.coverage) and the answer is honestly caveated downstream.
+Fields marked UNSERVED are in the contract but not yet loaded into the live data source
+(every object reads null). If a question HINGES on one (e.g. "failed/dead satellites"
+needs operationalStatus), refuse NOT_DERIVABLE and say that data isn't ingested yet —
+do not build a filter that can only return an empty set.`;
 }
 
 // ── §3 Physics functions (generated) ──────────────────────────────────────────
