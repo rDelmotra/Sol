@@ -9,7 +9,20 @@ import type { DsoLabelPosition } from '../engine/DsoRenderer';
 import { simClock } from '../engine/SimClock';
 import { reconcileFilterSlices } from '../query/apply';
 import type { QueryFilterPatch } from '../query/types';
-import type { AnalyticProgram, ExecuteOutcome } from '@orbitwatch/analytic';
+import type { AnalyticProgram, ExecuteOutcome, AnalyticResult } from '@orbitwatch/analytic';
+
+/**
+ * The current analytic answer (P2) — what the AnswerCard renders. One at a time;
+ * asking again replaces it. `result.ids` is a Uint32Array and is never serialized,
+ * so it's fine to hold in the store.
+ */
+export interface AnalyticAnswer {
+  status: 'compiling' | 'ready' | 'error';
+  question: string;
+  interpretation?: string;
+  result?: AnalyticResult;
+  message?: string;
+}
 
 export type LoadingPhase = 'fetching' | 'initializing' | 'propagating' | 'ready';
 export type CameraMode = 'free' | 'flying' | 'following' | 'returning';
@@ -172,6 +185,7 @@ interface AppState {
   launchFilter: LaunchFilter;   // G3 — query-only
   ownerFilter: OwnerFilter;     // G3 — query-only
   analyticFilter: AnalyticFilter; // P1 — set only by analytic program runs
+  analyticAnswer: AnalyticAnswer | null; // P2 — current NL→IR answer (AnswerCard)
   facetCounts: FacetCounts;
   visibleFacetCounts: FacetCounts;
 
@@ -218,6 +232,9 @@ interface AppState {
   /** Apply (or clear, with null) an analytic program's noradId allow-set. Semantic
    *  equality is checked inline so an identical re-run never triggers a recompute. */
   setAnalyticFilter: (ids: Set<number> | null) => void;
+  setAnalyticAnswer: (answer: AnalyticAnswer | null) => void;
+  /** The single exit door: clears the answer card AND the globe allow-set. */
+  clearAnalyticAnswer: () => void;
   setVisibleFacetCounts: (counts: FacetCounts) => void;
   setCatalogData: (data: EnrichedTLEObject[]) => void;
   setSelectByIndex: (fn: (index: number) => void) => void;
@@ -377,6 +394,7 @@ export const useStore = create<AppState>((set, get) => ({
   launchFilter: { mode: 'all' },
   ownerFilter: { mode: 'all' },
   analyticFilter: { mode: 'all' },
+  analyticAnswer: null,
   facetCounts: emptyFacetCounts(),
   visibleFacetCounts: emptyFacetCounts(),
 
@@ -463,6 +481,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (same) return; // reference preserved — no renderer recompute
     }
     set({ analyticFilter: { mode: 'only', ids: new Set(ids) } });
+  },
+  setAnalyticAnswer: (answer) => set({ analyticAnswer: answer }),
+  clearAnalyticAnswer: () => {
+    get().setAnalyticFilter(null);
+    set({ analyticAnswer: null });
   },
   setVisibleFacetCounts: (counts) =>
     // The satellite render pass counts only TLE objects, so its type.deep_space is
