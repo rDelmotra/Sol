@@ -1,8 +1,38 @@
+// ============================================================
+// wasm-sgp4 — batch SGP4 propagation for the frontend worker.
+//
+// Replaces the satellite.js per-object loop in sgp4.worker.ts with one
+// Rust/WASM call per tick. Contract (must stay in lockstep with the worker):
+//   - init(ommJson): OMM array (same JSON served by /api/tle/all; EPOCH must
+//     have no trailing 'Z' — chrono::NaiveDateTime rejects it; the worker
+//     strips it). PER-OBJECT parse: a record that fails to parse, or whose
+//     elements are rejected by SGP4 initialization, becomes a permanently-
+//     invalid slot (flag 0). One bad elset must never take down the catalog —
+//     parity with the old per-object try/catch around json2satrec.
+//   - propagate(tMs, maxTsinceMin): TEME frame, km scaled by 1/6371 — SAME
+//     units as the old worker (positions in earth-radii, velocities in
+//     km/s / 6371), so downstream consumers (SatelliteRenderer, live-source)
+//     are unchanged.
+//   - maxTsinceMin mirrors frontend/src/orbital/propagation-limits.ts
+//     MAX_TSINCE_MIN and is passed in from JS so the window policy keeps ONE
+//     home. Deep-space resonant orbits (GEO/GPS/Molniya) integrate from epoch
+//     in fixed steps — cost grows with |tsince| — the cap is what makes a far
+//     time-scrub unable to wedge the worker. NaN-safe: a non-finite timestamp
+//     (Invalid Date upstream) is rejected by the same check.
+//   - Invalid slots are ZEROED every tick (not just flagged) — parity with
+//     the old markInvalid(), so a consumer that misses the flag reads the
+//     origin, not a stale position.
+// ============================================================
+
+use sgp4::{Constants, Elements, MinutesSinceEpoch};
 use wasm_bindgen::prelude::*;
-use sgp4::{Elements, Constants};
+
+const EARTH_RADIUS_KM: f64 = 6371.0;
 
 #[wasm_bindgen]
 pub struct Simulator {
+    /// (initialized SGP4 constants, elset epoch in Unix ms) per object;
+    /// None = bad elset, permanently invalid.
     satrecs: Vec<Option<(Constants, f64)>>,
     positions: Vec<f32>,
     velocities: Vec<f32>,
@@ -21,63 +51,82 @@ impl Simulator {
         }
     }
 
-    pub fn init(&mut self, omm_json: &str) -> Result<(), JsValue> {
-        let elements_list: Vec<Elements> = serde_json::from_str(omm_json).map_err(|e| e.to_string())?;
-        let count = elements_list.len();
+    /// Parse an OMM JSON ARRAY and initialize one SGP4 slot per record.
+    /// Errors only if the top-level array itself is malformed (a protocol
+    /// bug, not a data problem). Returns the count of valid slots.
+    pub fn init(&mut self, omm_json: &str) -> Result<u32, JsValue> {
+        let records: Vec<serde_json::Value> =
+            serde_json::from_str(omm_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let count = records.len();
         self.satrecs = Vec::with_capacity(count);
         self.positions = vec![0.0; count * 3];
         self.velocities = vec![0.0; count * 3];
         self.valid_flags = vec![0; count];
 
-        for el in elements_list {
-            let epoch_ms = el.datetime.and_utc().timestamp_millis() as f64;
-            match Constants::from_elements(&el) {
-                Ok(constants) => self.satrecs.push(Some((constants, epoch_ms))),
-                Err(_) => self.satrecs.push(None),
+        let mut ok: u32 = 0;
+        for record in records {
+            let slot = serde_json::from_value::<Elements>(record)
+                .ok()
+                .and_then(|el| {
+                    let epoch_ms = el.datetime.and_utc().timestamp_millis() as f64;
+                    Constants::from_elements(&el).ok().map(|c| (c, epoch_ms))
+                });
+            if slot.is_some() {
+                ok += 1;
             }
+            self.satrecs.push(slot);
         }
-        Ok(())
+        Ok(ok)
     }
 
-    pub fn propagate(&mut self, timestamp_ms: f64) {
-        let earth_radius_km = 6371.0;
-        
-        for (i, satrec_opt) in self.satrecs.iter().enumerate() {
+    /// Propagate every object to `timestamp_ms` (Unix ms). Objects farther
+    /// than `max_tsince_min` minutes from their elset epoch — or a non-finite
+    /// timestamp — are marked invalid without propagating (see header).
+    pub fn propagate(&mut self, timestamp_ms: f64, max_tsince_min: f64) {
+        for (i, slot) in self.satrecs.iter().enumerate() {
             let i3 = i * 3;
-            if let Some((constants, epoch_ms)) = satrec_opt {
-                let mins = (timestamp_ms - epoch_ms) / 60000.0;
-                
-                // Enforce maximum propagation window (60 days = 86400 mins) to prevent
-                // deep-space resonance integrator from freezing the Wasm thread.
-                if mins.abs() > 86400.0 {
-                    self.valid_flags[i] = 0;
-                    continue;
-                }
-                if let Ok(prediction) = constants.propagate(sgp4::MinutesSinceEpoch(mins)) {
-                    self.positions[i3] = (prediction.position[0] / earth_radius_km) as f32;
-                    self.positions[i3 + 1] = (prediction.position[1] / earth_radius_km) as f32;
-                    self.positions[i3 + 2] = (prediction.position[2] / earth_radius_km) as f32;
-                    
-                    self.velocities[i3] = (prediction.velocity[0] / earth_radius_km) as f32;
-                    self.velocities[i3 + 1] = (prediction.velocity[1] / earth_radius_km) as f32;
-                    self.velocities[i3 + 2] = (prediction.velocity[2] / earth_radius_km) as f32;
-                    
-                    self.valid_flags[i] = 1;
-                    continue;
+            let mut ok = false;
+
+            if let Some((constants, epoch_ms)) = slot {
+                let mins = (timestamp_ms - epoch_ms) / 60_000.0;
+                // is_finite() first: NaN comparisons are all false, so a bare
+                // `mins.abs() > cap` check would PASS a NaN straight into SGP4.
+                if mins.is_finite() && mins.abs() <= max_tsince_min {
+                    if let Ok(p) = constants.propagate(MinutesSinceEpoch(mins)) {
+                        let finite = p
+                            .position
+                            .iter()
+                            .chain(p.velocity.iter())
+                            .all(|v| v.is_finite());
+                        if finite {
+                            self.positions[i3] = (p.position[0] / EARTH_RADIUS_KM) as f32;
+                            self.positions[i3 + 1] = (p.position[1] / EARTH_RADIUS_KM) as f32;
+                            self.positions[i3 + 2] = (p.position[2] / EARTH_RADIUS_KM) as f32;
+                            self.velocities[i3] = (p.velocity[0] / EARTH_RADIUS_KM) as f32;
+                            self.velocities[i3 + 1] = (p.velocity[1] / EARTH_RADIUS_KM) as f32;
+                            self.velocities[i3 + 2] = (p.velocity[2] / EARTH_RADIUS_KM) as f32;
+                            ok = true;
+                        }
+                    }
                 }
             }
-            
-            // Invalid or propagation failed
-            self.positions[i3] = 0.0;
-            self.positions[i3 + 1] = 0.0;
-            self.positions[i3 + 2] = 0.0;
-            self.velocities[i3] = 0.0;
-            self.velocities[i3 + 1] = 0.0;
-            self.velocities[i3 + 2] = 0.0;
-            self.valid_flags[i] = 0;
+
+            if ok {
+                self.valid_flags[i] = 1;
+            } else {
+                self.positions[i3] = 0.0;
+                self.positions[i3 + 1] = 0.0;
+                self.positions[i3 + 2] = 0.0;
+                self.velocities[i3] = 0.0;
+                self.velocities[i3 + 1] = 0.0;
+                self.velocities[i3 + 2] = 0.0;
+                self.valid_flags[i] = 0;
+            }
         }
     }
 
+    /// Raw pointers into WASM linear memory — the worker wraps them with
+    /// typed-array views EACH tick (memory may grow and detach old views).
     pub fn positions_ptr(&self) -> *const f32 {
         self.positions.as_ptr()
     }
@@ -88,5 +137,15 @@ impl Simulator {
 
     pub fn valid_flags_ptr(&self) -> *const u8 {
         self.valid_flags.as_ptr()
+    }
+
+    pub fn object_count(&self) -> u32 {
+        self.satrecs.len() as u32
+    }
+}
+
+impl Default for Simulator {
+    fn default() -> Self {
+        Self::new()
     }
 }
