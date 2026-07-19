@@ -64,7 +64,7 @@ export function CompassStrip() {
     <div
       style={{
         position: 'absolute',
-        top: 76,
+        top: 14,
         left: '50%',
         transform: 'translateX(-50%)',
         width: 'min(620px, 78vw)',

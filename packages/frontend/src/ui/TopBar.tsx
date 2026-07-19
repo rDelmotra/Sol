@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import type { CSSProperties } from 'react';
 import { useStore } from '../store/useStore';
 import type { VisibilityMode } from '../store/useStore';
 import { SearchBar } from './SearchBar';
@@ -28,12 +29,10 @@ function groupNarrowed(rec: Record<string, boolean>): boolean {
   return Object.values(rec).some((v) => !v);
 }
 
-const textShadowStyle = { textShadow: 'var(--ow-text-shadow-ambient)' } as const;
-
 /**
- * Thin shell that replaces the old TopTaskbar bar: three independently
- * positioned pieces floating over the 3D scene (ambient status, hero search,
- * Lens trigger) plus the Lens filter sheet itself. No shared background box.
+ * The bridge taskbar — a real in-flow bar at the top of the shell (no longer
+ * floating fragments). HUD status left, hero Search/Ask center, Lens right.
+ * Dims with the rest of the HUD while the time scrubber is modal.
  */
 export function TopBar() {
   const loadingPhase = useStore((s) => s.loadingPhase);
@@ -41,6 +40,7 @@ export function TopBar() {
   const dataTimestamp = useStore((s) => s.dataTimestamp);
   const simTimeMs = useStore((s) => s.simTimeMs);
   const visibilityMode = useStore((s) => s.visibilityMode);
+  const scrubberMode = useStore((s) => s.scrubberMode);
 
   const typeFilters = useStore((s) => s.typeFilters);
   const statusFilters = useStore((s) => s.statusFilters);
@@ -70,90 +70,112 @@ export function TopBar() {
     <>
       <div
         style={{
-          position: 'absolute',
-          top: 16,
-          left: 20,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
+          ...barStyle,
+          opacity: scrubberMode ? 0.25 : 1,
+          pointerEvents: scrubberMode ? 'none' : 'auto',
         }}
       >
-        <span
-          style={{
-            ...textShadowStyle,
-            fontFamily: 'var(--ow-font-display)',
-            fontSize: 13,
-            letterSpacing: '0.25em',
-            color: 'var(--ow-text-mid)',
-          }}
-        >
-          orbitwatch
-        </span>
-        <span
-          style={{
-            ...textShadowStyle,
-            fontFamily: 'var(--ow-font-mono)',
-            fontSize: 12,
-            color: 'var(--ow-text-hi)',
-          }}
-        >
-          {utc}
-        </span>
-        <span style={{ ...textShadowStyle, fontSize: 11, color: 'var(--ow-text-lo)' }}>
-          Tracking {objectCount.toLocaleString()}
-        </span>
-        <span style={{ ...textShadowStyle, fontSize: 10, color: 'var(--ow-text-faint)' }}>
-          {freshness}
-        </span>
-        <span style={{ ...textShadowStyle, fontSize: 11, color: 'var(--ow-text-lo)' }}>
-          {perspectiveLabel(visibilityMode)}
-        </span>
-      </div>
+        {/* Left — the HUD cluster */}
+        <div style={hudClusterStyle}>
+          <span style={wordmarkStyle}>orbitwatch</span>
+          <span style={utcStyle}>{utc}</span>
+          <span style={hudDimStyle}>{objectCount.toLocaleString()} tracked</span>
+          {freshness && <span style={hudFaintStyle}>{freshness}</span>}
+          <span style={hudDimStyle}>{perspectiveLabel(visibilityMode)}</span>
+        </div>
 
-      <div
-        style={{
-          position: 'absolute',
-          top: 16,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 440,
-          zIndex: 130,
-        }}
-      >
-        <SearchBar />
-      </div>
+        {/* Center — hero search / Ask */}
+        <div style={searchSlotStyle}>
+          <SearchBar />
+        </div>
 
-      <button
-        type="button"
-        className="ow-pill"
-        data-on={lensOpen || narrowedCount > 0 ? 'true' : 'false'}
-        onClick={() => setLensOpen((v) => !v)}
-        style={{
-          position: 'absolute',
-          top: 16,
-          right: 16,
-          zIndex: 120,
-          pointerEvents: 'auto',
-        }}
-      >
-        ⚙ Lens
-        {narrowedCount > 0 && (
-          <span
-            style={{
-              background: 'var(--ow-perceptor-soft)',
-              color: 'var(--ow-perceptor)',
-              borderRadius: 'var(--ow-r-pill)',
-              padding: '1px 7px',
-              fontSize: 10,
-              fontFamily: 'var(--ow-font-mono)',
-            }}
+        {/* Right — the Lens */}
+        <div style={rightSlotStyle}>
+          <button
+            type="button"
+            className="ow-pill"
+            data-on={lensOpen || narrowedCount > 0 ? 'true' : 'false'}
+            onClick={() => setLensOpen((v) => !v)}
           >
-            {narrowedCount}
-          </span>
-        )}
-      </button>
+            ⚙ Lens
+            {narrowedCount > 0 && <span style={lensCountStyle}>{narrowedCount}</span>}
+          </button>
+        </div>
+      </div>
 
       <LensSheet open={lensOpen} onClose={() => setLensOpen(false)} />
     </>
   );
 }
+
+// ── Styles ───────────────────────────────────────────────────────────────────
+
+const barStyle: CSSProperties = {
+  position: 'relative',
+  zIndex: 120,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 16,
+  height: 52,
+  padding: '0 16px',
+  flexShrink: 0,
+  background: 'var(--ow-surface-1)',
+  backdropFilter: 'blur(var(--ow-blur-1))',
+  WebkitBackdropFilter: 'blur(var(--ow-blur-1))',
+  borderBottom: '1px solid var(--ow-stroke)',
+  fontFamily: 'var(--ow-font-display)',
+  transition: 'opacity var(--ow-dur-2) var(--ow-ease)',
+};
+
+const hudClusterStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: 14,
+  minWidth: 0,
+  flex: 1,
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+};
+
+const wordmarkStyle: CSSProperties = {
+  fontSize: 12,
+  letterSpacing: '0.25em',
+  color: 'var(--ow-text-mid)',
+};
+
+const utcStyle: CSSProperties = {
+  fontFamily: 'var(--ow-font-mono)',
+  fontSize: 12,
+  color: 'var(--ow-text-hi)',
+};
+
+const hudDimStyle: CSSProperties = {
+  fontSize: 11,
+  color: 'var(--ow-text-lo)',
+};
+
+const hudFaintStyle: CSSProperties = {
+  fontSize: 10,
+  color: 'var(--ow-text-faint)',
+};
+
+const searchSlotStyle: CSSProperties = {
+  width: 'min(440px, 40vw)',
+  flexShrink: 0,
+};
+
+/** Mirrors the left cluster's flex so the search stays visually centered. */
+const rightSlotStyle: CSSProperties = {
+  flex: 1,
+  display: 'flex',
+  justifyContent: 'flex-end',
+};
+
+const lensCountStyle: CSSProperties = {
+  background: 'var(--ow-perceptor-soft)',
+  color: 'var(--ow-perceptor)',
+  borderRadius: 'var(--ow-r-pill)',
+  padding: '1px 7px',
+  fontSize: 10,
+  fontFamily: 'var(--ow-font-mono)',
+};

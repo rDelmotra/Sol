@@ -10,6 +10,7 @@ import { SectorSection } from './sections/SectorSection';
 import { PurposeSection } from './sections/PurposeSection';
 import { CountrySection } from './sections/CountrySection';
 import { ColorBySection } from './sections/ColorBySection';
+import { AppearanceSection } from './sections/AppearanceSection';
 
 const scrimStyleBase: CSSProperties = {
   position: 'fixed',
@@ -103,6 +104,8 @@ export function LensSheet({ open, onClose }: { open: boolean; onClose: () => voi
         <CountrySection />
         <div style={lensDividerStyle} />
         <ColorBySection />
+        <div style={lensDividerStyle} />
+        <AppearanceSection />
       </div>
     </>
   );

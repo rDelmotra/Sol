@@ -8,8 +8,19 @@
 
    Layers:
      1. @font-face   — self-hosted Space Grotesk (display) + a mono stack
-     2. :root tokens — palette, surfaces, text tiers, accents, scale, motion
-     3. primitives   — .ow-* classes with real :hover / :focus-visible states
+     2. :root tokens — STRUCTURAL (scale, radius, motion, blur) + the default
+                       "Deep Field" skin (palette, surfaces, text, accents)
+     3. themes       — [data-theme='…'] skin blocks. A theme is a self-contained
+                       set of --ow-* skin overrides; drop one in + list it in
+                       styles/theme.ts to add a theme. Structural tokens never
+                       change between themes. Active theme is set on <html> by
+                       styles/theme.ts (default: dune).
+     4. primitives   — .ow-* classes with real :hover / :focus-visible states
+
+   Semantic accents (theme-defined, one meaning each):
+     --ow-telemetry  cyan   — live tracking / camera state
+     --ow-physical   amber  — physical / orbital facts (altitude, orbit, launch)
+     --ow-perceptor  violet — derived intelligence (Ask layer) + generic active UI
    ============================================================================ */
 
 /* 1. Fonts ----------------------------------------------------------------- */
@@ -53,10 +64,15 @@
   --ow-text-lo: rgba(182, 192, 216, 0.50);
   --ow-text-faint: rgba(160, 172, 200, 0.34);
 
-  /* — Semantic accents (desaturated, luminous — the intentional cyan/violet split) — */
-  --ow-telemetry: #6fd8e0;              /* physical telemetry (HUD, InfoCard) */
+  /* — Semantic accents (desaturated, luminous — each colour means one thing) — */
+  --ow-telemetry: #6fd8e0;              /* live tracking / camera state */
   --ow-telemetry-soft: rgba(111, 216, 224, 0.16);
   --ow-telemetry-line: rgba(111, 216, 224, 0.45);
+  /* Physical / orbital facts. In the cool Deep Field skin this rides with the
+     telemetry cyan; the Dune skin splits it out into warm Arrakis amber. */
+  --ow-physical: #6fd8e0;
+  --ow-physical-soft: rgba(111, 216, 224, 0.16);
+  --ow-physical-line: rgba(111, 216, 224, 0.45);
   --ow-perceptor: #b9a7f0;              /* derived intelligence (the perceptor / Ask layer) */
   --ow-perceptor-soft: rgba(185, 167, 240, 0.16);
   --ow-perceptor-line: rgba(185, 167, 240, 0.45);
@@ -103,7 +119,45 @@
   --ow-dur-3: 420ms;
 }
 
-/* 3. Primitives ------------------------------------------------------------ */
+/* 3. Themes ---------------------------------------------------------------- */
+/* Each theme overrides ONLY the skin tokens it changes; everything else
+   inherits :root. To add a theme: copy this block, retune, and register the id
+   in styles/theme.ts. Structural tokens (scale/radius/motion/blur) never appear
+   here. */
+
+/* — Dune: warm sand against cold instruments. Warm-charcoal glass, Arrakis
+     amber for orbital facts, Fremen spice-blue kept for live tracking. — */
+[data-theme='dune'] {
+  --ow-void: #0c0a07;
+
+  --ow-surface-1: rgba(30, 25, 18, 0.50);
+  --ow-surface-2: rgba(30, 25, 18, 0.68);
+  --ow-surface-3: rgba(37, 30, 22, 0.86);
+  --ow-surface-hover: rgba(224, 190, 140, 0.07);
+
+  --ow-stroke: rgba(214, 184, 140, 0.14);
+  --ow-stroke-strong: rgba(214, 184, 140, 0.28);
+
+  --ow-text-hi: rgba(245, 237, 224, 0.95);
+  --ow-text-mid: rgba(228, 216, 198, 0.72);
+  --ow-text-lo: rgba(206, 192, 168, 0.52);
+  --ow-text-faint: rgba(196, 178, 150, 0.36);
+
+  /* Arrakis amber — the spice. Reserved for physical / orbital facts. */
+  --ow-physical: #e6a95c;
+  --ow-physical-soft: rgba(230, 169, 92, 0.16);
+  --ow-physical-line: rgba(230, 169, 92, 0.48);
+
+  /* Fremen eyes stay blue for live tracking, nudged a touch cooler-bright. */
+  --ow-telemetry: #7fd4dd;
+  --ow-telemetry-soft: rgba(127, 212, 221, 0.15);
+  --ow-telemetry-line: rgba(127, 212, 221, 0.45);
+
+  --ow-scrim: rgba(12, 9, 6, 0.55);
+  --ow-text-shadow-ambient: 0 1px 6px rgba(0, 0, 0, 0.88);
+}
+
+/* 4. Primitives ------------------------------------------------------------ */
 
 /* Frosted surface — the one canonical glass recipe. Elevation via data-elev. */
 .ow-glass {
@@ -153,6 +207,31 @@
   background: var(--ow-telemetry-soft);
   box-shadow: 0 0 16px -4px var(--ow-telemetry-soft);
 }
+
+/* Action button — the segmented follow / joyride / orbit controls in detail
+   panels. Quiet by default; active state carries the telemetry (tracking) tone. */
+.ow-action-btn {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: var(--ow-r-sm);
+  border: 1px solid var(--ow-stroke);
+  background: var(--ow-surface-hover);
+  color: var(--ow-text-mid);
+  font-family: var(--ow-font-display);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color var(--ow-dur-1) var(--ow-ease),
+    border-color var(--ow-dur-1) var(--ow-ease),
+    background var(--ow-dur-1) var(--ow-ease);
+}
+.ow-action-btn:hover { color: var(--ow-text-hi); border-color: var(--ow-stroke-strong); }
+.ow-action-btn[data-on='true'] {
+  color: var(--ow-telemetry);
+  border-color: var(--ow-telemetry-line);
+  background: var(--ow-telemetry-soft);
+}
+.ow-action-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ow-telemetry-soft); }
 
 /* Icon button — square, quiet. */
 .ow-icon-btn {
@@ -229,7 +308,26 @@
 .ow-scroll::-webkit-scrollbar-thumb { background: var(--ow-stroke-strong); border-radius: var(--ow-r-pill); }
 .ow-scroll::-webkit-scrollbar-track { background: transparent; }
 
+/* Shell dock — a column that pushes the canvas rather than floating over it.
+   Width is driven inline (0 ↔ open); the motion + chrome live here. */
+.ow-dock {
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--ow-surface-1);
+  transition: width var(--ow-dur-3) var(--ow-ease);
+}
+.ow-dock[data-open='true'] { border-left: 1px solid var(--ow-stroke); }
+
+/* Panel settle-in — a soft rise as a detail surface appears (the "physical,
+   reacts to presence" feel). One-shot; never loops. */
+@keyframes ow-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.ow-rise { animation: ow-rise var(--ow-dur-2) var(--ow-ease); }
+
 @media (prefers-reduced-motion: reduce) {
-  .ow-pill, .ow-icon-btn, .ow-input, .ow-toggle, .ow-toggle__knob { transition: none; }
-  .ow-lens-sheet, .ow-lens-scrim { transition: none; }
+  .ow-pill, .ow-icon-btn, .ow-action-btn, .ow-input, .ow-toggle, .ow-toggle__knob { transition: none; }
+  .ow-lens-sheet, .ow-lens-scrim, .ow-dock { transition: none; }
+  .ow-rise { animation: none; }
 }

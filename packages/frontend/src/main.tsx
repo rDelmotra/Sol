@@ -2,6 +2,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './ui/styles/globals.css';
+import { applyTheme, getStoredTheme } from './ui/styles/theme';
+
+// Set the active theme on <html> before first paint (avoids a skin flash).
+applyTheme(getStoredTheme());
 
 const root = document.getElementById('root');
 if (!root) throw new Error('No #root element found');

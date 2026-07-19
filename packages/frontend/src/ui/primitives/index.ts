@@ -5,6 +5,8 @@
 export { GlassPanel } from './GlassPanel';
 export { Pill } from './Pill';
 export { IconButton } from './IconButton';
+export { ActionButton } from './ActionButton';
 export { Toggle } from './Toggle';
 export { Field } from './Field';
+export { SectionLabel } from './SectionLabel';
 export { DataTag, type FilterItemState } from './DataTag';

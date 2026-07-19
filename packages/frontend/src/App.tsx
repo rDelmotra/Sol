@@ -41,7 +41,7 @@ function DsoLabels() {
               fontWeight: 500,
               letterSpacing: '0.05em',
               pointerEvents: 'none',
-              textShadow: '0 0 8px rgba(111,216,224,0.6), 0 1px 3px rgba(0,0,0,0.9)',
+              textShadow: '0 0 8px var(--ow-telemetry-soft), 0 1px 3px rgba(0,0,0,0.9)',
               whiteSpace: 'nowrap',
               userSelect: 'none',
             }}
@@ -95,6 +95,50 @@ function HudDimGroup({ children }: { children: React.ReactNode }) {
   );
 }
 
+const DOCK_WIDTH = 340;
+
+/**
+ * The bridge's context dock — pushes the canvas left instead of floating over
+ * it. Auto behavior: collapsed to nothing when there is no selection and no
+ * analytic answer (the deep field keeps the full viewport); slides open when
+ * the shell has something to say. The Engine's canvas ResizeObserver picks up
+ * the reflow, so the 3D view re-centers in the remaining space.
+ */
+function RightDock() {
+  const loadingPhase = useStore((s) => s.loadingPhase);
+  const selectedSatellite = useStore((s) => s.selectedSatellite);
+  const selectedDso = useStore((s) => s.selectedDso);
+  const analyticAnswer = useStore((s) => s.analyticAnswer);
+
+  const open =
+    loadingPhase === 'ready' && Boolean(selectedSatellite || selectedDso || analyticAnswer);
+
+  return (
+    <div
+      className="ow-dock"
+      data-open={open ? 'true' : 'false'}
+      style={{ width: open ? DOCK_WIDTH : 0 }}
+    >
+      {/* Fixed inner width so content doesn't squish during the slide. */}
+      <div
+        className="ow-scroll"
+        style={{
+          width: DOCK_WIDTH,
+          height: '100%',
+          overflowY: 'auto',
+          padding: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+        }}
+      >
+        <AnswerCard />
+        <InfoCard />
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Engine | null>(null);
@@ -124,45 +168,39 @@ export default function App() {
   }, []);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <canvas
-        ref={canvasRef}
-        style={{ display: 'block', width: '100%', height: '100%' }}
-      />
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%' }}>
       <Suspense fallback={null}>
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            pointerEvents: 'none',
-          }}
-        >
-          <HudDimGroup>
-            <TopBar />
+        <TopBar />
+      </Suspense>
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {/* Viewport zone — the canvas plus everything anchored to it. */}
+        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+          <canvas
+            ref={canvasRef}
+            style={{ display: 'block', width: '100%', height: '100%' }}
+          />
+          <Suspense fallback={null}>
             <div
               style={{
                 position: 'absolute',
-                top: 76,
-                right: 16,
-                width: 280,
-                display: 'flex',
-                flexDirection: 'column',
+                inset: 0,
                 pointerEvents: 'none',
-                zIndex: 10,
               }}
             >
-              <AnswerCard />
-              <InfoCard />
+              <HudDimGroup>
+                <DsoLabels />
+                <CompassStrip />
+                <ResetViewButton />
+              </HudDimGroup>
+              <TimeScrubber />
             </div>
-            <DsoLabels />
-            <CompassStrip />
-            <ResetViewButton />
-          </HudDimGroup>
-          <TimeScrubber />
+          </Suspense>
         </div>
+        <Suspense fallback={null}>
+          <RightDock />
+        </Suspense>
+      </div>
+      <Suspense fallback={null}>
         <Tooltip />
         <ClusterPopup />
         {import.meta.env.DEV && <DevOverlay />}

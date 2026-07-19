@@ -187,7 +187,6 @@ export function AnswerCard() {
 
 const cardStyle: React.CSSProperties = {
   position: 'relative',
-  marginTop: 8,
   padding: '10px 12px 10px',
   background: 'var(--ow-surface-2)',
   backdropFilter: 'blur(var(--ow-blur-2))',
