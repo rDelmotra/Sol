@@ -18,6 +18,7 @@
     "react-dom": "^18.3.0",
     "satellite.js": "^6.0.2",
     "three": "^0.173.0",
+    "wasm-sgp4": "file:../wasm-sgp4/pkg",
     "zustand": "^4.5.7"
   },
   "devDependencies": {
