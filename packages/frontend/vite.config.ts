@@ -7,6 +7,12 @@ export default defineConfig({
     react(),
     glsl(),
   ],
+  // wasm-sgp4's JS glue resolves its .wasm binary via `new URL(..., import.meta.url)`.
+  // esbuild pre-bundling would inline the glue and break that URL — keep it unbundled
+  // so Vite's native asset handling emits/serves the .wasm correctly (dev + build).
+  optimizeDeps: {
+    exclude: ['wasm-sgp4'],
+  },
   build: {
     sourcemap: false,
     rollupOptions: {

@@ -1,0 +1,15 @@
+{
+  "name": "wasm-sgp4",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "wasm_sgp4_bg.wasm",
+    "wasm_sgp4.js",
+    "wasm_sgp4.d.ts"
+  ],
+  "main": "wasm_sgp4.js",
+  "types": "wasm_sgp4.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

@@ -1,10 +1,6 @@
+# Homebrew Rust does not ship rust-lld, so the wasm target needs an external
+# linker (`brew install lld` provides wasm-ld). Rustup toolchains bundle
+# rust-lld and don't need this file — if the override breaks your setup,
+# install lld or delete this file locally.
 [target.wasm32-unknown-unknown]
-rustflags = ["--sysroot", "/opt/homebrew"]
 linker = "wasm-ld"
-
-[target.wasm32-wasip1]
-rustflags = ["--sysroot", "/opt/homebrew"]
-linker = "wasm-ld"
-
-[target.wasm32-wasip2]
-rustflags = ["--sysroot", "/opt/homebrew"]
