@@ -14,12 +14,18 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { validateProgram, type ValidationCode } from './validate.js';
+import type { AnalyticProgram } from './types.js';
 
 const NOW = Date.parse('2026-07-10T12:00:00Z');
 
-function ok(p: unknown): void {
+/** Every valid golden program, keyed by its corpus id — consumed by capability.test.ts's
+ *  client/server routing sweep (S0 exit-criterion test #4). Populated as `ok()` runs. */
+export const GOLDEN_VALID: { id: string; program: AnalyticProgram }[] = [];
+
+function ok(p: unknown, id?: string): void {
   const r = validateProgram(p, { nowMs: NOW });
   assert.equal(r.ok, true, r.ok ? '' : `unexpected issues: ${JSON.stringify(r.issues, null, 2)}`);
+  if (id) GOLDEN_VALID.push({ id, program: p as AnalyticProgram });
 }
 
 function bad(p: unknown, code: ValidationCode): void {
@@ -51,7 +57,7 @@ describe('golden corpus — A. live instantaneous', () => {
   it('A1: how fast is the ISS moving right now?', () => ok(prog({
     pipeline: [{ op: 'pick', ids: [25544] }],
     output: { shape: 'object', columns: ['name', 'speedKmS', 'altitudeKm'] },
-  })));
+  }), 'A1'));
 
   it('A2: how many objects are in Earth’s shadow right now?', () => ok(prog({
     pipeline: [
@@ -59,7 +65,7 @@ describe('golden corpus — A. live instantaneous', () => {
       { op: 'aggregate', aggs: { n: { fn: 'count' } } },
     ],
     output: { shape: 'scalar' },
-  })));
+  }), 'A2'));
 
   it('A3: what is directly above me?', () => ok(prog({
     pipeline: [
@@ -69,7 +75,7 @@ describe('golden corpus — A. live instantaneous', () => {
       { op: 'limit', n: 5 },
     ],
     output: { shape: 'table', columns: ['name', 'elev', 'altitudeKm'] },
-  })));
+  }), 'A3'));
 
   it('A5: closest object to the ISS right now', () => ok(prog({
     pipeline: [
@@ -79,7 +85,7 @@ describe('golden corpus — A. live instantaneous', () => {
       { op: 'limit', n: 1 },
     ],
     output: { shape: 'object', columns: ['name', 'd'] },
-  })));
+  }), 'A5'));
 
   it('A6: how many Starlink satellites are above my horizon?', () => ok(prog({
     pipeline: [
@@ -90,14 +96,14 @@ describe('golden corpus — A. live instantaneous', () => {
       { op: 'aggregate', aggs: { n: { fn: 'count' } } },
     ],
     output: { shape: 'scalar' },
-  })));
+  }), 'A6'));
 
   it('A7: what fraction of the catalog is south of the equator?', () => ok(prog({
     pipeline: [
       { op: 'aggregate', aggs: { south: { fn: 'share', where: { op: '<', args: [{ field: 'latDeg' }, { lit: 0 }] } } } },
     ],
     output: { shape: 'scalar' },
-  })));
+  }), 'A7'));
 
   it('A8: GEO satellites over longitude 0°', () => ok(prog({
     pipeline: [
@@ -106,7 +112,7 @@ describe('golden corpus — A. live instantaneous', () => {
         { op: '<', args: [{ op: 'abs', arg: { field: 'lonDeg' } }, { lit: 1 }] },
       ] } },
     ],
-  })));
+  }), 'A8'));
 });
 
 // ── B. Derivatives (live fast-path only in v1) ────────────────────────────────
@@ -118,7 +124,7 @@ describe('golden corpus — B. derivatives', () => {
       { op: 'filter', where: { op: '>', args: [{ field: 'meanMotionDot' }, { lit: 0 }] } },
       { op: 'sort', by: 'meanMotionDot', dir: 'desc' },
     ],
-  })));
+  }), 'B1'));
 
   it('B-class history fields are a NAMED GAP in v1 (decayDate → V-FIELD)', () => bad(prog({
     pipeline: [{ op: 'filter', where: { op: '>', args: [{ field: 'decayDate' }, { lit: '2020-01-01' }] } }],
@@ -130,7 +136,7 @@ describe('golden corpus — B. derivatives', () => {
 describe('golden corpus — C. physics & observer', () => {
   it('C1: naked-eye visible from my location right now', () => ok(prog({
     pipeline: [{ op: 'filter', where: { fn: 'visuallyVisible', observer: 'user' } }],
-  })));
+  }), 'C1'));
 
   it('C2: in sunlight while I am in darkness', () => ok(prog({
     pipeline: [
@@ -139,7 +145,7 @@ describe('golden corpus — C. physics & observer', () => {
         { fn: 'observerDark', observer: 'user' },
       ] } },
     ],
-  })));
+  }), 'C2'));
 
   it('C3: what fraction of Starlink is eclipsed?', () => ok(prog({
     pipeline: [
@@ -147,7 +153,7 @@ describe('golden corpus — C. physics & observer', () => {
       { op: 'aggregate', aggs: { frac: { fn: 'share', where: { field: 'eclipsed' } } } },
     ],
     output: { shape: 'scalar' },
-  })));
+  }), 'C3'));
 
   it('C4: how long until the ISS exits Earth’s shadow?', () => ok(prog({
     pipeline: [
@@ -155,13 +161,13 @@ describe('golden corpus — C. physics & observer', () => {
       { op: 'timeScan', predicate: { op: 'not', arg: { field: 'eclipsed' } }, direction: 'forward', stepMinutes: 1, maxSteps: 120 },
     ],
     output: { shape: 'scalar' },
-  })));
+  }), 'C4'));
 
   it('C6: where will the ISS be at 21:00 tonight? (timeBinding at)', () => ok(prog({
     timeBinding: { mode: 'at', t: '2026-07-10T21:00:00Z' },
     pipeline: [{ op: 'pick', ids: [25544] }],
     output: { shape: 'object', columns: ['name', 'latDeg', 'lonDeg', 'altitudeKm'] },
-  })));
+  }), 'C6'));
 });
 
 // ── D. Entity graph ───────────────────────────────────────────────────────────
@@ -174,7 +180,7 @@ describe('golden corpus — D. entity graph', () => {
       { op: 'limit', n: 10 },
     ],
     output: { shape: 'grouped' },
-  })));
+  }), 'D2'));
 
   it('D4: SpaceX vs Amazon fleet counts', () => ok(prog({
     pipeline: [
@@ -182,7 +188,7 @@ describe('golden corpus — D. entity graph', () => {
       { op: 'groupBy', key: 'ownerFamily', aggs: { n: { fn: 'count' } } },
     ],
     output: { shape: 'grouped' },
-  })));
+  }), 'D4'));
 
   it('D5: whose debris dominates LEO?', () => ok(prog({
     pipeline: [
@@ -195,7 +201,7 @@ describe('golden corpus — D. entity graph', () => {
       { op: 'limit', n: 10 },
     ],
     output: { shape: 'grouped' },
-  })));
+  }), 'D5'));
 
   it('D7: which launch sites produced the most still-orbiting debris?', () => ok(prog({
     pipeline: [
@@ -205,11 +211,11 @@ describe('golden corpus — D. entity graph', () => {
       { op: 'limit', n: 10 },
     ],
     output: { shape: 'grouped' },
-  })));
+  }), 'D7'));
 
   it('D8: what debris came from Kosmos-1408? (separation tree)', () => ok(prog({
     pipeline: [{ op: 'filter', where: { fn: 'descendsFrom', ancestor: 13552 } }],
-  })));
+  }), 'D8'));
 });
 
 // ── E. Aggregation & distribution ─────────────────────────────────────────────
@@ -219,7 +225,7 @@ describe('golden corpus — E. aggregation', () => {
     interpretation: 'sum of known launch-stack masses; executor reports the coverage basis',
     pipeline: [{ op: 'aggregate', aggs: { kg: { fn: 'sum', of: 'totMassKg' } } }],
     output: { shape: 'scalar' },
-  })));
+  }), 'E1'));
 
   it('E4: median age of LEO debris', () => ok(prog({
     pipeline: [
@@ -230,7 +236,7 @@ describe('golden corpus — E. aggregation', () => {
       { op: 'aggregate', aggs: { med: { fn: 'median', of: 'ageYears' } } },
     ],
     output: { shape: 'scalar' },
-  })));
+  }), 'E4'));
 
   it('E5: most crowded 100 km altitude band', () => ok(prog({
     pipeline: [
@@ -240,7 +246,7 @@ describe('golden corpus — E. aggregation', () => {
       { op: 'limit', n: 1 },
     ],
     output: { shape: 'grouped' },
-  })));
+  }), 'E5'));
 
   it('E6: share of payloads that are commercial (multi-valued has)', () => ok(prog({
     pipeline: [
@@ -248,7 +254,7 @@ describe('golden corpus — E. aggregation', () => {
       { op: 'aggregate', aggs: { s: { fn: 'share', where: { op: 'has', field: 'sectors', value: 'commercial' } } } },
     ],
     output: { shape: 'scalar' },
-  })));
+  }), 'E6'));
 });
 
 // ── F. Superlatives ───────────────────────────────────────────────────────────
@@ -261,7 +267,7 @@ describe('golden corpus — F. superlatives', () => {
       { op: 'limit', n: 1 },
     ],
     output: { shape: 'object', columns: ['name', 'launchDate', 'ageYears'] },
-  })));
+  }), 'F1'));
 
   it('F3: most eccentric orbits', () => ok(prog({
     pipeline: [
@@ -269,7 +275,7 @@ describe('golden corpus — F. superlatives', () => {
       { op: 'limit', n: 10 },
     ],
     output: { shape: 'table', columns: ['name', 'eccentricity'] },
-  })));
+  }), 'F3'));
 
   it('F4: fastest object right now', () => ok(prog({
     pipeline: [
@@ -277,7 +283,7 @@ describe('golden corpus — F. superlatives', () => {
       { op: 'limit', n: 1 },
     ],
     output: { shape: 'object', columns: ['name', 'speedKmS', 'perigeeKm'] },
-  })));
+  }), 'F4'));
 
   it('F6: highest apogee ever cataloged (universe selector)', () => ok(prog({
     universe: 'all',
@@ -287,7 +293,7 @@ describe('golden corpus — F. superlatives', () => {
       { op: 'limit', n: 1 },
     ],
     output: { shape: 'object', columns: ['name', 'apogeeKm', 'status'] },
-  })));
+  }), 'F6'));
 });
 
 // ── G. Comparison ─────────────────────────────────────────────────────────────
@@ -303,7 +309,7 @@ describe('golden corpus — G. comparison', () => {
       ],
     },
     output: { shape: 'object', columns: ['name', 'meanAltitudeKm'] },
-  })));
+  }), 'G2'));
 
   it('G3: China vs US LEO counts by launch year (multi-key groupBy)', () => ok(prog({
     pipeline: [
@@ -315,7 +321,7 @@ describe('golden corpus — G. comparison', () => {
       { op: 'sort', by: 'n', dir: 'desc' },
     ],
     output: { shape: 'grouped' },
-  })));
+  }), 'G3'));
 });
 
 // ── I. Ambiguity probes (interpretation contract) ─────────────────────────────
@@ -329,7 +335,7 @@ describe('golden corpus — I. ambiguity probes', () => {
       { op: 'limit', n: 1 },
     ],
     output: { shape: 'object', columns: ['name', 'totMassKg', 'lengthM', 'spanM'] },
-  })));
+  }), 'I2'));
 
   it('I1: "falling" = fastest-decaying, via B1 machinery', () => ok(prog({
     interpretation: 'every orbit is falling; read as decaying fastest (meanMotionDot), alternative: reentering soon (lowest perigee)',
@@ -338,7 +344,7 @@ describe('golden corpus — I. ambiguity probes', () => {
       { op: 'limit', n: 20 },
     ],
     output: { shape: 'table', columns: ['name', 'meanMotionDot', 'perigeeKm'] },
-  })));
+  }), 'I1'));
 });
 
 // ── Validator contract: every code fires on the program that earns it ─────────
