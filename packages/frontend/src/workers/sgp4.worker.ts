@@ -10,9 +10,8 @@
  * Uses double-buffered Transferable ArrayBuffers for zero-copy transfer.
  */
 
-import * as satellite from 'satellite.js';
 import type { OMMJsonObject } from 'satellite.js';
-import { withinPropagationWindow } from '../orbital/propagation-limits';
+import init, { Simulator, InitOutput } from 'wasm-sgp4';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,13 +36,13 @@ type WorkerOutMessage =
         seq: number;
     };
 
-// ── State ────────────────────────────────────────────────────────────────────
 
-const EARTH_RADIUS_KM = 6371;
 
-let satrecs: satellite.SatRec[] = [];
+let sim: Simulator;
+let wasmMemory: WebAssembly.Memory;
 let startIndex = 0;
 let objectCount = 0;
+let isReady = false;
 
 // Double-buffered output arrays. After a Transferable transfer the buffer is
 // detached (length 0), so we keep two sets and alternate.
@@ -64,14 +63,8 @@ function allocateBuffers(count: number): void {
     };
 }
 
-/**
- * Return whichever buffer set is currently available (not detached).
- * If the active set was detached by a previous transfer, reallocate it
- * and swap to the other set for next time.
- */
 function getActiveBuffers(): { positions: Float32Array; velocities: Float32Array; validFlags: Uint8Array } {
     if (useSetA) {
-        // If buffer A was detached by a previous Transferable transfer, reallocate
         if (!bufferSetA || bufferSetA.positions.buffer.byteLength === 0) {
             bufferSetA = {
                 positions: new Float32Array(objectCount * 3),
@@ -79,7 +72,7 @@ function getActiveBuffers(): { positions: Float32Array; velocities: Float32Array
                 validFlags: new Uint8Array(objectCount),
             };
         }
-        useSetA = false; // next call uses B
+        useSetA = false;
         return bufferSetA;
     } else {
         if (!bufferSetB || bufferSetB.positions.buffer.byteLength === 0) {
@@ -89,7 +82,7 @@ function getActiveBuffers(): { positions: Float32Array; velocities: Float32Array
                 validFlags: new Uint8Array(objectCount),
             };
         }
-        useSetA = true; // next call uses A
+        useSetA = true;
         return bufferSetB;
     }
 }
@@ -104,29 +97,41 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
             handleInit(msg.tles, msg.startIndex);
             break;
         case 'PROPAGATE':
-            handlePropagate(msg.timestamp, msg.seq);
+            if (isReady) {
+                handlePropagate(msg.timestamp, msg.seq);
+            }
             break;
     }
 };
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
 
-function handleInit(tles: TLEInput[], start: number): void {
+async function handleInit(tles: TLEInput[], start: number) {
     startIndex = start;
     objectCount = tles.length;
-    satrecs = new Array(objectCount);
 
-    for (let i = 0; i < objectCount; i++) {
-        try {
-            satrecs[i] = satellite.json2satrec(tles[i].omm);
-        } catch {
-            // If parsing fails, store a placeholder — propagate will flag it invalid
-            satrecs[i] = null as unknown as satellite.SatRec;
+    // Load Wasm module
+    const wasm: InitOutput = await init();
+    wasmMemory = wasm.memory;
+    sim = new Simulator();
+
+    const ommArray = tles.map(tle => {
+        // The Rust sgp4 crate uses chrono::NaiveDateTime for the EPOCH field.
+        // If the space-track API includes a 'Z' timezone indicator (e.g., "2026-07-17T10:42:13.269888Z"),
+        // chrono's NaiveDateTime parser will choke on the 'Z', resulting in a "trailing input" error.
+        // We strip it out here before sending to Wasm.
+        const omm = { ...tle.omm };
+        if (typeof omm.EPOCH === 'string' && omm.EPOCH.endsWith('Z')) {
+            omm.EPOCH = omm.EPOCH.slice(0, -1);
         }
-    }
+        return omm;
+    });
+
+    sim.init(JSON.stringify(ommArray));
 
     allocateBuffers(objectCount);
 
+    isReady = true;
     const reply: WorkerOutMessage = { type: 'READY', objectCount };
     (self as unknown as Worker).postMessage(reply);
 }
@@ -134,77 +139,22 @@ function handleInit(tles: TLEInput[], start: number): void {
 // ── PROPAGATE ────────────────────────────────────────────────────────────────
 
 function handlePropagate(timestamp: number, seq: number): void {
-    const date = new Date(timestamp);
+    // 1. Run simulation in WebAssembly
+    sim.propagate(timestamp);
 
+    // 2. Get the active JS double-buffers
     const { positions, velocities, validFlags } = getActiveBuffers();
 
-    // Propagation epoch as a Julian day, computed ONCE for the whole pass (it's the
-    // same date for every object). Non-finite timestamps (wheel-overshoot → Invalid
-    // Date) become NaN here and are rejected per-object by withinPropagationWindow.
-    const jdNow = Number.isFinite(timestamp) ? satellite.jday(date) : NaN;
+    // 3. Create views into Wasm memory
+    const wasmPositions = new Float32Array(wasmMemory.buffer, sim.positions_ptr(), objectCount * 3);
+    const wasmVelocities = new Float32Array(wasmMemory.buffer, sim.velocities_ptr(), objectCount * 3);
+    const wasmValidFlags = new Uint8Array(wasmMemory.buffer, sim.valid_flags_ptr(), objectCount);
 
-    const markInvalid = (i: number): void => {
-        const i3 = i * 3;
-        positions[i3] = 0;
-        positions[i3 + 1] = 0;
-        positions[i3 + 2] = 0;
-        velocities[i3] = 0;
-        velocities[i3 + 1] = 0;
-        velocities[i3 + 2] = 0;
-        validFlags[i] = 0;
-    };
+    // 4. Copy data from Wasm to JS arrays for transfer
+    positions.set(wasmPositions);
+    velocities.set(wasmVelocities);
+    validFlags.set(wasmValidFlags);
 
-    for (let i = 0; i < objectCount; i++) {
-        const rec = satrecs[i];
-
-        // Handle null satrec from failed parse
-        if (!rec) {
-            markInvalid(i);
-            continue;
-        }
-
-        // HARD CAP: skip objects too far from their element-set epoch BEFORE propagating.
-        // satellite.js's deep-space resonance integrator (dspace) steps from epoch in
-        // fixed 720-min increments — cost ∝ |tsince| — so an unbounded scrub would wedge
-        // this worker in a synchronous loop. Symmetric (far future AND far past). See
-        // orbital/propagation-limits.ts.
-        if (!withinPropagationWindow(jdNow, rec.jdsatepoch)) {
-            markInvalid(i);
-            continue;
-        }
-
-        // Real throws inside satellite.js must not abort the entire tick — one bad
-        // object would otherwise freeze every satellite. Isolate per object.
-        let result: ReturnType<typeof satellite.propagate> | null = null;
-        try {
-            result = satellite.propagate(rec, date);
-        } catch {
-            markInvalid(i);
-            continue;
-        }
-        const posEci = result?.position;
-        const velEci = result?.velocity;
-
-        // propagate returns { position: false } on failure
-        if (!posEci || typeof posEci === 'boolean' || !velEci || typeof velEci === 'boolean') {
-            markInvalid(i);
-            continue;
-        }
-
-        // Scale ECI (TEME) from km to Earth radii (6371 km = 1.0)
-        const i3 = i * 3;
-        positions[i3] = posEci.x / EARTH_RADIUS_KM;
-        positions[i3 + 1] = posEci.y / EARTH_RADIUS_KM;
-        positions[i3 + 2] = posEci.z / EARTH_RADIUS_KM;
-        velocities[i3] = velEci.x / EARTH_RADIUS_KM;
-        velocities[i3 + 1] = velEci.y / EARTH_RADIUS_KM;
-        velocities[i3 + 2] = velEci.z / EARTH_RADIUS_KM;
-        validFlags[i] = 1;
-    }
-
-    // Transfer ownership (zero-copy). After this, positions.buffer and
-    // validFlags.buffer become detached in this worker — length goes to 0.
-    // Next tick we'll use the other buffer set (or reallocate if needed).
     const reply: WorkerOutMessage = {
         type: 'POSITIONS',
         positions,
@@ -215,6 +165,7 @@ function handlePropagate(timestamp: number, seq: number): void {
         seq,
     };
 
+    // 5. Transfer buffers to main thread (zero-copy postMessage)
     (self as unknown as Worker).postMessage(reply, [
         positions.buffer,
         velocities.buffer,

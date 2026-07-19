@@ -1,0 +1,10 @@
+[target.wasm32-unknown-unknown]
+rustflags = ["--sysroot", "/opt/homebrew"]
+linker = "wasm-ld"
+
+[target.wasm32-wasip1]
+rustflags = ["--sysroot", "/opt/homebrew"]
+linker = "wasm-ld"
+
+[target.wasm32-wasip2]
+rustflags = ["--sysroot", "/opt/homebrew"]
