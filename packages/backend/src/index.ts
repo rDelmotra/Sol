@@ -89,7 +89,7 @@ app.use('/api/catalog', catalogRouter);
 app.use('/api/launch', launchRouter);
 app.use('/api/org', orgRouter);
 app.use('/api/query', queryRouter);
-app.use('/api/query', queryCompileRouter); // POST /api/query/compile (NL→IR)
+app.use('/api/query', queryCompileRouter); // POST /api/query/compile + /api/query/ask (NL→IR)
 // Optional history routes — 503 cleanly when DATABASE_URL is unset, so mounting
 // unconditionally is safe.
 app.use('/api/history', historyRouter);
