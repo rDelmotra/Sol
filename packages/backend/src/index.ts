@@ -19,6 +19,7 @@ import queryCompileRouter from './routes/query.js';
 import { isCacheFresh, readVersion, readCache } from './cache/file-cache.js';
 import { primeTlePayload } from './cache/tle-payload-cache.js';
 import { loadEnrichment, getDecayedCatalog } from './enrichment/store.js';
+import { getAnalyticRegistry } from './analytic/index.js';
 import { scheduleTLEUpdater } from './cron/tle-updater.js';
 import { readDsoManifest } from './dso/snapshot/index.js';
 import {
@@ -178,6 +179,18 @@ app.listen(PORT, async () => {
         );
       }
     }
+  }
+
+  // P3 S2: measure the analytic server-executor's capability+coverage at boot.
+  // Nothing routes to this yet (S4 lands /api/query/ask) — cheap, and it
+  // surfaces artifact/provider problems at boot instead of first-query.
+  try {
+    const analyticSnapshot = getAnalyticRegistry().snapshot();
+    for (const u of analyticSnapshot.universes) {
+      logger.info(`analytic[${u.universe}]: ${u.spineSize.toLocaleString()} objects, ${u.fields.length} fields measured`);
+    }
+  } catch (err) {
+    logger.error('Analytic registry snapshot failed (non-fatal):', (err as Error).message);
   }
 });
 

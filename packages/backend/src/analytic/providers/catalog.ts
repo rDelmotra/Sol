@@ -15,13 +15,10 @@ import type { EnrichedTLEObject, VersionInfo } from '../../types/index.js';
 import type { DecayedCatalogRow } from '../../enrichment/types.js';
 import { logger } from '../../utils/logger.js';
 import type { FieldProvider, SpineProvider } from '../types.js';
+import { createVersionGuard } from './version-guard.js';
 
 const MU_KM3_S2 = 398600.4418;
 const MS_PER_YEAR = 365.25 * 86400_000;
-
-// Catalog flips at most daily via cron; throttle the version-check so a
-// 69k-row scan doesn't stat version.json 69k times.
-const VERSION_CHECK_INTERVAL_MS = 1000;
 
 /** Shared loader seam for both factories — same injected-deps pattern as analytic-compiler.ts. */
 export interface CatalogSourceDeps {
@@ -53,29 +50,20 @@ const CATALOG_FIELDS: readonly string[] = [
 export function createCatalogProvider(deps: CatalogSourceDeps = {}): FieldProvider & SpineProvider {
   const readCatalogFn = deps.readCatalog ?? readCache;
   const readVersionFn = deps.readVersion ?? readVersion;
+  const guard = createVersionGuard(readVersionFn);
 
   let catalog: EnrichedTLEObject[] = [];
   let byNorad = new Map<number, number>();
   let spineIds: readonly number[] = [];
-  let cachedVersion: string | null = null;
-  let lastCheckMs = 0;
-  let loaded = false;
 
   function ensureFresh(): void {
-    const now = Date.now();
-    if (loaded && now - lastCheckMs < VERSION_CHECK_INTERVAL_MS) return;
-    lastCheckMs = now;
-    const v = readVersionFn()?.version ?? null;
-    if (loaded && v === cachedVersion) return;
-
-    cachedVersion = v;
+    if (!guard.shouldReload()) return;
     catalog = readCatalogFn() ?? [];
     const idx = new Map<number, number>();
     catalog.forEach((o, i) => idx.set(o.noradId, i));
     byNorad = idx;
     spineIds = catalog.map((o) => o.noradId);
-    loaded = true;
-    logger.info(`Catalog provider (analytic): ${catalog.length} objects loaded, version=${v ?? 'unknown'}`);
+    logger.info(`Catalog provider (analytic): ${catalog.length} objects loaded, version=${guard.currentVersion() ?? 'unknown'}`);
   }
 
   function getField(noradId: number, field: string, tMs: number): FieldValue {
@@ -155,21 +143,13 @@ export function createAllSpineProvider(deps: CatalogSourceDeps = {}): FieldProvi
   const readVersionFn = deps.readVersion ?? readVersion;
   const enrichmentFn = deps.enrichment ?? loadEnrichment;
   const decayedFn = deps.decayed ?? getDecayedCatalog;
+  const guard = createVersionGuard(readVersionFn);
 
   let spineIds: readonly number[] = [];
   let decayedByNorad = new Map<number, DecayedCatalogRow>();
-  let cachedVersion: string | null = null;
-  let lastCheckMs = 0;
-  let loaded = false;
 
   function ensureFresh(): void {
-    const now = Date.now();
-    if (loaded && now - lastCheckMs < VERSION_CHECK_INTERVAL_MS) return;
-    lastCheckMs = now;
-    const v = readVersionFn()?.version ?? null;
-    if (loaded && v === cachedVersion) return;
-
-    cachedVersion = v;
+    if (!guard.shouldReload()) return;
     const catalog = readCatalogFn() ?? [];
     const enrichmentKeys = enrichmentFn();
 
@@ -182,7 +162,6 @@ export function createAllSpineProvider(deps: CatalogSourceDeps = {}): FieldProvi
     for (const row of decayedFn()) byNorad.set(row.noradId, row);
     decayedByNorad = byNorad;
 
-    loaded = true;
     logger.info(
       `All-spine provider (analytic): ${spineIds.length} objects ` +
         `(catalog ${catalog.length} ∪ enrichment ${enrichmentKeys.size})`,

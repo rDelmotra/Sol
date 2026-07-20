@@ -1,10 +1,11 @@
-// P3 S2 Parts A+B — catalog.ts provider tests.
-// Spec: my_plans/marvin/p3/S2_catalog_provider_universe_all.md "Tests" #1-4.
-// (#5-7 depend on Part C registry composition — land with that step.)
+// P3 S2 Parts A+B+C — catalog.ts provider tests + registry-composition cases.
+// Spec: my_plans/marvin/p3/S2_catalog_provider_universe_all.md "Tests" #1-7.
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { execute, validateProgram } from '@orbitwatch/analytic';
 import { createCatalogProvider, createAllSpineProvider } from '../../src/analytic/providers/catalog.js';
+import { DataSourceRegistry } from '../../src/analytic/registry.js';
 import type { EnrichedTLEObject, VersionInfo } from '../../src/types/index.js';
 import type { DecayedCatalogRow } from '../../src/enrichment/types.js';
 
@@ -197,5 +198,116 @@ describe('catalog + all-spine chain — manual composition sanity', () => {
     assert.equal(chainField(3, 'name'), 'DeadSat'); // catalog miss -> all-spine fills it
     assert.equal(chainField(3, 'apogeeKm'), null);  // neither provider claims it for dead objects
     assert.equal(chainField(1, 'name'), 'Alpha');   // live object resolves from catalog first
+  });
+});
+
+// ── Tests 5-7 — real DataSourceRegistry composition (Part C chain order) ──────
+// live: spine=catalog, chain=[catalog]           (enrichment covered separately
+// all:  spine=all-spine, chain=[catalog, all-spine]  in enrichment.test.ts)
+
+function buildRegistry(): DataSourceRegistry {
+  // 3 in the enrichment map only (a decayed object absent from the live catalog);
+  // 1,2 come from the catalog. Spine union = [1,2,3].
+  const enrichmentMap = new Map<number, unknown>([[1, {}], [2, {}], [3, {}]]);
+  const decayedRows: DecayedCatalogRow[] = [
+    { noradId: 3, name: 'Gamma', country: 'FR', status: 'decayed', objectType: 'payload', orbitClass: null, launchYear: 1999 },
+  ];
+  const deps = {
+    readCatalog: () => FIXTURE_CATALOG,
+    readVersion: () => makeVersion('v1'),
+    enrichment: () => enrichmentMap,
+    decayed: () => decayedRows,
+  };
+  const catalog = createCatalogProvider(deps);
+  const allSpine = createAllSpineProvider(deps);
+
+  const reg = new DataSourceRegistry();
+  reg.registerSpine('live', catalog);
+  reg.register('live', catalog);
+
+  reg.registerSpine('all', allSpine);
+  reg.register('all', catalog);
+  reg.register('all', allSpine);
+  return reg;
+}
+
+describe('DataSourceRegistry — catalog+all-spine composition (Part C)', () => {
+  it("E3-shape: universe 'all' groupBy launchYear -> count, real execute()", () => {
+    const reg = buildRegistry();
+    const source = reg.buildSource('all')!;
+
+    const program = {
+      v: 1 as const,
+      universe: 'all' as const,
+      timeBinding: { mode: 'now' as const },
+      interpretation: 'test',
+      pipeline: [
+        { op: 'groupBy' as const, key: 'launchYear', aggs: { n: { fn: 'count' as const } } },
+      ],
+      output: { shape: 'grouped' as const },
+    };
+    const v = validateProgram(program, { nowMs: Date.now() });
+    assert.equal(v.ok, true, v.ok ? '' : JSON.stringify(v.issues));
+
+    const outcome = execute(program, { all: source }, { nowMs: Date.now() });
+    assert.equal(outcome.ok, true);
+    if (!outcome.ok) return;
+
+    const rows = outcome.result.rows!;
+    // 1 (Alpha, catalog launchDate 2020-05-15) -> 2020; 2 (Beta, no launchDate,
+    // no decayed row) -> null; 3 (Gamma, catalog miss -> all-spine decayed row) -> 1999.
+    const byYear = new Map(rows.map((r) => [r.launchYear, r.n]));
+    assert.equal(byYear.get(2020), 1);
+    assert.equal(byYear.get(1999), 1);
+    assert.equal(byYear.get(null), 1);
+
+    // launchYear coverage: 2/3 objects resolved a non-null year.
+    const cov = outcome.result.meta.coverage.find((c) => c.field === 'launchYear');
+    assert.deepEqual(cov, { field: 'launchYear', present: 2, total: 3 });
+  });
+
+  it("live-universe program: regime filter -> ids, matches the fixture", () => {
+    const reg = buildRegistry();
+    const source = reg.buildSource('live')!;
+
+    const program = {
+      v: 1 as const,
+      universe: 'live' as const,
+      timeBinding: { mode: 'now' as const },
+      interpretation: 'test',
+      pipeline: [
+        { op: 'filter' as const, where: { op: 'in' as const, field: 'regime', values: ['LEO'] } },
+      ],
+      output: { shape: 'ids' as const },
+    };
+    const v = validateProgram(program, { nowMs: Date.now() });
+    assert.equal(v.ok, true, v.ok ? '' : JSON.stringify(v.issues));
+
+    const outcome = execute(program, { live: source }, { nowMs: Date.now() });
+    assert.equal(outcome.ok, true);
+    if (!outcome.ok) return;
+    // Both fixture rows are LEO; the live spine is catalog-only (norad 3 excluded).
+    assert.deepEqual(Array.from(outcome.result.ids!).sort(), [1, 2]);
+  });
+
+  it("snapshot(): servedBy attribution reflects the real chain order", () => {
+    const reg = buildRegistry();
+    const snap = reg.snapshot();
+    const allUniverse = snap.universes.find((u) => u.universe === 'all')!;
+    assert.equal(allUniverse.spineSize, 3);
+
+    // 'name' is claimed by both catalog (live objects) and all-spine (decayed
+    // fallback) on the 'all' universe — attribution names the whole chain once,
+    // not per-provider.
+    const nameCap = allUniverse.fields.find((f) => f.field === 'name')!;
+    assert.equal(nameCap.servedBy, 'catalog+all-spine');
+    // All three resolve: 1 (Alpha) and 2 (Beta) from catalog, 3 (Gamma) falls
+    // through to the all-spine decayed-row fallback.
+    assert.equal(nameCap.coverage, 1);
+
+    const liveUniverse = snap.universes.find((u) => u.universe === 'live')!;
+    assert.equal(liveUniverse.spineSize, 2);
+    const liveNameCap = liveUniverse.fields.find((f) => f.field === 'name')!;
+    assert.equal(liveNameCap.servedBy, 'catalog');
   });
 });
