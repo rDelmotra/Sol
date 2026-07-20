@@ -1,13 +1,64 @@
-// P2/S1 — prompt generator tests (my_plans/marvin/perceptor_p2_plan.md S1).
+// P2/S1 + P3/S6 — prompt generator tests.
+// Spec: my_plans/marvin/perceptor_p2_plan.md S1, my_plans/marvin/p3/S6_prompt_truthing.md.
+//
+// S6 replaced hand-coded field servedness/coverage with numbers MEASURED at
+// boot (DataSourceRegistry.snapshot()) — these tests use a FIXTURE snapshot
+// throughout (deterministic, no data/tle-cache.json needed) rather than the
+// real registry singleton, per the spec's explicit portability requirement.
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createHash } from 'node:crypto';
-import { FIELD_REGISTRY, FN_SPECS, validateProgram } from '@orbitwatch/analytic';
+import { FIELD_REGISTRY, FN_SPECS, validateProgram, type Universe } from '@orbitwatch/analytic';
 import { buildCompilerSystemPrompt, getPromptVersion } from '../../src/services/analytic-prompt.js';
+import type { RegistrySnapshot, FieldCapability } from '../../src/analytic/types.js';
+
+// ── Fixture snapshot builder ──────────────────────────────────────────────────
+//
+// Defaults every field to full (1.0) coverage on the universe(s) it can
+// naturally appear on (live-plane fields never appear on 'all' — the real
+// validator forbids referencing them under universe 'all'). `overrides` sets
+// specific fields' measured coverage; `omit` drops a field from BOTH universes
+// entirely (the "no provider claims it" case); `degradedLive` zeroes every
+// live-universe entry (simulates an empty spine at boot).
+
+function makeSnapshot(opts: {
+  overrides?: Record<string, { live?: number; all?: number }>;
+  omit?: string[];
+  degradedLive?: boolean;
+  liveSpineSize?: number;
+} = {}): RegistrySnapshot {
+  const omit = new Set(opts.omit ?? []);
+  const overrides = opts.overrides ?? {};
+  const liveFields: FieldCapability[] = [];
+  const allFields: FieldCapability[] = [];
+
+  for (const [name, spec] of Object.entries(FIELD_REGISTRY)) {
+    if (omit.has(name)) continue;
+    const ov = overrides[name];
+    liveFields.push({ field: name, servedBy: 'fixture', coverage: ov?.live ?? 1 });
+    if (spec.plane !== 'live') {
+      allFields.push({ field: name, servedBy: 'fixture', coverage: ov?.all ?? 1 });
+    }
+  }
+
+  if (opts.degradedLive) {
+    for (const f of liveFields) f.coverage = 0;
+  }
+
+  return {
+    measuredAt: new Date(0).toISOString(),
+    universes: [
+      { universe: 'live' as Universe, spineSize: opts.liveSpineSize ?? 32000, fields: liveFields, fns: [] },
+      { universe: 'all' as Universe, spineSize: 70000, fields: allFields, fns: [] },
+    ],
+  };
+}
+
+const FIXTURE = makeSnapshot();
 
 describe('buildCompilerSystemPrompt', () => {
-  const prompt = buildCompilerSystemPrompt();
+  const prompt = buildCompilerSystemPrompt(FIXTURE);
 
   it('contains every FIELD_REGISTRY key', () => {
     for (const name of Object.keys(FIELD_REGISTRY)) {
@@ -21,14 +72,6 @@ describe('buildCompilerSystemPrompt', () => {
     }
   });
 
-  it('surfaces low-coverage percentages but not near-full ones', () => {
-    assert.ok(prompt.includes('coverage 39%'), 'operationalStatus 39% coverage should be shown');
-    assert.ok(prompt.includes('coverage 54%'), 'launchMassKg 54% coverage should be shown');
-    // 99.8%-coverage fields render without a coverage annotation
-    assert.ok(/- launchTag \([^)]*\)/.test(prompt));
-    assert.ok(!/- launchTag \([^)]*coverage/.test(prompt));
-  });
-
   it('states the P1 noise-threshold lesson and the refusal codes', () => {
     assert.ok(prompt.includes('1e-5'));
     for (const code of ['NEEDS_ALL_UNIVERSE', 'NEEDS_HISTORY', 'OFF_DOMAIN', 'NOT_DERIVABLE']) {
@@ -36,8 +79,8 @@ describe('buildCompilerSystemPrompt', () => {
     }
   });
 
-  it('is deterministic (two calls identical)', () => {
-    assert.equal(buildCompilerSystemPrompt(), prompt);
+  it('is deterministic (two calls with the same snapshot are identical)', () => {
+    assert.equal(buildCompilerSystemPrompt(FIXTURE), prompt);
   });
 
   it('every few-shot program in the prompt validates against the frozen validator', () => {
@@ -64,15 +107,79 @@ describe('buildCompilerSystemPrompt', () => {
   });
 });
 
+describe('buildCompilerSystemPrompt — measured coverage rendering (P3 S6 Part B)', () => {
+  it('renders the MEASURED snapshot percentage, not schema.ts\'s static coverage value', () => {
+    // schema.ts says operationalStatus=39.2%, launchMassKg=53.8% — pick fixture
+    // values that round to visibly DIFFERENT whole percents to prove the source.
+    const snap = makeSnapshot({ overrides: { operationalStatus: { all: 0.61 }, launchMassKg: { all: 0.20 } } });
+    const prompt = buildCompilerSystemPrompt(snap);
+    assert.ok(prompt.includes('coverage 61%'), 'should show the fixture-measured 61%, not schema.ts\'s 39%');
+    assert.ok(!prompt.includes('coverage 39%'), 'must not render the stale schema.ts static value');
+    assert.ok(prompt.includes('coverage 20%'), 'should show the fixture-measured 20%, not schema.ts\'s 54%');
+    assert.ok(!prompt.includes('coverage 54%'), 'must not render the stale schema.ts static value');
+    // Measured >0 on 'all' (and full on 'live' by fixture default) — not UNSERVED.
+    assert.ok(!/- operationalStatus \([^)]*UNSERVED/.test(prompt));
+  });
+
+  it('a field with 0 measured coverage on BOTH universes gets the UNSERVED annotation', () => {
+    const snap = makeSnapshot({ overrides: { owner: { live: 0, all: 0 } } });
+    const prompt = buildCompilerSystemPrompt(snap);
+    assert.ok(/- owner \([^)]*UNSERVED — always null, see note\)/.test(prompt));
+    assert.ok(prompt.includes('have no data source wired up yet'), 'the genericized UNSERVED note must be present');
+  });
+
+  it('a field entirely ABSENT from the snapshot (no provider claims it) also renders UNSERVED — fallback rule', () => {
+    const snap = makeSnapshot({ omit: ['cospar'] });
+    const prompt = buildCompilerSystemPrompt(snap);
+    assert.ok(/- cospar \([^)]*UNSERVED — always null, see note\)/.test(prompt));
+  });
+
+  it('a static-plane field measured on \'all\' but with 0 on \'live\' is still shown (not UNSERVED) — plane picks the display universe', () => {
+    // launchMassKg is static-plane: its display number comes from 'all'. Zeroing
+    // 'live' (which real static fields also don't strictly need) must not flip it
+    // to UNSERVED as long as 'all' is nonzero.
+    const snap = makeSnapshot({ overrides: { launchMassKg: { live: 0, all: 0.42 } } });
+    const prompt = buildCompilerSystemPrompt(snap);
+    assert.ok(prompt.includes('coverage 42%'));
+    assert.ok(!/- launchMassKg \([^)]*UNSERVED/.test(prompt));
+  });
+
+  it('near-full coverage (>=95%) renders with no percentage annotation', () => {
+    const snap = makeSnapshot({ overrides: { launchMassKg: { all: 0.97 } } });
+    const prompt = buildCompilerSystemPrompt(snap);
+    assert.ok(/- launchMassKg \([^)]*\)/.test(prompt));
+    assert.ok(!/- launchMassKg \([^)]*coverage/.test(prompt));
+  });
+
+  it('an empty-live-spine (boot-degraded) fixture still builds a prompt without throwing', () => {
+    const degraded = makeSnapshot({ degradedLive: true, liveSpineSize: 0 });
+    assert.doesNotThrow(() => buildCompilerSystemPrompt(degraded));
+    const prompt = buildCompilerSystemPrompt(degraded);
+    assert.ok(prompt.includes('FIELD CATALOG'));
+  });
+});
+
 describe('getPromptVersion', () => {
   it('is 12 hex chars derived from the prompt content', () => {
-    const v = getPromptVersion();
+    const v = getPromptVersion(FIXTURE);
     assert.match(v, /^[0-9a-f]{12}$/);
-    const expected = createHash('sha256').update(buildCompilerSystemPrompt()).digest('hex').slice(0, 12);
+    const expected = createHash('sha256').update(buildCompilerSystemPrompt(FIXTURE)).digest('hex').slice(0, 12);
     assert.equal(v, expected);
   });
 
-  it('is memoized-stable across calls', () => {
+  it('is memoized-stable across calls with the default (no-snapshot) signature', () => {
     assert.equal(getPromptVersion(), getPromptVersion());
+  });
+
+  it('changes when a rendered coverage percent differs (auto-bump proof)', () => {
+    const a = makeSnapshot({ overrides: { launchMassKg: { all: 0.20 } } });
+    const b = makeSnapshot({ overrides: { launchMassKg: { all: 0.55 } } });
+    assert.notEqual(getPromptVersion(a), getPromptVersion(b));
+  });
+
+  it('is stable when two snapshots round to the same whole percent (cache-warmth proof)', () => {
+    const a = makeSnapshot({ overrides: { launchMassKg: { all: 0.201 } } });
+    const b = makeSnapshot({ overrides: { launchMassKg: { all: 0.204 } } });
+    assert.equal(getPromptVersion(a), getPromptVersion(b));
   });
 });

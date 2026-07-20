@@ -29,7 +29,10 @@ export interface FieldSpec {
   plane: FieldPlane;
   unit?: string;
   domain?: readonly string[];
-  /** Fraction of the 69,242-record enrichment universe with a value. */
+  /** Fraction of the 69,242-record enrichment universe with a value, as of the
+   *  snapshot noted above. Docs value only (P3 S6) — the backend compiler prompt
+   *  renders MEASURED coverage from DataSourceRegistry.snapshot() at boot, never
+   *  this static number, so the prompt can't drift from what the real adapter serves. */
   coverage?: number;
   /** Computed on demand (derived registry / dotted join path), not stored. */
   derived?: true;

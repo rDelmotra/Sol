@@ -22,7 +22,10 @@ import {
   TIMESCAN_MAX_OBJECTS,
   PAST_CAP_DAYS,
   FUTURE_CAP_DAYS,
+  type Universe,
 } from '@orbitwatch/analytic';
+import { getAnalyticRegistry } from '../analytic/index.js';
+import type { RegistrySnapshot } from '../analytic/types.js';
 
 // ── §1 Role ───────────────────────────────────────────────────────────────────
 
@@ -33,22 +36,42 @@ runs your program over ~32,000 live-tracked objects and produces every number.
 
 You must respond by calling the tool with EITHER a program OR a refusal — never both.`;
 
-// ── §2 Field catalog (generated) ──────────────────────────────────────────────
+// ── §2 Field catalog (rendered from the boot-measured registry snapshot) ──────
+//
+// P3 S6: coverage + servedness are MEASURED at boot (DataSourceRegistry.snapshot()),
+// never hand-coded here — this is what makes the "prompt claims X% but the real
+// adapter serves 0%" bug class structurally impossible. schema.ts's static
+// `coverage` values are docs-only from here on (see the comment there).
 
-// Fields in the frozen contract that the LIVE data source does not serve yet
-// (returns null for every object). Demoted in the prompt — not deleted from the
-// registry (demotion ≠ deletion; old programs stay valid, they just find nulls).
-const LIVE_UNSERVED_FIELDS = new Set(['operationalStatus', 'jcat', 'parentJcat']);
+/** The measured coverage for `field` on `universe`, or 0 if no provider claims it
+ *  on that universe at all (fallback registry coverage — spec Part B rule 5). */
+function measuredCoverage(snapshot: RegistrySnapshot, universe: Universe, field: string): number {
+  const u = snapshot.universes.find((x) => x.universe === universe);
+  return u?.fields.find((f) => f.field === field)?.coverage ?? 0;
+}
 
-function renderFieldCatalog(): string {
+function renderFieldCatalog(snapshot: RegistrySnapshot): string {
   const lines = Object.entries(FIELD_REGISTRY).map(([name, spec]) => {
     const parts: string[] = [spec.kind, spec.plane];
     if (spec.unit) parts.push(`unit ${spec.unit}`);
     if (spec.domain) parts.push(`enum: ${spec.domain.join('|')}`);
-    if (spec.coverage !== undefined && spec.coverage < 0.95) {
-      parts.push(`coverage ${Math.round(spec.coverage * 100)}%`);
+
+    const onLive = measuredCoverage(snapshot, 'live', name);
+    const onAll = measuredCoverage(snapshot, 'all', name);
+
+    if (onLive === 0 && onAll === 0) {
+      // No provider serves this field on EITHER universe — auto-derived demotion
+      // (the F5 firewall: a registry noun that lands before its provider).
+      parts.push('UNSERVED — always null, see note');
+    } else {
+      // static-plane → the 'all' entry is the honest "how much of the world has
+      // this" denominator; catalog/live-plane → the 'live' entry (catalog fields
+      // are null-for-decayed under 'all', which rule 2 already explains — showing
+      // the live number here avoids double-caveating the same gap).
+      const primary: Universe = spec.plane === 'static' ? 'all' : 'live';
+      const coverage = primary === 'all' ? onAll : onLive;
+      if (coverage < 0.95) parts.push(`coverage ${Math.round(coverage * 100)}%`);
     }
-    if (LIVE_UNSERVED_FIELDS.has(name)) parts.push('UNSERVED — always null, see note');
     return `- ${name} (${parts.join(', ')})`;
   });
   return `FIELD CATALOG (the only fields that exist — use names verbatim):
@@ -56,10 +79,10 @@ ${lines.join('\n')}
 
 Fields marked with a coverage % are partially populated: still use them — the executor
 reports the basis (meta.coverage) and the answer is honestly caveated downstream.
-Fields marked UNSERVED are in the contract but not yet loaded into the live data source
-(every object reads null). If a question HINGES on one (e.g. "failed/dead satellites"
-needs operationalStatus), refuse NOT_DERIVABLE and say that data isn't ingested yet —
-do not build a filter that can only return an empty set.`;
+Fields marked UNSERVED are in the contract but have no data source wired up yet
+(every object reads null on both universes). If a question HINGES on one, refuse
+NOT_DERIVABLE and say that data isn't ingested yet — do not build a filter that can
+only return an empty set.`;
 }
 
 // ── §3 Physics functions (generated) ──────────────────────────────────────────
@@ -330,25 +353,41 @@ function renderFewShots(): string {
 let cachedPrompt: string | null = null;
 let cachedVersion: string | null = null;
 
-/** Deterministic, pure: the full system prompt for the NL→IR compiler. */
-export function buildCompilerSystemPrompt(): string {
-  if (cachedPrompt) return cachedPrompt;
-  cachedPrompt = [
+function renderPrompt(snapshot: RegistrySnapshot): string {
+  return [
     ROLE,
-    renderFieldCatalog(),
+    renderFieldCatalog(snapshot),
     renderFnCatalog(),
     renderGrammar(),
     HARD_RULES,
     renderFewShots(),
   ].join('\n\n');
+}
+
+/**
+ * Deterministic, pure GIVEN a snapshot: the full system prompt for the NL→IR
+ * compiler. Default `snapshot` is the real boot-measured registry (memoized —
+ * first compile triggers measurement, then the module-level cache holds since
+ * it's a boot singleton). Tests pass an explicit fixture snapshot and get an
+ * uncached render every time — no artifacts, no shared state between tests.
+ */
+export function buildCompilerSystemPrompt(snapshot?: RegistrySnapshot): string {
+  if (snapshot !== undefined) return renderPrompt(snapshot);
+  if (cachedPrompt) return cachedPrompt;
+  cachedPrompt = renderPrompt(getAnalyticRegistry().snapshot());
   return cachedPrompt;
 }
 
 /**
- * Content hash of the rendered prompt (12 hex chars), memoized. Part of the
- * compile-cache key so any schema/prompt change auto-invalidates cached programs.
+ * Content hash of the rendered prompt (12 hex chars). Part of the compile-cache
+ * key so any schema/prompt/coverage change auto-invalidates cached programs.
+ * Memoized only for the default (real-registry) snapshot; an explicit snapshot
+ * always hashes fresh.
  */
-export function getPromptVersion(): string {
+export function getPromptVersion(snapshot?: RegistrySnapshot): string {
+  if (snapshot !== undefined) {
+    return createHash('sha256').update(buildCompilerSystemPrompt(snapshot)).digest('hex').slice(0, 12);
+  }
   if (cachedVersion) return cachedVersion;
   cachedVersion = createHash('sha256').update(buildCompilerSystemPrompt()).digest('hex').slice(0, 12);
   return cachedVersion;
