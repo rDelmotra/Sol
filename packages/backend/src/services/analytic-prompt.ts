@@ -157,7 +157,7 @@ const HARD_RULES = `HARD RULES:
    "all" ONLY when the question is about the full historical catalog: "ever",
    "all time", "since 1957", "including decayed", launched-per-year totals.
    Under "all": live/catalog-plane fields (altitudeKm, apogeeKm, meanMotion, ...)
-   are NULL for decayed objects — the executor reports the basis — SAY the caveat in
+   are NULL for decayed objects — the executor reports the basis; SAY the caveat in
    the interpretation when you aggregate such a field under "all". Questions about
    the population ON a past date ("how many were in orbit on 12 March 1995") still
    → refuse NEEDS_HISTORY: decay DATES are not ingested, so past membership cannot
