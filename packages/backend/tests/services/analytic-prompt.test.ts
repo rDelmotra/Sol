@@ -72,11 +72,15 @@ describe('buildCompilerSystemPrompt', () => {
     }
   });
 
-  it('states the P1 noise-threshold lesson and the refusal codes', () => {
+  it('states the P1 noise-threshold lesson and the actively-taught refusal codes', () => {
     assert.ok(prompt.includes('1e-5'));
-    for (const code of ['NEEDS_ALL_UNIVERSE', 'NEEDS_HISTORY', 'OFF_DOMAIN', 'NOT_DERIVABLE']) {
+    for (const code of ['NEEDS_HISTORY', 'OFF_DOMAIN', 'NOT_DERIVABLE']) {
       assert.ok(prompt.includes(code), `refusal code ${code} missing`);
     }
+  });
+
+  it("P3 S6: NEEDS_ALL_UNIVERSE is no longer taught (universe 'all' is now a first-class emit, not a refusal) — the code itself stays valid contract, just rare/unreachable via this prompt", () => {
+    assert.ok(!prompt.includes('NEEDS_ALL_UNIVERSE'));
   });
 
   it('is deterministic (two calls with the same snapshot are identical)', () => {
@@ -104,6 +108,52 @@ describe('buildCompilerSystemPrompt', () => {
     }
     assert.ok(programs >= 6, 'expected ≥6 program examples');
     assert.equal(refusals, 2, 'expected exactly 2 refusal examples');
+  });
+});
+
+describe('buildCompilerSystemPrompt — universe rewrite (P3 S6 Part C)', () => {
+  const prompt = buildCompilerSystemPrompt(FIXTURE);
+
+  it('the ROLE paragraph documents both universes', () => {
+    assert.ok(prompt.includes('one of two universes'));
+    assert.ok(prompt.includes('~32,000 currently tracked objects'));
+    assert.ok(prompt.includes('~70,000 objects ever cataloged since 1957'));
+  });
+
+  it("hard rule 2 teaches choosing 'all' rather than refusing NEEDS_ALL_UNIVERSE", () => {
+    assert.ok(prompt.includes('Choose the universe: "live" (the default)'));
+    assert.ok(prompt.includes('since 1957'));
+  });
+
+  it('the grammar envelope allows both universe values', () => {
+    assert.ok(prompt.includes('"universe": "live" | "all"'));
+  });
+
+  it("rule 14's growth-count addendum documents the 'all'-universe survivorship fix", () => {
+    assert.ok(prompt.includes('the survivorship caveat disappears'));
+  });
+});
+
+describe("buildCompilerSystemPrompt — few-shots (P3 S6 Part D)", () => {
+  const prompt = buildCompilerSystemPrompt(FIXTURE);
+
+  it("includes the flagship 'all'-universe launched-per-year unlock", () => {
+    assert.ok(prompt.includes('How many objects were launched per year since 1957?'));
+  });
+
+  it("the debris-growth-since-2000 example now compiles (universe 'all'), not a refusal", () => {
+    const idx = prompt.indexOf('How has the amount of debris grown since 2000?');
+    assert.ok(idx >= 0);
+    const exampleBlock = prompt.slice(idx, idx + 800);
+    assert.ok(exampleBlock.includes('"universe": "all"'));
+    assert.ok(!exampleBlock.includes('"refuse"'));
+  });
+
+  it('keeps exactly one NEEDS_HISTORY refusal few-shot (the replacement "raised their orbit" example)', () => {
+    assert.ok(prompt.includes('Which satellites raised their orbit last week?'));
+    const examplesSection = prompt.slice(prompt.indexOf('EXAMPLES ('));
+    const matches = examplesSection.match(/NEEDS_HISTORY/g) ?? [];
+    assert.equal(matches.length, 1, 'expected exactly one NEEDS_HISTORY few-shot refusal');
   });
 });
 

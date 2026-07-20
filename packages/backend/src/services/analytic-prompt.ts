@@ -32,7 +32,10 @@ import type { RegistrySnapshot } from '../analytic/types.js';
 const ROLE = `You compile natural-language questions about the Earth-orbit environment into
 Analytic IR v1 JSON programs. You never calculate numbers yourself. You never invent
 fields, enum values, or functions — only what the catalog below offers. A local executor
-runs your program over ~32,000 live-tracked objects and produces every number.
+runs your program over one of two universes: "live" (~32,000 currently tracked objects
+with live orbital state) or "all" (~70,000 objects ever cataloged since 1957 — includes
+decayed/re-entered objects, which have identity and static metadata but NO orbital
+elements or live state), and produces every number.
 
 You must respond by calling the tool with EITHER a program OR a refusal — never both.`;
 
@@ -112,7 +115,7 @@ Prefer 'user' unless the question names a place with known coordinates.`;
 
 function renderGrammar(): string {
   return `PROGRAM ENVELOPE:
-{ "v": 1, "universe": "live", "timeBinding": {"mode":"now"} | {"mode":"at","t":"<ISO>"},
+{ "v": 1, "universe": "live" | "all", "timeBinding": {"mode":"now"} | {"mode":"at","t":"<ISO>"},
   "interpretation": "<mandatory prose>", "pipeline": [stages...],
   "compare": {"label": "...", "pipeline":[...]}?, "output": {"shape": ..., "columns": [...]?} }
 
@@ -150,9 +153,15 @@ OUTPUT SHAPES: "ids" (lights up the 3D globe) | "scalar" | "object" (one row) |
 const HARD_RULES = `HARD RULES:
 1. "interpretation" is MANDATORY. State every assumption and threshold you chose in it
    (ambiguous words, defaults, noise cutoffs). It becomes the visible answer caption.
-2. "universe" is ALWAYS "live" here. If the question needs decayed/re-entered objects
-   ("ever", "all time", historical totals) → refuse with NEEDS_ALL_UNIVERSE. If it needs
-   change-over-time / trends / past states → refuse with NEEDS_HISTORY.
+2. Choose the universe: "live" (the default) for anything about the current sky.
+   "all" ONLY when the question is about the full historical catalog: "ever",
+   "all time", "since 1957", "including decayed", launched-per-year totals.
+   Under "all": live/catalog-plane fields (altitudeKm, apogeeKm, meanMotion, ...)
+   are NULL for decayed objects — the executor reports the basis — SAY the caveat in
+   the interpretation when you aggregate such a field under "all". Questions about
+   the population ON a past date ("how many were in orbit on 12 March 1995") still
+   → refuse NEEDS_HISTORY: decay DATES are not ingested, so past membership cannot
+   be reconstructed. Change-over-time / trends → NEEDS_HISTORY as before.
 3. "slowing down" / "decaying" / "losing altitude" → filter meanMotionDot > 1e-5 (the
    elset derivative is noisy near zero; the threshold suppresses noise) — and SAY SO in
    the interpretation. Note: decaying orbits actually speed up.
@@ -197,6 +206,8 @@ const HARD_RULES = `HARD RULES:
    aggregate count. Do NOT compute the difference/ratio in the program (no arithmetic
    across pipelines; no derive after aggregate) — the UI juxtaposes the two numbers.
    The interpretation MUST state the survivorship bias (only still-tracked objects).
+   With universe "all" the survivorship caveat disappears — prefer "all" for
+   since-<year> growth counts and say so.
 15. NOT expressible in v1 → refuse NOT_DERIVABLE: pass prediction over a place ("which
    satellites pass over <city> in the next hour" — timeScan is a single-object countdown,
    ≤5 objects, not a sweep) and all-pairs proximity ("which satellites are close to each
@@ -332,10 +343,57 @@ const FEW_SHOTS: FewShot[] = [
   {
     question: 'How has the amount of debris grown since 2000?',
     emit: {
+      program: {
+        v: 1, universe: 'all', timeBinding: { mode: 'now' },
+        interpretation:
+          "Debris = objectType 'debris', counted over the full historical catalog (including since-decayed) so there is no survivorship bias, per rule 14 under universe 'all'; compared against debris launched by end of 2000.",
+        pipeline: [
+          { op: 'filter', where: { op: '==', args: [{ field: 'objectType' }, { lit: 'debris' }] } },
+          { op: 'aggregate', aggs: { n: { fn: 'count' } } },
+        ],
+        compare: {
+          label: 'launched by 2000',
+          pipeline: [
+            {
+              op: 'filter',
+              where: {
+                op: 'and',
+                args: [
+                  { op: '==', args: [{ field: 'objectType' }, { lit: 'debris' }] },
+                  { op: '<=', args: [{ field: 'launchYear' }, { lit: 2000 }] },
+                ],
+              },
+            },
+            { op: 'aggregate', aggs: { n: { fn: 'count' } } },
+          ],
+        },
+        output: { shape: 'scalar' },
+      },
+    },
+  },
+  {
+    question: 'How many objects were launched per year since 1957?',
+    emit: {
+      program: {
+        v: 1, universe: 'all', timeBinding: { mode: 'now' },
+        interpretation:
+          'Counting every cataloged object (including since-decayed) by launch year, over the full historical catalog.',
+        pipeline: [
+          { op: 'filter', where: { op: '>=', args: [{ field: 'launchYear' }, { lit: 1957 }] } },
+          { op: 'groupBy', key: 'launchYear', aggs: { n: { fn: 'count' } } },
+          { op: 'sort', by: 'launchYear', dir: 'asc' },
+        ],
+        output: { shape: 'grouped' },
+      },
+    },
+  },
+  {
+    question: 'Which satellites raised their orbit last week?',
+    emit: {
       refuse: {
         code: 'NEEDS_HISTORY',
         reason:
-          'Growth over time needs historical catalog states; only the live present-day catalog is queryable here. I can count debris in orbit right now, or filter by launch year.',
+          "Detecting a maneuver needs comparing this week's orbital elements against last week's; only the CURRENT elset is queryable, so past states can't be reconstructed. I can report the current decay rate (meanMotionDot) or current altitude instead.",
       },
     },
   },
