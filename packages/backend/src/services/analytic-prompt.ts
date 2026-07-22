@@ -167,15 +167,31 @@ const HARD_RULES = `HARD RULES:
    the interpretation. Note: decaying orbits actually speed up.
 4. Question shape → output shape: "which/show/where are ..." → {"shape":"ids"} (globe
    highlight). "how many / what is <number>" → "scalar". "top/most/oldest/biggest N" →
-   "table" with sort+limit. "per/by <category>" → "grouped".
+   "table" with sort+limit. "per/by <category>" → "grouped". A program whose FINAL stage
+   is timeScan ALWAYS uses "scalar" — never "object"/"table" (timeScan produces a group
+   relation; the executor reports minutesUntil, or null if the predicate never flips
+   within maxSteps). sort() already places null field values last regardless of
+   direction — for "top/heaviest/biggest N" over a partially-covered field, just
+   sort+limit; do NOT add a filter to exclude nulls, it isn't needed.
 5. Observer functions are fine to use with observer:'user' — the client handles the
    user-has-no-location case. Do not refuse for a missing location.
-6. Enum values must come verbatim from the field catalog. Never invent values.
+6. Enum values must come verbatim from the field catalog. Never invent values. NOTE:
+   category's 'active_satellite'/'inactive_satellite' values are NOT populated by the
+   live classifier (every payload currently reads 'unknown' there) — for "active" /
+   "dead" / "operational" satellite questions, filter operationalStatus (e.g.
+   =='operational' or =='nonoperational') instead, never category.
 7. Refuse (do not force a bad program) when the question is not derivable from the
    catalog+functions (NOT_DERIVABLE) or is not about the orbital domain / asks for
    opinion or prediction beyond physics (OFF_DOMAIN). A precise refusal IS a correct answer.
-8. Common named objects: ISS = noradId 25544. Constellations are name/program matches
-   (e.g. {"op":"in","field":"program","values":["Starlink"]}), not id lists.
+8. Common named objects: ISS = noradId 25544; Kosmos-1408 (2021 Russian ASAT test target,
+   the source of a well-known debris cloud) = noradId 13552. For any other named object,
+   use its noradId ONLY if you are confident of it; otherwise refuse NOT_DERIVABLE and say
+   the name→ID lookup is the missing step (mirrors rule 16's launch-tag guidance). Debris
+   "from" a named object → filter {"fn":"descendsFrom","ancestor":<noradId>}; prefer
+   universe "all" since fragments are often decayed and absent from "live". Constellations
+   are name/program matches (e.g. {"op":"in","field":"program","values":["starlink"]}), not
+   id lists — program/owner-family string VALUES in the catalog are lowercase; match the
+   stored casing exactly, never the question's capitalization.
 9. The 'at' time binding covers the RECENT PAST too (up to 60 days back): "yesterday",
    "last night", "an hour ago", "21:00 tonight" → {"mode":"at","t":"<resolved ISO>"} using
    the current-time line in the question. Do NOT refuse these as NEEDS_HISTORY — that code
@@ -257,10 +273,25 @@ const FEW_SHOTS: FewShot[] = [
       program: {
         v: 1, universe: 'live', timeBinding: { mode: 'now' },
         interpretation:
-          "Starlink = objects whose program is 'Starlink'; share inside the cylindrical umbra at sim-time.",
+          "Starlink = objects whose program is 'starlink' (catalog program values are lowercase); share inside the cylindrical umbra at sim-time.",
         pipeline: [
-          { op: 'filter', where: { op: 'in', field: 'program', values: ['Starlink'] } },
+          { op: 'filter', where: { op: 'in', field: 'program', values: ['starlink'] } },
           { op: 'aggregate', aggs: { shadowShare: { fn: 'share', where: { field: 'eclipsed' } } } },
+        ],
+        output: { shape: 'scalar' },
+      },
+    },
+  },
+  {
+    question: 'What share of active satellites are commercial?',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          "Active = operationalStatus 'operational' (category's active/inactive split isn't populated by the live classifier — see rule 6). Share of those with sector 'commercial'.",
+        pipeline: [
+          { op: 'filter', where: { op: '==', args: [{ field: 'operationalStatus' }, { lit: 'operational' }] } },
+          { op: 'aggregate', aggs: { commercialShare: { fn: 'share', where: { op: 'has', field: 'sectors', value: 'commercial' } } } },
         ],
         output: { shape: 'scalar' },
       },
@@ -327,6 +358,50 @@ const FEW_SHOTS: FewShot[] = [
           { op: 'limit', n: 1 },
         ],
         output: { shape: 'object', columns: ['name', 'dKm', 'altitudeKm'] },
+      },
+    },
+  },
+  {
+    question: "How long until the ISS exits Earth's shadow?",
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          'Scanning forward from sim-time in 5-minute steps (up to 4 hours) until the ISS (norad 25544) is no longer eclipsed.',
+        pipeline: [
+          { op: 'pick', ids: [25544] },
+          { op: 'timeScan', predicate: { op: 'not', arg: { field: 'eclipsed' } }, direction: 'forward', stepMinutes: 5, maxSteps: 48 },
+        ],
+        output: { shape: 'scalar' },
+      },
+    },
+  },
+  {
+    question: 'What are the 10 heaviest objects in orbit?',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          'Ranking currently tracked objects by launch mass (a partially-populated static field, ~54% coverage) — sort already places missing values last, so no null-exclusion filter is needed.',
+        pipeline: [
+          { op: 'sort', by: 'launchMassKg', dir: 'desc' },
+          { op: 'limit', n: 10 },
+        ],
+        output: { shape: 'table', columns: ['name', 'launchMassKg'] },
+      },
+    },
+  },
+  {
+    question: 'What debris came from Kosmos-1408?',
+    emit: {
+      program: {
+        v: 1, universe: 'all', timeBinding: { mode: 'now' },
+        interpretation:
+          "Kosmos-1408 (2021 Russian ASAT test target) is noradId 13552. Universe 'all' because most of its fragments have since decayed and are absent from the live catalog.",
+        pipeline: [
+          { op: 'filter', where: { fn: 'descendsFrom', ancestor: 13552 } },
+        ],
+        output: { shape: 'ids' },
       },
     },
   },

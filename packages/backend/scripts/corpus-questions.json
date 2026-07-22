@@ -234,8 +234,8 @@
     "id": "E3",
     "class": "E",
     "question": "How many objects were launched per year since 1957?",
-    "expectRefusal": true,
-    "note": "needs universe all"
+    "expectRefusal": false,
+    "note": "universe all (P3)"
   },
   {
     "id": "E4",
@@ -295,8 +295,10 @@
     "id": "F6",
     "class": "F",
     "question": "What is the highest apogee ever cataloged?",
-    "expectRefusal": true,
-    "note": "'ever' needs universe all"
+    "expectRefusal": false,
+    "refusalAcceptable": true,
+    "note": "all-universe answer on a partial elements basis (~46%) — caveated answer or honest refusal both defensible until v1.5",
+    "expectedLowBasis": ["apogeeKm"]
   },
   {
     "id": "G1",
@@ -408,5 +410,35 @@
     "class": "J",
     "question": "Simulate a Kessler cascade at 800 km",
     "expectRefusal": true
+  },
+  {
+    "id": "P1",
+    "class": "P",
+    "question": "What is the total launch mass currently in orbit?",
+    "expectRefusal": false,
+    "note": "launchMassKg sum, ~54% basis caveat",
+    "expectedLowBasis": ["launchMassKg"]
+  },
+  {
+    "id": "P2",
+    "class": "P",
+    "question": "What are the 10 heaviest objects in orbit?",
+    "expectRefusal": false,
+    "note": "launchMassKg table"
+  },
+  {
+    "id": "P3",
+    "class": "P",
+    "question": "Which Starlink satellites are nonoperational?",
+    "expectRefusal": false,
+    "note": "operationalStatus now served (~39%) — the ex-hollow class",
+    "expectedLowBasis": ["operationalStatus"]
+  },
+  {
+    "id": "P4",
+    "class": "P",
+    "question": "How many objects came from failed launches?",
+    "expectRefusal": false,
+    "note": "launch.success join"
   }
 ]
