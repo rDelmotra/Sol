@@ -12,6 +12,7 @@ const FLIGHT = {
   moveDamping: 6, // velocity glide rate (1/s); lower = more "floating astronaut" drift
   lookSpeed: 1.2, // right-stick max turn rate, rad/s at full deflection
   lookDamping: 10, // look glide rate (1/s)
+  rightStickScale: 0.5, // right stick (look) sensitivity multiplier
   /** Metric speed gears (m/s), half-decade steps. Same top (100,000 km/s) as the 5-gear set; finer low end. */
   gearsMps: [3_000, 10_000, 30_000, 100_000, 300_000, 1_000_000, 3_000_000, 10_000_000, 30_000_000, 100_000_000],
   defaultGear: 5, // 1,000 km/s ≈ brisk cruise
@@ -150,6 +151,11 @@ export class FlyController {
     return Math.sign(v) * Math.pow(Math.abs(v), FLIGHT.exponent);
   }
 
+  /** Deadzone only, linear (no exponent) — used for LT/RT so travel maps 1:1 to speed. */
+  private static triggerLinear(v: number): number {
+    return v < FLIGHT.deadzone ? 0 : v;
+  }
+
   private readGamepad(): Gamepad | null {
     const pads = navigator.getGamepads?.();
     if (!pads) return null;
@@ -193,8 +199,8 @@ export class FlyController {
 
   /** Right-stick look: squared curve + damped rotation speed, scaled near surface. */
   private updateLook(dt: number, gp: Gamepad | null, turnScale: number): void {
-    const rx = gp ? FlyController.curve(gp.axes[2] ?? 0) : 0;
-    const ry = gp ? FlyController.curve(gp.axes[3] ?? 0) : 0;
+    const rx = gp ? FlyController.curve(gp.axes[2] ?? 0) * FLIGHT.rightStickScale : 0;
+    const ry = gp ? FlyController.curve(gp.axes[3] ?? 0) * FLIGHT.rightStickScale : 0;
 
     // TargetSpeed = MaxTurnRate × curvedOutput × dt; ActualSpeed lerps toward it,
     // so look eases in and keeps drifting a frame or two after release.
@@ -230,17 +236,20 @@ export class FlyController {
     if (gp) {
       localX += FlyController.curve(gp.axes[0] ?? 0);
       localZ += -FlyController.curve(gp.axes[1] ?? 0); // stick up (−Y) = forward
-      localVert += FlyController.curve(gp.buttons[7]?.value ?? 0); // RT up
-      localVert -= FlyController.curve(gp.buttons[6]?.value ?? 0); // LT down
+      // Triggers are linear (no squared curve) and scaled ×2: half-travel = the
+      // speedometer's rated cruise speed (matches full stick/WASD, truthful),
+      // full travel = a 2× dash above it.
+      localVert += FlyController.triggerLinear(gp.buttons[7]?.value ?? 0) * 2; // RT up
+      localVert -= FlyController.triggerLinear(gp.buttons[6]?.value ?? 0) * 2; // LT down
     }
 
-    // Clamp planar magnitude to 1 (no diagonal speed-up); vertical to ±1.
+    // Clamp planar magnitude to 1 (no diagonal speed-up); vertical to ±2 (dash headroom).
     const planar = Math.hypot(localX, localZ);
     if (planar > 1) {
       localX /= planar;
       localZ /= planar;
     }
-    localVert = Math.max(-1, Math.min(1, localVert));
+    localVert = Math.max(-2, Math.min(2, localVert));
 
     // ── World-space target velocity: forward follows the true view direction. ──
     const unitsPerSec = FLIGHT.gearsMps[this.gear] / FLIGHT.earthRadiusM;
