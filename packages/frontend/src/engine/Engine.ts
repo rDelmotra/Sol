@@ -15,6 +15,7 @@ import { InputManager } from './input/InputManager';
 import { Renderer } from './render/Renderer';
 import { Camera } from './render/Camera';
 import { NavigationController } from './controllers/NavigationController';
+import { FlyController } from './controllers/FlyController';
 import type { TrackingSource } from './controllers/TrackingSource';
 import { World } from './world/World';
 import { StarfieldLayer } from './world/layers/StarfieldLayer';
@@ -66,6 +67,7 @@ export class Engine {
   private inputManager: InputManager | null = null;
   private trailsLayer: TrailsLayer;
   private nav: NavigationController;
+  private flyController: FlyController;
   private trailUnsub: (() => void) | null = null;
   private visualListPoller: VisualListPoller | null = null;
   private lastSimTimeUpdateAt = 0;
@@ -153,6 +155,10 @@ export class Engine {
       this.createTrackingSource(),
       { onCancelJoyrideLook: () => this.inputManager?.cancelJoyrideLook() },
     );
+
+    // ── Free-flight (WASD / arrows / throttle) ──────────────────────────────────
+    // Additive keyboard fly for the cockpit UI; only acts in `free` mode.
+    this.flyController = new FlyController(this.camera, this.controls);
 
     // ── Clock ─────────────────────────────────────────────────────────────────
     this.clock = new THREE.Clock();
@@ -787,6 +793,10 @@ export class Engine {
     // GPU-side interpolation factor for TLE positions (owned by SatellitesLayer).
     const uT = this.satellitesLayer.getInterpolationFactor();
 
+    // Free-flight translation (WASD/arrows) applied before the camera state
+    // machine so this frame's controls.update() picks up the moved target.
+    this.flyController.update(delta);
+
     // Camera state machine runs FIRST so the frame carries this-frame camera
     // position/distance (Earth/DSO LOD + label projection) and the freshest
     // selection arrival time for the satellite glow.
@@ -850,6 +860,7 @@ export class Engine {
     }
     this.visualListPoller?.dispose();
     this.nav.dispose();
+    this.flyController.dispose();
     this.trailUnsub?.();
     this.inputManager?.dispose();
     this.resizeObserver?.disconnect();

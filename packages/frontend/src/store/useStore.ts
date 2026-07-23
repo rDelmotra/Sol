@@ -124,6 +124,10 @@ interface AppState {
   loadingError: string | null;
   cameraMode: CameraMode;
   trackingStyle: TrackingStyle;
+  /** Free-flight speed gear + its metric speed (m/s), set by FlyController; the cockpit SPD arc reads them. */
+  cameraGear: number;
+  cameraGearCount: number;
+  cameraSpeedMps: number;
   objectCount: number;
   categoryCounts: Record<ObjectCategory, number>;
   dataTimestamp: number | null;
@@ -191,6 +195,7 @@ interface AppState {
 
   setCameraMode: (mode: CameraMode) => void;
   setTrackingStyle: (style: TrackingStyle) => void;
+  setCameraGearState: (gear: number, speedMps: number) => void;
   setTriggerFlyTo: (fn: (index: number) => void) => void;
   setTriggerJoyride: (fn: (index: number) => void) => void;
   setTriggerResetCamera: (fn: () => void) => void;
@@ -312,6 +317,9 @@ export const useStore = create<AppState>((set, get) => ({
   loadingError: null,
   cameraMode: 'free',
   trackingStyle: 'follow',
+  cameraGear: 5,
+  cameraGearCount: 10,
+  cameraSpeedMps: 1_000_000,
   objectCount: 0,
   categoryCounts: {
     active_satellite: 0,
@@ -400,6 +408,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   setCameraMode: (mode) => set({ cameraMode: mode }),
   setTrackingStyle: (style) => set({ trackingStyle: style }),
+  setCameraGearState: (gear, speedMps) => set({ cameraGear: gear, cameraSpeedMps: speedMps }),
   setTriggerFlyTo: (fn) => set({ triggerFlyTo: fn }),
   setTriggerJoyride: (fn) => set({ triggerJoyride: fn }),
   setTriggerResetCamera: (fn) => set({ triggerResetCamera: fn }),

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ORBITAL // Cockpit — OrbitWatch UI spike</title>
+    <meta
+      name="description"
+      content="A cockpit-sim dashboard for navigating and analysing objects in Earth orbit. Fly, focus, and query the onboard AI."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body, #cockpit-root { width: 100%; height: 100%; overflow: hidden; background: #05070d; }
+    </style>
+  </head>
+  <body>
+    <div id="cockpit-root"></div>
+    <script type="module" src="/src/spike/cockpit-main.tsx"></script>
+  </body>
+</html>
