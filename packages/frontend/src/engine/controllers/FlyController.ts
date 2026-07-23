@@ -37,10 +37,14 @@ const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
  * tethered to Earth's centre so max speed + turn sensitivity scale down near the
  * surface and you can't crash through.
  *
+ * The mouse/trackpad is deliberately NOT touched here — drag-rotate and
+ * scroll/pinch-zoom stay with OrbitControls (the default "phone-like" Three.js
+ * feel), so the three input modes (touch/mouse · keyboard · gamepad) are decoupled.
+ *
  *   W / S      forward / backward (along the view axis)
  *   A / D      strafe left / right
  *   R / F      up / down (world-vertical)
- *   [ / ]      gear down / up  ·  wheel: gear down / up
+ *   [ / ]      gear down / up
  *   G          auto-travel (fly-to) the selected object
  *
  * Gamepad (first connected pad, standard mapping):
@@ -70,7 +74,6 @@ export class FlyController {
 
   private readonly onKeyDown: (e: KeyboardEvent) => void;
   private readonly onKeyUp: (e: KeyboardEvent) => void;
-  private readonly onWheel: (e: WheelEvent) => void;
   private readonly onGamepadConnected: (e: GamepadEvent) => void;
   private readonly onGamepadDisconnected: (e: GamepadEvent) => void;
   private gamepadIndex: number | null = null;
@@ -83,7 +86,6 @@ export class FlyController {
 
     this.onKeyDown = (e) => this.handleKeyDown(e);
     this.onKeyUp = (e) => this.keys.delete(e.key.toLowerCase());
-    this.onWheel = (e) => this.handleWheel(e);
     this.onGamepadConnected = (e) => {
       this.gamepadIndex = e.gamepad.index;
       console.info(`[FlyController] gamepad connected: "${e.gamepad.id}" (index ${e.gamepad.index}, mapping: ${e.gamepad.mapping || 'none'})`);
@@ -94,7 +96,6 @@ export class FlyController {
     };
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
-    window.addEventListener('wheel', this.onWheel, { passive: false });
     window.addEventListener('gamepadconnected', this.onGamepadConnected);
     window.addEventListener('gamepaddisconnected', this.onGamepadDisconnected);
 
@@ -130,15 +131,6 @@ export class FlyController {
     const store = useStore.getState();
     if (store.selectedIndex == null || !store.triggerFlyTo) return;
     store.triggerFlyTo(store.selectedIndex);
-  }
-
-  private handleWheel(e: WheelEvent): void {
-    const store = useStore.getState();
-    // Only steal the wheel while flying (free mode, not dome) — otherwise leave
-    // it to OrbitControls' native zoom.
-    if (store.cameraMode !== 'free' || store.visibilityMode === 'dome') return;
-    e.preventDefault();
-    this.shiftGear(-Math.sign(e.deltaY));
   }
 
   private shiftGear(delta: number): void {
@@ -279,7 +271,6 @@ export class FlyController {
   dispose(): void {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
-    window.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('gamepadconnected', this.onGamepadConnected);
     window.removeEventListener('gamepaddisconnected', this.onGamepadDisconnected);
     this.keys.clear();
