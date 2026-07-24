@@ -150,12 +150,6 @@ export default function CockpitHud({ overlay = false }: { overlay?: boolean } = 
       : null;
   const velKmS = altKm !== null ? orbitalVelocityKmS(altKm) : null;
   const orbitalFrac = velKmS !== null ? Math.min(1, velKmS / 7.9) : 0; // LEO ~7.6 km/s → near-full
-  const contacts = useMemo(() => catalogData.slice(0, 12), [catalogData]);
-
-  const selectContact = (index: number) => {
-    selectByIndex?.(index);
-    triggerFlyTo?.(index);
-  };
 
   /* Keyboard: Q/E panes, Tab = next contact, Space = ask, Esc = close.
    * Ignores keys while a text field is focused so the ask box types freely. */
@@ -237,7 +231,6 @@ export default function CockpitHud({ overlay = false }: { overlay?: boolean } = 
       <TelemetryTL simTimeMs={simTimeMs} viewMode={viewMode} simRate={simRate} objectCount={objectCount} />
       <TelemetryTR selected={selected} altKm={altKm} objectCount={objectCount} dataTimestamp={dataTimestamp} />
       <TelemetryBL cameraMode={cameraMode} answer={analyticAnswer} />
-      <ContactList contacts={contacts} selectedIndex={selectedIndex} onPick={selectContact} />
 
       <AiBar
         asking={asking}
@@ -451,12 +444,16 @@ function LeftArc({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const cy = 180;
   const start = 180 - 17.5;
   const end = 180 + 17.5;
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onToggle();
+    }
+  };
   return (
-    <button
-      onClick={onToggle}
-      aria-label="Analysis panes"
-      style={{ ...BUTTON_RESET, position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 60, height: 360 }}
-    >
+    // Non-interactive layout box — only the arc's own stroke (below) reacts to input,
+    // not this whole rectangle, so hover/click only fires right around the curve.
+    <div style={{ pointerEvents: 'none', position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', width: 60, height: 360 }}>
       <svg width="380" height="360" style={{ position: 'absolute', left: 0, top: 0 }}>
         <defs>
           <filter id="glowL" x="-50%" y="-50%" width="200%" height="200%">
@@ -475,6 +472,21 @@ function LeftArc({ open, onToggle }: { open: boolean; onToggle: () => void }) {
           opacity={open ? 1 : 0.85}
           filter="url(#glowL)"
           style={{ transition: 'all 240ms ease' }}
+        />
+        {/* Invisible wider hit-stroke, exactly following the curve — the actual
+         * interactive target. pointerEvents: 'stroke' means only the line itself
+         * (this width) reacts, not the svg's bounding box. */}
+        <path
+          d={arcPath(cx, cy, R, start, end)}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={14}
+          style={{ pointerEvents: 'stroke', cursor: 'pointer', outline: 'none' }}
+          onClick={onToggle}
+          onKeyDown={handleKeyDown}
+          role="button"
+          tabIndex={0}
+          aria-label="Analysis panes"
         />
         {Array.from({ length: 9 }).map((_, i) => {
           const t = start + (i / 8) * (end - start);
@@ -501,7 +513,7 @@ function LeftArc({ open, onToggle }: { open: boolean; onToggle: () => void }) {
       >
         ANALYSIS · {open ? 'OPEN' : 'Q / L1'}
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -516,13 +528,17 @@ function RightArc({ open, gear, gearCount, speedMps, onToggle }: { open: boolean
   const speedStart = start;
   const speedEnd = start + (end - start) * fill;
   const speedLabel = speedMps >= 1000 ? `${(speedMps / 1000).toLocaleString()} km/s` : `${speedMps} m/s`;
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onToggle();
+    }
+  };
 
   return (
-    <button
-      onClick={onToggle}
-      aria-label="Focus panes"
-      style={{ ...BUTTON_RESET, position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', width: 60, height: 360 }}
-    >
+    // Non-interactive layout box — only the arc's own stroke (below) reacts to input,
+    // not this whole rectangle, so hover/click only fires right around the curve.
+    <div style={{ pointerEvents: 'none', position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', width: 60, height: 360 }}>
       <svg width="380" height="360" style={{ position: 'absolute', right: 0, top: 0 }}>
         <defs>
           <filter id="glowR" x="-50%" y="-50%" width="200%" height="200%">
@@ -545,6 +561,21 @@ function RightArc({ open, gear, gearCount, speedMps, onToggle }: { open: boolean
           opacity={open ? 1 : 0.85}
           filter="url(#glowR)"
           style={{ transition: 'all 240ms ease' }}
+        />
+        {/* Invisible wider hit-stroke, exactly following the curve — the actual
+         * interactive target. pointerEvents: 'stroke' means only the line itself
+         * (this width) reacts, not the svg's bounding box. */}
+        <path
+          d={arcPath(cx, cy, R, start, end)}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={14}
+          style={{ pointerEvents: 'stroke', cursor: 'pointer', outline: 'none' }}
+          onClick={onToggle}
+          onKeyDown={handleKeyDown}
+          role="button"
+          tabIndex={0}
+          aria-label="Focus panes"
         />
         <path d={arcPath(cx, cy, R2, start, end)} fill="none" stroke="var(--hud-arc-dim)" strokeWidth="0.6" />
         {fill > 0 && (
@@ -599,7 +630,7 @@ function RightArc({ open, gear, gearCount, speedMps, onToggle }: { open: boolean
         <div>SPD · G{gear + 1}</div>
         <div style={{ color: 'var(--hud-text)' }}>{speedLabel}</div>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -863,49 +894,6 @@ function TelemetryBL({ cameraMode, answer }: { cameraMode: string; answer: Retur
       <div>
         <span style={{ marginRight: 8, display: 'inline-block', height: 6, width: 6, borderRadius: 9999, verticalAlign: 'middle', background: aiColor }} />
         AI {aiLabel}
-      </div>
-    </div>
-  );
-}
-
-function ContactList({ contacts, selectedIndex, onPick }: { contacts: EnrichedTLEObject[]; selectedIndex: number | null; onPick: (index: number) => void }) {
-  return (
-    <div style={{ pointerEvents: 'auto', position: 'absolute', bottom: 96, right: 24, width: 220, fontFamily: 'var(--font-hud-mono)' }}>
-      <div style={{ marginBottom: 4, fontSize: 9, letterSpacing: '0.4em', color: 'var(--hud-text-dim)' }}>CONTACTS · TAB</div>
-      <div style={{ borderRadius: 8, background: 'var(--hud-glass)', border: '1px solid var(--hud-glass-edge)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', overflow: 'hidden' }}>
-        {contacts.length === 0 ? (
-          <div style={{ padding: '10px 12px', fontSize: 10, color: 'var(--hud-text-dim)' }}>ACQUIRING CATALOG…</div>
-        ) : (
-          contacts.map((c, i) => {
-            const on = i === selectedIndex;
-            return (
-              <button
-                key={c.noradId}
-                onClick={() => onPick(i)}
-                style={{
-                  ...BUTTON_RESET,
-                  fontFamily: 'inherit',
-                  display: 'flex',
-                  width: '100%',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '6px 12px',
-                  fontSize: 10,
-                  transition: 'background-color 150ms, color 150ms',
-                  color: on ? 'var(--hud-text)' : 'var(--hud-text-dim)',
-                  borderTop: i === 0 ? 'none' : '1px solid var(--hud-glass-edge)',
-                  background: on ? 'oklch(0.85 0.14 220 / 0.06)' : 'transparent',
-                }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
-                  <span style={{ flexShrink: 0, height: 4, width: 4, borderRadius: 9999, background: on ? 'var(--hud-arc)' : 'var(--hud-arc-dim)', boxShadow: on ? '0 0 8px var(--hud-arc-glow)' : undefined }} />
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
-                </span>
-                <span style={{ flexShrink: 0, marginLeft: 8 }}>{kindCode(c.objectType)}</span>
-              </button>
-            );
-          })
-        )}
       </div>
     </div>
   );
