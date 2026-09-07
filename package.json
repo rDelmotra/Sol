@@ -3,14 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
+    "packages/analytic",
     "packages/backend",
     "packages/frontend"
   ],
   "scripts": {
+    "predev": "npm run build -w @orbitwatch/analytic",
     "dev": "npm run dev --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @orbitwatch/analytic && npm run build -w @orbitwatch/backend && npm run build -w @orbitwatch/frontend",
     "start": "node packages/backend/dist/index.js",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run build -w @orbitwatch/analytic && npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
   },
   "engines": {
     "node": ">=20.0.0"

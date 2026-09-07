@@ -393,6 +393,10 @@ export class Engine {
       simTimeJump: () => this.onSimTimeJump(),
       scrubPreview: () => this.onScrubPreview(),
       returnToPresent: () => this.startGlideToLive(),
+      runAnalytic: (program) => {
+        const out = this.satellitesLayer.runAnalyticProgram(program);
+        return 'notReady' in out ? null : out;
+      },
     };
   }
 

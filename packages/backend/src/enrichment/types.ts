@@ -6,7 +6,7 @@
 // McDowell General Catalog snapshot, and the UCS Satellite Database snapshot),
 // each normalized to the source's own terminology.
 //
-// See my_plans/metadata_enrichment.md for the design rationale and per-facet
+// See my_plans/old/metadata_enrichment.md for the design rationale and per-facet
 // source authority. NOT YET WIRED — defined ahead of the live join.
 // ============================================================
 
@@ -62,7 +62,7 @@ export type CatalogObjectType =
 
 // ── Provenance — which snapshot each record was joined from ───────────────────
 // 'gcat'      = full GCAT satcat/psatcat snapshot (supersedes the old trimmed
-//               'satcat-gc' CSV as of G1 — see my_plans/gcat_ingestion_architecture.md)
+//               'satcat-gc' CSV as of G1 — see my_plans/architecture.audit.reports/gcat_ingestion_architecture.md)
 // 'gcat-org'  = facet resolved via the Owner→orgs.tsv Class join (G2) — still
 //               SOURCE data (a join of two GCAT tables), not inference
 // 'inferred'  = filled from the program registry (programs.ts) by name-pattern

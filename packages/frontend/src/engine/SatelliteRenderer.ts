@@ -336,7 +336,7 @@ export class SatelliteRenderer {
     const facetCounts = makeFacetCounts();
 
     // Destructure once (the gate runs per object over the whole catalog).
-    const { typeFilters, statusFilters, sectorFilters, purposeFilters, regimeFilters, countryFilter, programFilter, launchFilter, ownerFilter } = filters;
+    const { typeFilters, statusFilters, sectorFilters, purposeFilters, regimeFilters, countryFilter, programFilter, launchFilter, ownerFilter, analyticFilter } = filters;
     const countryAll = countryFilter.mode === 'all';
     const countryCodes = countryFilter.mode === 'only' ? countryFilter.codes : null;
     const programAll = programFilter.mode === 'all';
@@ -345,6 +345,8 @@ export class SatelliteRenderer {
     const launchTags = launchFilter.mode === 'only' ? launchFilter.tags : null;
     const ownerAll = ownerFilter.mode === 'all';
     const ownerCodes = ownerFilter.mode === 'only' ? ownerFilter.codes : null;
+    const analyticAll = analyticFilter.mode === 'all';
+    const analyticIds = analyticFilter.mode === 'only' ? analyticFilter.ids : null;
 
     const observerAvailable = observerPos !== null;
     const obsX = observerPos?.x ?? 0;
@@ -402,6 +404,10 @@ export class SatelliteRenderer {
       }
       if (isVisibleBase && !ownerAll) {
         isVisibleBase = ownerCodes!.has(obj.owner ?? '');
+      }
+      // Analytic allow-set (P1): the noradIds an Analytic IR program returned.
+      if (isVisibleBase && !analyticAll) {
+        isVisibleBase = analyticIds!.has(obj.noradId);
       }
 
       this.filterMask[i] = isVisibleBase ? 1 : 0;

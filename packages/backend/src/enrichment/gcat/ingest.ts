@@ -5,7 +5,7 @@
 // only-empty fills). Pure text-in/records-out — callers read the files — so
 // the whole pass is unit-testable on synthetic fixtures.
 //
-// Contracts (my_plans/gcat_ingestion_architecture.md + G1 plan):
+// Contracts (my_plans/architecture.audit.reports/gcat_ingestion_architecture.md + G1 plan):
 //  • NORAD-keyed: only rows with a numeric Satcat enter the map. JCAT/COSPAR
 //    are stored as fields for later entity joins (G2 launches/orgs).
 //  • Raw preserved: every normalized facet keeps its verbatim source cell in

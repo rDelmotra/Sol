@@ -8,6 +8,9 @@ import { simClock } from '../../SimClock';
 import { useStore, isObserverMode, type VisibilityMode } from '../../../store/useStore';
 import type { EnrichedTLEObject } from '../../../data/types';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
+import { validateProgram, execute, type AnalyticProgram, type ExecuteOutcome } from '@orbitwatch/analytic';
+import { createLiveAnalyticSource, type LiveBuffers } from '../../../query/analytic/live-source';
+import { getRawQueryVocab } from '../../../query/vocab';
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -40,6 +43,8 @@ export class SatellitesLayer implements Layer {
   private filterUnsub: (() => void) | null = null;
   /** True while satellites are hidden for a planetarium (uncovered-past) scrub. */
   private hidden = false;
+  /** Latest raw worker buffers (TEME ER) — the analytic live source's fast path. */
+  private latestBuffers: LiveBuffers | null = null;
 
   /**
    * The satellite renderer, or null if init hasn't run / failed. Nullable on
@@ -107,6 +112,7 @@ export class SatellitesLayer implements Layer {
     let prevProgram = s0.programFilter;
     let prevLaunch = s0.launchFilter;
     let prevOwner = s0.ownerFilter;
+    let prevAnalytic = s0.analyticFilter;
     let prevReg = s0.regimeFilters;
     let prevColorBy = s0.colorBy;
     let prevMode = s0.visibilityMode;
@@ -121,6 +127,7 @@ export class SatellitesLayer implements Layer {
         state.programFilter !== prevProgram ||
         state.launchFilter !== prevLaunch ||
         state.ownerFilter !== prevOwner ||
+        state.analyticFilter !== prevAnalytic ||
         state.regimeFilters !== prevReg;
       const colorByChanged = state.colorBy !== prevColorBy;
       const obsLocChanged = state.observerLocation !== prevObs;
@@ -137,6 +144,7 @@ export class SatellitesLayer implements Layer {
       prevProgram = state.programFilter;
       prevLaunch = state.launchFilter;
       prevOwner = state.ownerFilter;
+      prevAnalytic = state.analyticFilter;
       prevReg = state.regimeFilters;
       prevColorBy = state.colorBy;
       prevMode = state.visibilityMode;
@@ -178,6 +186,54 @@ export class SatellitesLayer implements Layer {
       onReady: (objectCount) => this.guard('onReady', () => callbacks.onReady(objectCount)),
       onPositions: (result) => this.onPositions(result),
     });
+
+    // ── Dev-only analytic console (P1) ────────────────────────────────────────
+    // window.__analytic(program) — validate → runAnalyticProgram → an 'ids'
+    // result becomes the globe allow-set. __analytic(null) clears it. The P2
+    // compile endpoint is now the user-facing entry (via the runAnalytic command);
+    // this hook stays as the engineer's REPL. Removed in dispose().
+    if (import.meta.env.DEV) {
+      (window as unknown as Record<string, unknown>).__analytic = (program: unknown) => {
+        const store = useStore.getState();
+        if (program == null) {
+          store.setAnalyticFilter(null);
+          return { cleared: true };
+        }
+        const v = validateProgram(program, { nowMs: simClock.now() });
+        if (!v.ok) return { issues: v.issues };
+        const out = this.runAnalyticProgram(v.program);
+        if ('notReady' in out) return { notReady: true };
+        if (!out.ok) return { error: out.error };
+        if (out.result.shape === 'ids' && out.result.ids) {
+          store.setAnalyticFilter(new Set(out.result.ids));
+        }
+        return out.result;
+      };
+      console.info('[analytic] window.__analytic(program) ready — null clears the allow-set');
+    }
+  }
+
+  /**
+   * Execute a VALIDATED program over the live data source at the current sim
+   * instant + the store observer. **Side-effect-free**: does NOT touch
+   * `analyticFilter` — callers decide what to do with the result (globe highlight,
+   * AnswerCard, …). Returns `{ notReady: true }` before `activate()` has run or
+   * before the first worker buffers arrive.
+   */
+  runAnalyticProgram(program: AnalyticProgram): ExecuteOutcome | { notReady: true } {
+    if (!this.callbacks || !this.latestBuffers) return { notReady: true };
+    const callbacks = this.callbacks;
+    const src = createLiveAnalyticSource({
+      catalog: this.catalog,
+      getBuffers: () => this.latestBuffers,
+      getVocab: () => getRawQueryVocab(),
+      getVisualNoradIds: () => callbacks.getVisualNoradIds(),
+    });
+    const obs = useStore.getState().observerLocation;
+    return execute(program, { live: src }, {
+      nowMs: simClock.now(),
+      observer: obs ? { latDeg: obs.lat, lonDeg: obs.lon, altKm: obs.alt } : null,
+    });
   }
 
   /**
@@ -205,6 +261,15 @@ export class SatellitesLayer implements Layer {
       const renderer = this._renderer;
       const callbacks = this.callbacks;
       if (!renderer || !callbacks) return;
+
+      // Retain the raw TEME buffers for the analytic live source. Safe: the worker
+      // transfers ownership to this thread; the renderer copies into attributes.
+      this.latestBuffers = {
+        positions: result.positions,
+        velocities: result.velocities,
+        validFlags: result.validFlags,
+        timestamp: result.timestamp,
+      };
 
       const state = useStore.getState();
       const propagationDate = new Date(result.timestamp);
@@ -418,6 +483,10 @@ export class SatellitesLayer implements Layer {
   }
 
   dispose(): void {
+    if (import.meta.env.DEV) {
+      delete (window as unknown as Record<string, unknown>).__analytic;
+    }
+    this.latestBuffers = null;
     this.filterUnsub?.();
     this.filterUnsub = null;
     this.client?.dispose();
