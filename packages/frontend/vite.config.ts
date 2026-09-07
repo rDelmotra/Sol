@@ -19,6 +19,12 @@ export default defineConfig({
     },
   },
   server: {
+    fs: {
+      allow: [
+        '/Users/rehaandelmotra/.gemini/antigravity/worktrees/orbitwatch/spaceship-ui-arc-navigation',
+        '/Users/rehaandelmotra/Projects/orbitwatch'
+      ]
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3001',

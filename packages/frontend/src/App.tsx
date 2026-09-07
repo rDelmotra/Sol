@@ -20,6 +20,8 @@ const DevOverlay = lazy(() => import('./ui/DevOverlay').then((m) => ({ default: 
 const CompassStrip = lazy(() =>
   import('./ui/CompassStrip').then((m) => ({ default: m.CompassStrip })),
 );
+const SpaceshipUI = lazy(() => import('./ui/SpaceshipUI').then((m) => ({ default: m.SpaceshipUI })));
+
 
 function DsoLabels() {
   const labelPositions = useStore((s) => s.dsoLabelPositions);
@@ -171,6 +173,7 @@ export default function App() {
             </div>
             <DsoLabels />
             <CompassStrip />
+            <SpaceshipUI />
             <ResetViewButton />
           </HudDimGroup>
           <TimeScrubber />
