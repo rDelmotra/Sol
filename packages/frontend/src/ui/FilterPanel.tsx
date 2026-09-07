@@ -1,23 +1,48 @@
-import { useState } from 'react';
-import { useStore } from '../store/useStore';
-import type { ObjectCategory, OrbitalRegime } from '../data/types';
+import { useMemo, useState } from 'react';
+import { useStore, type ColorBy } from '../store/useStore';
+import type { CatalogType, OrbitalRegime } from '../data/types';
+import type { OrbitalStatus, Purpose, SectorFilterKey } from '../data/metadata-types';
+import { ORBITAL_STATUS_LABELS, PURPOSE_LABELS, SECTOR_LABELS } from '../data/metadata-types';
+import {
+  TYPE_COLORS,
+  STATUS_COLORS,
+  SECTOR_COLORS,
+  COUNTRY_COLORS,
+  FALLBACK_GREY,
+  rgbToCss,
+} from '../data/facet-colors';
+import { displayCountry, countryFlag } from '../data/country-codes';
 
-const CATEGORIES: { key: ObjectCategory; label: string; color: string }[] = [
-  { key: 'active_satellite', label: 'Active Satellites', color: '#4CAF50' },
-  { key: 'inactive_satellite', label: 'Inactive Satellites', color: '#9E9E9E' },
-  { key: 'rocket_body', label: 'Rocket Bodies', color: '#FFC107' },
-  { key: 'debris', label: 'Debris', color: '#F44336' },
-  { key: 'unknown', label: 'Unknown', color: '#757575' },
-  { key: 'deep_space', label: 'Deep Space', color: '#00BCD4' },
+// ── Facet group definitions ───────────────────────────────────────────────────
+
+const TYPE_KEYS: CatalogType[] = ['satellite', 'rocket_body', 'debris', 'unknown', 'deep_space'];
+const TYPE_LABELS: Record<CatalogType, string> = {
+  satellite: 'Payload',
+  rocket_body: 'Rocket Body',
+  debris: 'Debris',
+  unknown: 'Unknown',
+  deep_space: 'Deep Space',
+};
+
+const STATUS_KEYS: OrbitalStatus[] = ['in_orbit', 'decayed', 'deorbited', 'beyond_earth', 'exploded', 'unknown'];
+const SECTOR_KEYS: SectorFilterKey[] = ['commercial', 'government', 'military', 'civil', 'unspecified'];
+const PURPOSE_KEYS: Purpose[] = [
+  'communications', 'earth_observation', 'navigation', 'technology_dev',
+  'space_science', 'space_observation', 'surveillance', 'meteorological', 'other',
+];
+const REGIME_KEYS: OrbitalRegime[] = ['LEO', 'MEO', 'GEO', 'HEO', 'OTHER'];
+const REGIME_LABELS: Record<OrbitalRegime, string> = {
+  LEO: 'LEO', MEO: 'MEO', GEO: 'GEO', HEO: 'HEO', OTHER: 'Other',
+};
+
+const COLOR_BY_OPTIONS: { key: ColorBy; label: string }[] = [
+  { key: 'type', label: 'Type' },
+  { key: 'status', label: 'Status' },
+  { key: 'sector', label: 'Sector' },
+  { key: 'country', label: 'Country' },
 ];
 
-const REGIMES: { key: OrbitalRegime; label: string }[] = [
-  { key: 'LEO', label: 'LEO' },
-  { key: 'MEO', label: 'MEO' },
-  { key: 'GEO', label: 'GEO' },
-  { key: 'HEO', label: 'HEO' },
-  { key: 'OTHER', label: 'Other' },
-];
+// ── Small presentational helpers ──────────────────────────────────────────────
 
 function Toggle({
   on,
@@ -65,11 +90,66 @@ function Toggle({
   );
 }
 
+interface FacetRowData {
+  key: string;
+  label: string;
+  on: boolean;
+  visible: number;
+  total: number;
+  swatch?: string; // css color — present only when this group is the active color-by
+  onToggle: () => void;
+}
+
+function FacetRow({ row }: { row: FacetRowData }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        opacity: row.on ? 1 : 0.4,
+        transition: 'opacity 0.15s',
+      }}
+    >
+      <Toggle on={row.on} onToggle={row.onToggle} />
+      {row.swatch && (
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: row.swatch, flexShrink: 0 }} />
+      )}
+      <span>{row.label}</span>
+      <span style={countStyle}>
+        {row.visible.toLocaleString()} / {row.total.toLocaleString()}
+      </span>
+    </div>
+  );
+}
+
+function FacetSection({ title, rows, defaultOpen = false }: { title: string; rows: FacetRowData[]; defaultOpen?: boolean }) {
+  // Local open state synced via onToggle: the panel re-renders ~1Hz as counts
+  // update, so a statically-controlled `open` would fight the user's collapse.
+  const [openState, setOpenState] = useState(defaultOpen);
+  if (rows.length === 0) return null;
+  return (
+    <details
+      open={openState}
+      onToggle={(e) => setOpenState((e.currentTarget as HTMLDetailsElement).open)}
+      style={{ marginTop: 12 }}
+    >
+      <summary style={summaryStyle}>{title}</summary>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+        {rows.map((row) => <FacetRow key={row.key} row={row} />)}
+      </div>
+    </details>
+  );
+}
+
 const panelStyle: React.CSSProperties = {
   position: 'absolute',
   bottom: 16,
   left: 16,
   width: 260,
+  maxHeight: 'calc(100vh - 32px)',
+  overflowY: 'auto',
+  overflowX: 'hidden',
   padding: '14px 16px',
   background: 'rgba(0, 0, 0, 0.7)',
   backdropFilter: 'blur(4px)',
@@ -90,12 +170,25 @@ const sectionHeaderStyle: React.CSSProperties = {
   marginBottom: 8,
 };
 
+const summaryStyle: React.CSSProperties = {
+  ...sectionHeaderStyle,
+  marginBottom: 0,
+  cursor: 'pointer',
+  userSelect: 'none',
+};
+
 const countStyle: React.CSSProperties = {
   fontSize: 11,
   color: 'rgba(255, 255, 255, 0.4)',
   marginLeft: 'auto',
   flexShrink: 0,
   paddingLeft: 8,
+};
+
+const dividerStyle: React.CSSProperties = {
+  height: 1,
+  background: 'rgba(255, 255, 255, 0.08)',
+  margin: '12px 0',
 };
 
 const OBSERVER_LOCATION_CACHE_KEY = 'orbitwatch:observerLocation:v1';
@@ -218,14 +311,24 @@ function getLocationErrorMessage(err: GeolocationPositionError): string {
 
 export function FilterPanel() {
   const loadingPhase = useStore((s) => s.loadingPhase);
-  const categoryFilters = useStore((s) => s.categoryFilters);
-  const regimeFilters = useStore((s) => s.regimeFilters);
-  const categoryCounts = useStore((s) => s.categoryCounts);
+  const facet = useStore((s) => s.facetCounts);
+  const visibleFacet = useStore((s) => s.visibleFacetCounts);
   const regimeCounts = useStore((s) => s.regimeCounts);
-  const visibleCatCounts = useStore((s) => s.visibleCategoryCounts);
   const visibleRegCounts = useStore((s) => s.visibleRegimeCounts);
-  const toggleCategory = useStore((s) => s.toggleCategoryFilter);
+  const typeFilters = useStore((s) => s.typeFilters);
+  const statusFilters = useStore((s) => s.statusFilters);
+  const sectorFilters = useStore((s) => s.sectorFilters);
+  const purposeFilters = useStore((s) => s.purposeFilters);
+  const regimeFilters = useStore((s) => s.regimeFilters);
+  const countryFilter = useStore((s) => s.countryFilter);
+  const colorBy = useStore((s) => s.colorBy);
+  const toggleTypeFilter = useStore((s) => s.toggleTypeFilter);
+  const toggleStatusFilter = useStore((s) => s.toggleStatusFilter);
+  const toggleSectorFilter = useStore((s) => s.toggleSectorFilter);
+  const togglePurposeFilter = useStore((s) => s.togglePurposeFilter);
   const toggleRegime = useStore((s) => s.toggleRegimeFilter);
+  const setCountryFilter = useStore((s) => s.setCountryFilter);
+  const setColorBy = useStore((s) => s.setColorBy);
   const visibilityMode = useStore((s) => s.visibilityMode);
   const observerLocation = useStore((s) => s.observerLocation);
   const setVisibilityMode = useStore((s) => s.setVisibilityMode);
@@ -235,10 +338,94 @@ export function FilterPanel() {
   const [open, setOpen] = useState(true);
   const [isLocating, setIsLocating] = useState(false);
   const [locationStatusMessage, setLocationStatusMessage] = useState<string | null>(null);
+  const [countrySearch, setCountrySearch] = useState('');
+
+  // Country rows: present operators sorted by count desc, filtered by the search box.
+  const countryRows = useMemo(() => {
+    const q = countrySearch.trim().toLowerCase();
+    return Object.keys(facet.country)
+      .filter((code) => {
+        if (!q) return true;
+        return code.toLowerCase().includes(q) || displayCountry(code).toLowerCase().includes(q);
+      })
+      .sort((a, b) => facet.country[b] - facet.country[a]);
+  }, [facet.country, countrySearch]);
 
   if (loadingPhase !== 'ready') return null;
 
-  const totalVisible = Object.values(visibleCatCounts).reduce((a, b) => a + b, 0);
+  const totalVisible =
+    visibleFacet.type.satellite + visibleFacet.type.rocket_body +
+    visibleFacet.type.debris + visibleFacet.type.unknown + visibleFacet.type.deep_space;
+
+  const isCountryChecked = (code: string) =>
+    countryFilter.mode === 'all' || countryFilter.codes.has(code);
+
+  const toggleCountry = (code: string) => {
+    const allCodes = Object.keys(facet.country);
+    if (countryFilter.mode === 'all') {
+      const codes = new Set(allCodes);
+      codes.delete(code);
+      setCountryFilter({ mode: 'only', codes });
+      return;
+    }
+    const codes = new Set(countryFilter.codes);
+    if (codes.has(code)) codes.delete(code);
+    else codes.add(code);
+    if (codes.size >= allCodes.length) setCountryFilter({ mode: 'all' });
+    else setCountryFilter({ mode: 'only', codes });
+  };
+
+  const typeRows: FacetRowData[] = TYPE_KEYS.map((k) => ({
+    key: k,
+    label: TYPE_LABELS[k],
+    on: typeFilters[k],
+    visible: visibleFacet.type[k],
+    total: facet.type[k],
+    swatch: colorBy === 'type' ? rgbToCss(TYPE_COLORS[k]) : undefined,
+    onToggle: () => toggleTypeFilter(k),
+  }));
+
+  const statusRows: FacetRowData[] = STATUS_KEYS
+    .filter((k) => facet.status[k] > 0)
+    .map((k) => ({
+      key: k,
+      label: ORBITAL_STATUS_LABELS[k],
+      on: statusFilters[k],
+      visible: visibleFacet.status[k],
+      total: facet.status[k],
+      swatch: colorBy === 'status' ? rgbToCss(STATUS_COLORS[k]) : undefined,
+      onToggle: () => toggleStatusFilter(k),
+    }));
+
+  const sectorRows: FacetRowData[] = SECTOR_KEYS.map((k) => ({
+    key: k,
+    label: SECTOR_LABELS[k],
+    on: sectorFilters[k],
+    visible: visibleFacet.sector[k],
+    total: facet.sector[k],
+    swatch: colorBy === 'sector' ? rgbToCss(SECTOR_COLORS[k]) : undefined,
+    onToggle: () => toggleSectorFilter(k),
+  }));
+
+  const purposeRows: FacetRowData[] = PURPOSE_KEYS
+    .filter((k) => facet.purpose[k] > 0)
+    .map((k) => ({
+      key: k,
+      label: PURPOSE_LABELS[k],
+      on: purposeFilters[k],
+      visible: visibleFacet.purpose[k],
+      total: facet.purpose[k],
+      onToggle: () => togglePurposeFilter(k),
+    }));
+
+  const regimeRows: FacetRowData[] = REGIME_KEYS.map((k) => ({
+    key: k,
+    label: REGIME_LABELS[k],
+    on: regimeFilters[k],
+    visible: visibleRegCounts[k],
+    total: regimeCounts[k],
+    onToggle: () => toggleRegime(k),
+  }));
 
   const visualStatusColor = visualList.status === 'fresh'
     ? 'rgba(76, 175, 80, 0.9)'
@@ -469,88 +656,123 @@ export function FilterPanel() {
             )}
          </div>
 
-        <div
-          style={{
-            height: 1,
-            background: 'rgba(255, 255, 255, 0.08)',
-            margin: '12px 0',
-          }}
-        />
+        <div style={dividerStyle} />
 
-        {/* Object Type section */}
-        <div style={sectionHeaderStyle}>Object Type</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {CATEGORIES.map(({ key, label, color }) => {
-            const on = categoryFilters[key];
+        {/* Color By — recolors the whole point cloud by the chosen dimension. */}
+        <div style={sectionHeaderStyle}>Color By</div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {COLOR_BY_OPTIONS.map(({ key, label }) => {
+            const active = colorBy === key;
             return (
-              <div
+              <button
                 key={key}
+                onClick={() => setColorBy(key)}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  opacity: on ? 1 : 0.4,
-                  transition: 'opacity 0.15s',
+                  flex: 1,
+                  padding: '5px 0',
+                  borderRadius: 4,
+                  border: `1px solid ${active ? 'rgba(0, 229, 255, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
+                  background: active ? 'rgba(0, 229, 255, 0.18)' : 'rgba(255, 255, 255, 0.05)',
+                  color: active ? '#00E5FF' : 'rgba(255, 255, 255, 0.7)',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  fontSize: 10,
                 }}
               >
-                <Toggle on={on} onToggle={() => toggleCategory(key)} />
-                <span
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={dividerStyle} />
+
+        <FacetSection title="Object Type" rows={typeRows} defaultOpen />
+        <FacetSection title="Orbital Regime" rows={regimeRows} defaultOpen />
+        <FacetSection title="Status" rows={statusRows} />
+        <FacetSection title="Sector" rows={sectorRows} />
+        <FacetSection title="Purpose" rows={purposeRows} />
+
+        {/* Country / Operator — searchable multi-select over ~120 operators. */}
+        <details style={{ marginTop: 12 }}>
+          <summary style={summaryStyle}>Country / Operator</summary>
+          <input
+            value={countrySearch}
+            onChange={(e) => setCountrySearch(e.target.value)}
+            placeholder="Search…"
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              marginTop: 8,
+              padding: '5px 8px',
+              borderRadius: 4,
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              background: 'rgba(255, 255, 255, 0.06)',
+              color: '#fff',
+              fontFamily: 'inherit',
+              fontSize: 11,
+            }}
+          />
+          <div style={{ display: 'flex', gap: 6, margin: '6px 0' }}>
+            <button onClick={() => setCountryFilter({ mode: 'all' })} style={miniButtonStyle}>All</button>
+            <button onClick={() => setCountryFilter({ mode: 'only', codes: new Set() })} style={miniButtonStyle}>None</button>
+          </div>
+          <div style={{ maxHeight: 168, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {countryRows.map((code) => {
+              const checked = isCountryChecked(code);
+              const swatch = colorBy === 'country' ? rgbToCss(COUNTRY_COLORS[code] ?? FALLBACK_GREY) : null;
+              const flag = countryFlag(code);
+              return (
+                <div
+                  key={code}
+                  onClick={() => toggleCountry(code)}
                   style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: color,
-                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    cursor: 'pointer',
+                    opacity: checked ? 1 : 0.4,
+                    transition: 'opacity 0.15s',
                   }}
-                />
-                <span>{label}</span>
-                <span style={countStyle}>
-                  {visibleCatCounts[key].toLocaleString()}
-                  {' / '}
-                  {categoryCounts[key].toLocaleString()}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Separator */}
-        <div
-          style={{
-            height: 1,
-            background: 'rgba(255, 255, 255, 0.08)',
-            margin: '12px 0',
-          }}
-        />
-
-        {/* Orbital Regime section */}
-        <div style={sectionHeaderStyle}>Orbital Regime</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {REGIMES.map(({ key, label }) => {
-            const on = regimeFilters[key];
-            return (
-              <div
-                key={key}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  opacity: on ? 1 : 0.4,
-                  transition: 'opacity 0.15s',
-                }}
-              >
-                <Toggle on={on} onToggle={() => toggleRegime(key)} />
-                <span>{label}</span>
-                <span style={countStyle}>
-                  {visibleRegCounts[key].toLocaleString()}
-                  {' / '}
-                  {regimeCounts[key].toLocaleString()}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+                >
+                  <span
+                    style={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: 3,
+                      flexShrink: 0,
+                      border: '1px solid rgba(255, 255, 255, 0.3)',
+                      background: checked ? 'rgba(255, 255, 255, 0.85)' : 'transparent',
+                    }}
+                  />
+                  {swatch && (
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: swatch, flexShrink: 0 }} />
+                  )}
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {flag ? `${flag} ` : ''}{displayCountry(code)}
+                  </span>
+                  <span style={countStyle}>{(visibleFacet.country[code] ?? 0).toLocaleString()} / {facet.country[code].toLocaleString()}</span>
+                </div>
+              );
+            })}
+            {countryRows.length === 0 && (
+              <div style={{ fontSize: 10, color: 'rgba(255, 255, 255, 0.4)' }}>No operators match.</div>
+            )}
+          </div>
+        </details>
       </div>
     </>
   );
 }
+
+const miniButtonStyle: React.CSSProperties = {
+  flex: 1,
+  padding: '3px 0',
+  borderRadius: 4,
+  border: '1px solid rgba(255, 255, 255, 0.12)',
+  background: 'rgba(255, 255, 255, 0.05)',
+  color: 'rgba(255, 255, 255, 0.7)',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  fontSize: 10,
+};

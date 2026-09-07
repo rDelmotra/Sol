@@ -8,8 +8,16 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import tleRouter from './routes/tle.js';
 import dsoRouter, { summarizeDsoHealth } from './routes/dso.js';
+import {
+  metadataRouter,
+  catalogRouter,
+  launchRouter,
+  orgRouter,
+  queryRouter,
+} from './routes/metadata.js';
 import { isCacheFresh, readVersion, readCache } from './cache/file-cache.js';
 import { primeTlePayload } from './cache/tle-payload-cache.js';
+import { loadEnrichment, getDecayedCatalog } from './enrichment/store.js';
 import { scheduleTLEUpdater } from './cron/tle-updater.js';
 import { readDsoManifest } from './dso/snapshot/index.js';
 import {
@@ -74,6 +82,11 @@ app.use(express.json());
 
 app.use('/api/tle', tleRouter);
 app.use('/api/dso', dsoRouter);
+app.use('/api/metadata', metadataRouter);
+app.use('/api/catalog', catalogRouter);
+app.use('/api/launch', launchRouter);
+app.use('/api/org', orgRouter);
+app.use('/api/query', queryRouter);
 // Optional history routes — 503 cleanly when DATABASE_URL is unset, so mounting
 // unconditionally is safe.
 app.use('/api/history', historyRouter);
@@ -119,6 +132,12 @@ if (isProd) {
 
 app.listen(PORT, async () => {
   logger.info(`OrbitWatch backend listening on port ${PORT}`);
+
+  // Warm the in-memory enrichment store so the daily join + the metadata/catalog
+  // routes don't pay the one-time disk read on first use. Degrades gracefully
+  // (empty) if the build artifact is missing — the TLE/DSO backend is untouched.
+  loadEnrichment();
+  getDecayedCatalog();
 
   // Optional history DB: migrate + (best-effort) Timescale upgrade BEFORE the
   // updater runs, so the first ingest sees a ready schema. Any failure is

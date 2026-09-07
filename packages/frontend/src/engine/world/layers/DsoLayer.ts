@@ -36,6 +36,8 @@ export class DsoLayer implements Layer {
   private callbacks: DsoLayerCallbacks | null = null;
   private dsoUnsub: (() => void) | null = null;
   private dsoEphemerisUnsub: (() => void) | null = null;
+  /** True while DSOs are hidden for a historical (past) time-scrub. */
+  private hidden = false;
 
   /**
    * The DSO renderer, or null if init hasn't run / failed. Nullable on purpose:
@@ -99,7 +101,7 @@ export class DsoLayer implements Layer {
 
   /** Rebuild DSO geometry + picker registration + worker ids for a catalog. */
   private syncCatalog(dsoObjects: DsoObject[]): void {
-    if (!this._renderer || !this.callbacks) return;
+    if (!this._renderer || !this.callbacks || this.hidden) return;
     this._renderer.init(dsoObjects, this.callbacks.getTleCount());
     this.callbacks.onDsoGeometry(this._renderer.geometry, dsoObjects.length);
     this.client?.syncIds(dsoObjects.map((dso) => dso.dsoId));
@@ -107,7 +109,7 @@ export class DsoLayer implements Layer {
   }
 
   update(frame: FrameContext): void {
-    if (!this._renderer) return;
+    if (!this._renderer || this.hidden) return;
 
     this.client?.tick(frame.nowMs);
     this._renderer.updateUniforms(frame.pixelRatio);
@@ -150,6 +152,28 @@ export class DsoLayer implements Layer {
 
   triggerImmediateTick(timestampMs: number): void {
     this.client?.triggerImmediateTick(timestampMs);
+  }
+
+  /**
+   * Hide/show DSOs for a historical time-scrub. DSOs are current missions whose
+   * ephemeris only covers ~now, and the unified TLE/DSO pick-ID space is keyed to
+   * the TLE count (which differs per historical day), so reviewing the past hides
+   * them: the point cloud goes invisible, ticks + label projection are skipped,
+   * and the DSO pick geometry is pulled from the picker (onDsoGeometry(_, 0)).
+   * Restoring re-syncs geometry + picker + worker ids from the current store, so
+   * DSO pick IDs re-encode against the restored live TLE count.
+   */
+  setHidden(hidden: boolean): void {
+    if (hidden === this.hidden) return;
+    this.hidden = hidden;
+    if (this._renderer) this._renderer.mesh.visible = !hidden;
+
+    if (hidden) {
+      if (this._renderer) this.callbacks?.onDsoGeometry(this._renderer.geometry, 0);
+      useStore.getState().setDsoLabelPositions([]);
+    } else {
+      this.syncCatalog(useStore.getState().dsoObjects);
+    }
   }
 
   dispose(): void {

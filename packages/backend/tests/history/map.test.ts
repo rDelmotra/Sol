@@ -45,6 +45,9 @@ function makeEnriched(overrides: Partial<EnrichedTLEObject> = {}): EnrichedTLEOb
     inclination: 51.64,
     rcsSize: 'LARGE',
     epoch,
+    sectors: [],
+    purpose: 'other',
+    status: 'in_orbit',
     ...overrides,
   };
 }

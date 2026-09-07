@@ -50,5 +50,11 @@ export function reconstructEnriched(row: HistoryServingRow): EnrichedTLEObject {
     inclination: row.inclination,
     rcsSize: row.rcs_size,
     epoch: epochIso,
+    // Historical rows carry no enrichment join. The as-of query only returns
+    // objects tracked on that day, so they were in orbit then; default the
+    // UCS-only facets. (Phase-2 history could persist these in the dimension table.)
+    status: 'in_orbit',
+    sectors: [],
+    purpose: 'other',
   };
 }

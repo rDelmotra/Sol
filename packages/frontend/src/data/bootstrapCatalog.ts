@@ -17,13 +17,14 @@ export interface BootstrapCatalogResult {
  * subscriptions, and command/trigger registration stay in the Engine.
  */
 export async function bootstrapCatalog(apiUrl: string): Promise<BootstrapCatalogResult> {
-  const { catalogData, tles, categoryCounts, regimeCounts } = await fetchTleCatalog(apiUrl);
+  const { catalogData, tles, categoryCounts, regimeCounts, facetCounts } = await fetchTleCatalog(apiUrl);
 
   const store = useStore.getState();
   store.setCatalogInfo({
     objectCount: catalogData.length,
     categoryCounts,
     regimeCounts,
+    facetCounts,
   });
   store.setCatalogData(catalogData);
 

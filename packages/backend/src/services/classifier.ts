@@ -54,7 +54,7 @@ function classifyRegime(period: number, eccentricity: number): OrbitalRegime {
 // Both Space-Track and CelesTrak use the same OBJECT_TYPE strings.
 // "ROCKET BODY" has a space. "TBA" (Space-Track only) → unknown.
 // ============================================================
-function classifyObjectType(celestrakType: string): ObjectType {
+export function classifyObjectType(celestrakType: string): ObjectType {
   switch (celestrakType?.toUpperCase()) {
     case 'PAYLOAD':      return 'satellite';
     case 'ROCKET BODY':  return 'rocket_body';

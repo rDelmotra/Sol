@@ -1,7 +1,20 @@
 import * as THREE from 'three';
 import vertexShader from '../shaders/catalog.vert.glsl?raw';
 import fragmentShader from '../shaders/catalog.frag.glsl?raw';
-import { EnrichedTLEObject, ObjectCategory, OrbitalRegime } from '../data/types';
+import type {
+  EnrichedTLEObject,
+  ObjectCategory,
+  OrbitalRegime,
+  FacetCounts,
+} from '../data/types';
+import {
+  TYPE_COLORS,
+  STATUS_COLORS,
+  COUNTRY_COLORS,
+  FALLBACK_GREY,
+  sectorColor,
+  type RGB,
+} from '../data/facet-colors';
 import {
   getPhaseMultiplierFromComponents,
   isEclipsedFromComponents,
@@ -14,18 +27,47 @@ import {
   VISUAL_RANGE_MAX_KM,
 } from '../orbital/visual-visibility';
 import { writeSourceToScene } from '../orbital/frames';
-import type { VisibilityMode } from '../store/useStore';
+import type { VisibilityMode, ColorBy, SatelliteFilterState } from '../store/useStore';
 
 const MAX_OBJECTS = 100_000;
 
-const CATEGORY_COLORS: Record<string, [number, number, number]> = {
-  active_satellite:   [0.298, 0.686, 0.314],
-  inactive_satellite: [0.620, 0.620, 0.620],
-  rocket_body:        [1.000, 0.757, 0.027],
-  debris:             [0.957, 0.263, 0.212],
-  unknown:            [0.459, 0.459, 0.459],
-  deep_space:         [0.000, 0.737, 0.831],
-};
+// Color palettes live in data/facet-colors (shared with the FilterPanel legend).
+// recolorBy() writes ONLY the color attribute from them — never pickId — so GPU
+// picking (which decodes pickId, not color) is unaffected by any recolor.
+
+/** RGB for one object under the active color-by dimension. */
+function colorForObject(obj: EnrichedTLEObject, colorBy: ColorBy): RGB {
+  switch (colorBy) {
+    case 'type':
+      return TYPE_COLORS[obj.objectType] ?? FALLBACK_GREY;
+    case 'status':
+      return STATUS_COLORS[obj.status] ?? FALLBACK_GREY;
+    case 'sector':
+      return sectorColor(obj.sectors);
+    case 'country':
+      return COUNTRY_COLORS[obj.countryCode] ?? FALLBACK_GREY;
+  }
+}
+
+/** The per-group visible tallies returned by the render-side filter pass. */
+export interface VisibleCounts {
+  categoryCounts: Record<ObjectCategory, number>;
+  regimeCounts: Record<OrbitalRegime, number>;
+  facetCounts: FacetCounts;
+}
+
+function makeFacetCounts(): FacetCounts {
+  return {
+    type: { satellite: 0, rocket_body: 0, debris: 0, unknown: 0, deep_space: 0 },
+    status: { in_orbit: 0, decayed: 0, deorbited: 0, beyond_earth: 0, exploded: 0, unknown: 0 },
+    sector: { commercial: 0, government: 0, military: 0, civil: 0, unspecified: 0 },
+    purpose: {
+      communications: 0, earth_observation: 0, navigation: 0, technology_dev: 0,
+      space_science: 0, space_observation: 0, surveillance: 0, meteorological: 0, other: 0,
+    },
+    country: {},
+  };
+}
 
 export class SatelliteRenderer {
   readonly mesh: THREE.Points;
@@ -42,6 +84,8 @@ export class SatelliteRenderer {
   private readonly multipliers: Float32Array;
   private readonly filterMask: Uint8Array;
   private readonly validFlags: Uint8Array;
+  /** Highest catalog length initialised so far — lets reinit clear a shrunk tail. */
+  private initializedCount = 0;
 
   constructor(scene: THREE.Scene) {
     const prevPositions = new Float32Array(MAX_OBJECTS * 3);
@@ -104,10 +148,9 @@ export class SatelliteRenderer {
     sunDir: THREE.Vector3,
     visibilityMode: VisibilityMode,
     catalogData: EnrichedTLEObject[],
-    categoryFilters: Record<ObjectCategory, boolean>,
-    regimeFilters: Record<OrbitalRegime, boolean>,
+    filters: SatelliteFilterState,
     visualNoradIds: Set<number>
-  ): { categoryCounts: Record<ObjectCategory, number>; regimeCounts: Record<OrbitalRegime, number> } {
+  ): VisibleCounts {
     const prevArr = this.prevPosAttr.array as Float32Array;
     const currArr = this.currPosAttr.array as Float32Array;
 
@@ -124,7 +167,7 @@ export class SatelliteRenderer {
     this.prevPosAttr.needsUpdate = true;
     this.currPosAttr.needsUpdate = true;
 
-    return this.applyVisibilityAndFilters(count, observerPos, sunDir, visibilityMode, catalogData, categoryFilters, regimeFilters, visualNoradIds, false);
+    return this.applyVisibilityAndFilters(count, observerPos, sunDir, visibilityMode, catalogData, filters, visualNoradIds, false);
   }
 
   /** Write positions into both previous and current buffers (no interpolation tween). */
@@ -136,10 +179,9 @@ export class SatelliteRenderer {
     sunDir: THREE.Vector3,
     visibilityMode: VisibilityMode,
     catalogData: EnrichedTLEObject[],
-    categoryFilters: Record<ObjectCategory, boolean>,
-    regimeFilters: Record<OrbitalRegime, boolean>,
+    filters: SatelliteFilterState,
     visualNoradIds: Set<number>
-  ): { categoryCounts: Record<ObjectCategory, number>; regimeCounts: Record<OrbitalRegime, number> } {
+  ): VisibleCounts {
     const prevArr = this.prevPosAttr.array as Float32Array;
     const currArr = this.currPosAttr.array as Float32Array;
     this.validFlags.set(validFlags);
@@ -157,15 +199,7 @@ export class SatelliteRenderer {
     this.prevPosAttr.needsUpdate = true;
     this.currPosAttr.needsUpdate = true;
 
-    return this.applyVisibilityAndFilters(count, observerPos, sunDir, visibilityMode, catalogData, categoryFilters, regimeFilters, visualNoradIds, true);
-  }
-
-  setSatelliteColor(index: number, r: number, g: number, b: number): void {
-    const colorArr = this.colorAttr.array as Float32Array;
-    colorArr[index * 3] = r;
-    colorArr[index * 3 + 1] = g;
-    colorArr[index * 3 + 2] = b;
-    this.colorAttr.needsUpdate = true;
+    return this.applyVisibilityAndFilters(count, observerPos, sunDir, visibilityMode, catalogData, filters, visualNoradIds, true);
   }
 
   setSatelliteSize(index: number, multiplier: number): void {
@@ -175,8 +209,13 @@ export class SatelliteRenderer {
     this.currSizeAttr.needsUpdate = true;
   }
 
+  /**
+   * Seed per-object render data INDEPENDENT of the color-by dimension: the RCS
+   * size multiplier and the GPU-pick id (catalog index `i+1` encoded as RGB).
+   * COLOR is written separately by {@link recolorBy}, so pickId writes stay
+   * isolated here and a recolor can never disturb picking.
+   */
   initFromCatalog(objects: EnrichedTLEObject[]): void {
-    const colorArr = this.colorAttr.array as Float32Array;
     const pickArr = this.pickIdAttr.array as Float32Array;
 
     for (let i = 0; i < objects.length; i++) {
@@ -186,19 +225,65 @@ export class SatelliteRenderer {
       else if (obj.rcsSize === 'SMALL') rcsMult = 0.6;
       this.multipliers[i] = rcsMult;
 
-      const [r, g, b] = CATEGORY_COLORS[obj.category] ?? CATEGORY_COLORS.unknown;
-      colorArr[i * 3]     = r;
-      colorArr[i * 3 + 1] = g;
-      colorArr[i * 3 + 2] = b;
-
       const encoded = i + 1; // reserve 0 for background
       pickArr[i * 3]     = ((encoded >> 16) & 0xFF) / 255;
       pickArr[i * 3 + 1] = ((encoded >> 8)  & 0xFF) / 255;
       pickArr[i * 3 + 2] = ( encoded        & 0xFF) / 255;
     }
 
-    this.colorAttr.needsUpdate = true;
     this.pickIdAttr.needsUpdate = true;
+    this.initializedCount = objects.length;
+  }
+
+  /**
+   * Rewrite the per-object COLOR attribute from the active color-by dimension.
+   * Touches ONLY colorAttr — never pickIdAttr — so GPU picking (which decodes the
+   * pickId buffer, not color) is invariant under any recolor. Called once after
+   * initFromCatalog/reinitFromCatalog, and again whenever `colorBy` changes.
+   */
+  recolorBy(objects: EnrichedTLEObject[], colorBy: ColorBy): void {
+    const colorArr = this.colorAttr.array as Float32Array;
+    for (let i = 0; i < objects.length; i++) {
+      const [r, g, b] = colorForObject(objects[i], colorBy);
+      colorArr[i * 3]     = r;
+      colorArr[i * 3 + 1] = g;
+      colorArr[i * 3 + 2] = b;
+    }
+    this.colorAttr.needsUpdate = true;
+  }
+
+  /**
+   * Re-seed colors/pickIds from a NEW catalog (historical time-scrub). Buffers are
+   * fixed-size and propagation only writes [0,count), so a smaller catalog would
+   * otherwise leave the old tail [len, prevCount) rendering + pickable as ghost
+   * points. Clear that tail (size, validFlags, pickId, highlight), then run the
+   * normal init writes for [0,len).
+   */
+  reinitFromCatalog(objects: EnrichedTLEObject[]): void {
+    const prevCount = this.initializedCount;
+    const currSizeArr = this.currSizeAttr.array as Float32Array;
+    const prevSizeArr = this.prevSizeAttr.array as Float32Array;
+    const pickArr = this.pickIdAttr.array as Float32Array;
+    const highlightArr = this.highlightAttr.array as Float32Array;
+
+    for (let i = objects.length; i < prevCount; i++) {
+      currSizeArr[i] = 0;
+      prevSizeArr[i] = 0;
+      this.validFlags[i] = 0;
+      this.multipliers[i] = 1.0;
+      highlightArr[i] = 0;
+      pickArr[i * 3] = 0;
+      pickArr[i * 3 + 1] = 0;
+      pickArr[i * 3 + 2] = 0;
+    }
+    if (objects.length < prevCount) {
+      this.currSizeAttr.needsUpdate = true;
+      this.prevSizeAttr.needsUpdate = true;
+      this.highlightAttr.needsUpdate = true;
+    }
+
+    // Writes colors/pickIds for [0,len) and updates initializedCount.
+    this.initFromCatalog(objects);
   }
 
   updateUniforms(cameraDistance: number, pixelRatio: number): void {
@@ -229,11 +314,10 @@ export class SatelliteRenderer {
     sunDir: THREE.Vector3,
     visibilityMode: VisibilityMode,
     catalogData: EnrichedTLEObject[],
-    categoryFilters: Record<ObjectCategory, boolean>,
-    regimeFilters: Record<OrbitalRegime, boolean>,
+    filters: SatelliteFilterState,
     visualNoradIds: Set<number>,
     snap = false
-  ): { categoryCounts: Record<ObjectCategory, number>; regimeCounts: Record<OrbitalRegime, number> } {
+  ): VisibleCounts {
     const prevSizeArr = this.prevSizeAttr.array as Float32Array;
     const currSizeArr = this.currSizeAttr.array as Float32Array;
     const currArr = this.currPosAttr.array as Float32Array;
@@ -249,6 +333,18 @@ export class SatelliteRenderer {
     const regCounts: Record<OrbitalRegime, number> = {
       LEO: 0, MEO: 0, GEO: 0, HEO: 0, OTHER: 0,
     };
+    const facetCounts = makeFacetCounts();
+
+    // Destructure once (the gate runs per object over the whole catalog).
+    const { typeFilters, statusFilters, sectorFilters, purposeFilters, regimeFilters, countryFilter, programFilter, launchFilter, ownerFilter } = filters;
+    const countryAll = countryFilter.mode === 'all';
+    const countryCodes = countryFilter.mode === 'only' ? countryFilter.codes : null;
+    const programAll = programFilter.mode === 'all';
+    const programIds = programFilter.mode === 'only' ? programFilter.ids : null;
+    const launchAll = launchFilter.mode === 'all';
+    const launchTags = launchFilter.mode === 'only' ? launchFilter.tags : null;
+    const ownerAll = ownerFilter.mode === 'all';
+    const ownerCodes = ownerFilter.mode === 'only' ? ownerFilter.codes : null;
 
     const observerAvailable = observerPos !== null;
     const obsX = observerPos?.x ?? 0;
@@ -269,7 +365,45 @@ export class SatelliteRenderer {
 
     for (let i = 0; i < count; i++) {
       const obj = catalogData[i];
-      const isVisibleBase = this.validFlags[i] === 1 && categoryFilters[obj.category] && regimeFilters[obj.regime];
+
+      // Facet gate (inlined — runs over the whole catalog). An object shows only if
+      // every active facet group admits it: type, status, regime, sector (any of its
+      // sectors enabled, or 'unspecified' when it has none), purpose, and country.
+      let isVisibleBase = this.validFlags[i] === 1
+        && typeFilters[obj.objectType]
+        && statusFilters[obj.status]
+        && regimeFilters[obj.regime]
+        && purposeFilters[obj.purpose];
+      if (isVisibleBase) {
+        // Sector (multi-valued) — manual loop to avoid a per-object closure alloc.
+        if (obj.sectors.length === 0) {
+          isVisibleBase = sectorFilters.unspecified;
+        } else {
+          let anySector = false;
+          for (let k = 0; k < obj.sectors.length; k++) {
+            if (sectorFilters[obj.sectors[k]]) { anySector = true; break; }
+          }
+          isVisibleBase = anySector;
+        }
+      }
+      if (isVisibleBase && !countryAll) {
+        isVisibleBase = countryCodes!.has(obj.countryCode || 'TBD');
+      }
+      // Program (query-driven): objects without a program are excluded when a
+      // program filter is active — "starlink" means only Starlink.
+      if (isVisibleBase && !programAll) {
+        isVisibleBase = programIds!.has(obj.program ?? '');
+      }
+      // Launch/owner (query-driven, G3): same exclude-when-absent semantics as
+      // program. Vehicle/site/year queries have already been compiled to a
+      // launch-tag set upstream (executor), so this stays a single O(1) lookup.
+      if (isVisibleBase && !launchAll) {
+        isVisibleBase = launchTags!.has(obj.launchTag ?? '');
+      }
+      if (isVisibleBase && !ownerAll) {
+        isVisibleBase = ownerCodes!.has(obj.owner ?? '');
+      }
+
       this.filterMask[i] = isVisibleBase ? 1 : 0;
       highlightArr[i] = 0; // default; only the dome's naked-eye-visible ones light up
 
@@ -342,8 +476,19 @@ export class SatelliteRenderer {
 
         currSizeArr[i] = finalMult;
         if (finalMult > 0.0) {
+          // Tally the visible object into every facet group (mirrors buildCatalogResult).
           catCounts[obj.category]++;
           regCounts[obj.regime]++;
+          facetCounts.type[obj.objectType]++;
+          facetCounts.status[obj.status]++;
+          facetCounts.purpose[obj.purpose]++;
+          if (obj.sectors.length === 0) {
+            facetCounts.sector.unspecified++;
+          } else {
+            for (let k = 0; k < obj.sectors.length; k++) facetCounts.sector[obj.sectors[k]]++;
+          }
+          const code = obj.countryCode || 'TBD';
+          facetCounts.country[code] = (facetCounts.country[code] ?? 0) + 1;
         }
       } else {
         currSizeArr[i] = 0.0;
@@ -356,19 +501,18 @@ export class SatelliteRenderer {
     this.prevSizeAttr.needsUpdate = true;
     this.currSizeAttr.needsUpdate = true;
     this.highlightAttr.needsUpdate = true;
-    return { categoryCounts: catCounts, regimeCounts: regCounts };
+    return { categoryCounts: catCounts, regimeCounts: regCounts, facetCounts };
   }
 
   applyFilters(
     catalogData: EnrichedTLEObject[],
-    categoryFilters: Record<ObjectCategory, boolean>,
-    regimeFilters: Record<OrbitalRegime, boolean>,
+    filters: SatelliteFilterState,
     observerPos: THREE.Vector3 | null,
     sunDir: THREE.Vector3,
     visibilityMode: VisibilityMode,
     visualNoradIds: Set<number>
-  ): { categoryCounts: Record<ObjectCategory, number>; regimeCounts: Record<OrbitalRegime, number> } {
-    return this.applyVisibilityAndFilters(catalogData.length, observerPos, sunDir, visibilityMode, catalogData, categoryFilters, regimeFilters, visualNoradIds);
+  ): VisibleCounts {
+    return this.applyVisibilityAndFilters(catalogData.length, observerPos, sunDir, visibilityMode, catalogData, filters, visualNoradIds);
   }
 
   dispose(): void {

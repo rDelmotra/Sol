@@ -1,14 +1,21 @@
 import { create } from 'zustand';
-import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime } from '../data/types';
+import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime, CatalogType, FacetCounts } from '../data/types';
+import { emptyFacetCounts, cloneFacetCounts } from '../data/types';
+import type { Purpose, SectorFilterKey, OrbitalStatus } from '../data/metadata-types';
 import type { DsoObject, DsoSnapshot } from '../data/dso-types';
 import type { VisualListSource, VisualListStatus } from '../data/visualList';
+import type { HistoryCoverage } from '../data/history-client';
 import type { DsoLabelPosition } from '../engine/DsoRenderer';
 import { simClock } from '../engine/SimClock';
+import { reconcileFilterSlices } from '../query/apply';
+import type { QueryFilterPatch } from '../query/types';
 
 export type LoadingPhase = 'fetching' | 'initializing' | 'propagating' | 'ready';
 export type CameraMode = 'free' | 'flying' | 'following' | 'returning';
 export type TrackingStyle = 'follow' | 'joyride';
 export type VisibilityMode = 'all' | 'radio' | 'dome';
+/** Live = view-clock tracks wall-clock now; Review = scrubbed/playing away from now. */
+export type ViewMode = 'live' | 'review';
 
 /** Visibility modes that drive the observer-anchored sky camera (vs the globe view). */
 export function isObserverMode(mode: VisibilityMode): boolean {
@@ -40,6 +47,58 @@ export interface VisualListState {
   message: string | null;
 }
 
+// ── Rich-metadata facets (Phase B) ────────────────────────────────────────────
+// Added ALONGSIDE the legacy category/regime filter surface; the legacy fields
+// are retired in B5–B7 once the renderer + UI read these instead.
+
+/** Dimension the satellite point cloud is colored by (drives the Legend + palette). */
+export type ColorBy = 'type' | 'status' | 'sector' | 'country';
+
+/** Country filter: every operator, or only an explicit allow-set of canonical codes. */
+export type CountryFilter = { mode: 'all' } | { mode: 'only'; codes: Set<string> };
+
+/** Program filter: every object, or only members of an allow-set of program slugs.
+ *  Query-only for now — the FilterPanel has no program group yet. */
+export type ProgramFilter = { mode: 'all' } | { mode: 'only'; ids: Set<string> };
+
+/** Launch filter (query-only, G3): every object, or only those from an allow-set
+ *  of GCAT launch tags — the compiled target of vehicle/site/launch/year facets. */
+export type LaunchFilter = { mode: 'all' } | { mode: 'only'; tags: Set<string> };
+
+/** Owner filter (query-only, G3): every object, or only those owned by an allow-set
+ *  of GCAT org codes — the compiled target of the operator facet. */
+export type OwnerFilter = { mode: 'all' } | { mode: 'only'; codes: Set<string> };
+
+/**
+ * The slice of state the satellite render-side filter pass reads. The full store
+ * state structurally satisfies this, so callers pass `useStore.getState()` directly.
+ */
+export interface SatelliteFilterState {
+  typeFilters: Record<CatalogType, boolean>;
+  statusFilters: Record<OrbitalStatus, boolean>;
+  sectorFilters: Record<SectorFilterKey, boolean>;
+  purposeFilters: Record<Purpose, boolean>;
+  countryFilter: CountryFilter;
+  programFilter: ProgramFilter;
+  regimeFilters: Record<OrbitalRegime, boolean>;
+  launchFilter: LaunchFilter;   // G3
+  ownerFilter: OwnerFilter;     // G3
+}
+
+const ALL_TYPE_ON: Record<CatalogType, boolean> = {
+  satellite: true, rocket_body: true, debris: true, unknown: true, deep_space: true,
+};
+const ALL_STATUS_ON: Record<OrbitalStatus, boolean> = {
+  in_orbit: true, decayed: true, deorbited: true, beyond_earth: true, exploded: true, unknown: true,
+};
+const ALL_SECTOR_ON: Record<SectorFilterKey, boolean> = {
+  commercial: true, government: true, military: true, civil: true, unspecified: true,
+};
+const ALL_PURPOSE_ON: Record<Purpose, boolean> = {
+  communications: true, earth_observation: true, navigation: true, technology_dev: true,
+  space_science: true, space_observation: true, surveillance: true, meteorological: true, other: true,
+};
+
 interface AppState {
   loadingPhase: LoadingPhase;
   loadingError: string | null;
@@ -51,6 +110,9 @@ interface AppState {
 
   catalogData: EnrichedTLEObject[];
   selectByIndex: ((index: number) => void) | null;
+  // Registered by SearchBar (G3): replace the search text + run the query
+  // pipeline immediately. InfoCard pivots call it. null until SearchBar mounts.
+  injectSearchQuery: ((text: string) => void) | null;
   triggerFlyTo: ((index: number) => void) | null;
   triggerJoyride: ((index: number) => void) | null;
   triggerResetCamera: (() => void) | null;
@@ -88,6 +150,19 @@ interface AppState {
   visibleCategoryCounts: Record<ObjectCategory, number>;
   visibleRegimeCounts: Record<OrbitalRegime, number>;
 
+  // Rich-metadata facet filters + color-by (Phase B; additive to category/regime above)
+  colorBy: ColorBy;
+  typeFilters: Record<CatalogType, boolean>;
+  statusFilters: Record<OrbitalStatus, boolean>;
+  sectorFilters: Record<SectorFilterKey, boolean>;
+  purposeFilters: Record<Purpose, boolean>;
+  countryFilter: CountryFilter;
+  programFilter: ProgramFilter;
+  launchFilter: LaunchFilter;   // G3 — query-only
+  ownerFilter: OwnerFilter;     // G3 — query-only
+  facetCounts: FacetCounts;
+  visibleFacetCounts: FacetCounts;
+
   setCameraMode: (mode: CameraMode) => void;
   setTrackingStyle: (style: TrackingStyle) => void;
   setTriggerFlyTo: (fn: (index: number) => void) => void;
@@ -99,6 +174,7 @@ interface AppState {
     objectCount: number;
     categoryCounts: Record<ObjectCategory, number>;
     regimeCounts: Record<OrbitalRegime, number>;
+    facetCounts?: FacetCounts;
   }) => void;
   toggleCategoryFilter: (category: ObjectCategory) => void;
   toggleRegimeFilter: (regime: OrbitalRegime) => void;
@@ -106,8 +182,30 @@ interface AppState {
     catCounts: Record<ObjectCategory, number>,
     regCounts: Record<OrbitalRegime, number>,
   ) => void;
+
+  // Phase B facet actions
+  setColorBy: (colorBy: ColorBy) => void;
+  toggleTypeFilter: (key: CatalogType) => void;
+  toggleStatusFilter: (key: OrbitalStatus) => void;
+  toggleSectorFilter: (key: SectorFilterKey) => void;
+  togglePurposeFilter: (key: Purpose) => void;
+  setCountryFilter: (filter: CountryFilter) => void;
+  /**
+   * Apply a compiled query patch with OVERWRITE semantics over the seven
+   * query-controlled slices (type/status/sector/purpose/regime/country/program):
+   * each group becomes `patch.group ?? all-on`. FilterPanel manual toggles work
+   * on top afterwards; the next query keystroke/chip-removal re-overwrites.
+   * Reference identity is preserved for semantically-unchanged groups via
+   * reconcileFilterSlices (query/apply.ts) — load-bearing for the
+   * SatellitesLayer diff (no per-keystroke recomputes).
+   */
+  applyQueryFilters: (patch: QueryFilterPatch) => void;
+  /** Restore all query-controlled slices to all-on / mode:'all'. */
+  clearQueryFilters: () => void;
+  setVisibleFacetCounts: (counts: FacetCounts) => void;
   setCatalogData: (data: EnrichedTLEObject[]) => void;
   setSelectByIndex: (fn: (index: number) => void) => void;
+  setInjectSearchQuery: (fn: ((text: string) => void) | null) => void;
   setSelectedSatellite: (
     index: number | null,
     data: EnrichedTLEObject | null,
@@ -125,12 +223,46 @@ interface AppState {
   // Simulation clock (UI mirrors — simClock is source of truth)
   simRate: number;
   simTimeMs: number;
+  /** First-class liveness: tracking now (live) vs scrubbed/playing away (review). */
+  viewMode: ViewMode;
+  /** Wall-clock now (ms) — the always-advancing live edge; pushed ~4 Hz by the loop. */
+  wallClockMs: number;
+  /** Whether the modal time-scrubber (Star Walk wheel) is open (dims the rest of the HUD). */
+  scrubberMode: boolean;
   triggerSimTimeJump: (() => void) | null;
+  /** Engine hook for a light scrub preview (day-aware throttled snap), set by the Engine. */
+  triggerScrubPreview: (() => void) | null;
+  /** Engine hook to animate the view-clock back to now, set by the Engine. */
+  triggerReturnToPresent: (() => void) | null;
   setSimRate: (rate: number) => void;
   setSimTimeMs: (ms: number) => void;
+  setWallClockMs: (ms: number) => void;
+  setScrubberMode: (on: boolean) => void;
   jumpToSimTime: (date: Date) => void;
+  /** Scrub the view-clock to an absolute instant (enters review). */
+  reviewAt: (date: Date) => void;
+  /** Live scrub preview while dragging — moves the clock (sky) without the heavy snap. */
+  scrubPreview: (date: Date) => void;
+  /** Snap back to the live present (rate 1, view tracks now). */
+  goLive: () => void;
+  /** Smoothly glide back to the live present (Engine-driven; instant fallback). */
+  returnToPresent: () => void;
   resetSimClock: () => void;
   setTriggerSimTimeJump: (fn: () => void) => void;
+  setTriggerScrubPreview: (fn: () => void) => void;
+  setTriggerReturnToPresent: (fn: () => void) => void;
+
+  // Historical time-scrub (review plane) — UI mirrors of Engine-held state.
+  historyCoverage: HistoryCoverage | null;
+  historyStatus: 'unknown' | 'available' | 'unavailable';
+  historyDay: string | null;     // null = live; else the loaded UTC day 'YYYY-MM-DD'
+  historyLoading: boolean;
+  /** True while reviewing a date with NO satellite catalog (planetarium: sky only). */
+  planetarium: boolean;
+  setHistoryCoverage: (coverage: HistoryCoverage | null) => void;
+  setHistoryDay: (day: string | null) => void;
+  setHistoryLoading: (loading: boolean) => void;
+  setPlanetarium: (on: boolean) => void;
 
   // DSO actions
   setDsoObjects: (objects: DsoObject[]) => void;
@@ -142,7 +274,7 @@ interface AppState {
   setTriggerJoyrideDso: (fn: (dsoId: string) => void) => void;
 }
 
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<AppState>((set, get) => ({
   loadingPhase: 'fetching',
   loadingError: null,
   cameraMode: 'free',
@@ -160,6 +292,7 @@ export const useStore = create<AppState>((set) => ({
 
   catalogData: [],
   selectByIndex: null,
+  injectSearchQuery: null,
   triggerFlyTo: null,
   triggerJoyride: null,
   triggerResetCamera: null,
@@ -217,6 +350,18 @@ export const useStore = create<AppState>((set) => ({
   },
   visibleRegimeCounts: { LEO: 0, MEO: 0, GEO: 0, HEO: 0, OTHER: 0 },
 
+  colorBy: 'type',
+  typeFilters: { ...ALL_TYPE_ON },
+  statusFilters: { ...ALL_STATUS_ON },
+  sectorFilters: { ...ALL_SECTOR_ON },
+  purposeFilters: { ...ALL_PURPOSE_ON },
+  countryFilter: { mode: 'all' },
+  programFilter: { mode: 'all' },
+  launchFilter: { mode: 'all' },
+  ownerFilter: { mode: 'all' },
+  facetCounts: emptyFacetCounts(),
+  visibleFacetCounts: emptyFacetCounts(),
+
   setCameraMode: (mode) => set({ cameraMode: mode }),
   setTrackingStyle: (style) => set({ trackingStyle: style }),
   setTriggerFlyTo: (fn) => set({ triggerFlyTo: fn }),
@@ -224,15 +369,21 @@ export const useStore = create<AppState>((set) => ({
   setTriggerResetCamera: (fn) => set({ triggerResetCamera: fn }),
   setLoadingPhase: (phase) => set({ loadingPhase: phase }),
   setLoadingError: (error) => set({ loadingError: error }),
-  setCatalogInfo: (info) =>
+  setCatalogInfo: (info) => {
+    const facetCounts = info.facetCounts ?? emptyFacetCounts();
     set({
       objectCount: info.objectCount,
       categoryCounts: info.categoryCounts,
       regimeCounts: info.regimeCounts,
       visibleCategoryCounts: { ...info.categoryCounts },
       visibleRegimeCounts: { ...info.regimeCounts },
+      facetCounts,
+      // At load every object is visible — seed visible = total (deep-cloned so the
+      // renderer can mutate visible counts without touching the totals).
+      visibleFacetCounts: cloneFacetCounts(facetCounts),
       dataTimestamp: Date.now(),
-    }),
+    });
+  },
   toggleCategoryFilter: (category) =>
     set((state) => ({
       categoryFilters: {
@@ -249,8 +400,49 @@ export const useStore = create<AppState>((set) => ({
     })),
   setVisibleCounts: (catCounts, regCounts) =>
     set({ visibleCategoryCounts: catCounts, visibleRegimeCounts: regCounts }),
+
+  setColorBy: (colorBy) => set({ colorBy }),
+  toggleTypeFilter: (key) =>
+    set((state) => ({ typeFilters: { ...state.typeFilters, [key]: !state.typeFilters[key] } })),
+  toggleStatusFilter: (key) =>
+    set((state) => ({ statusFilters: { ...state.statusFilters, [key]: !state.statusFilters[key] } })),
+  toggleSectorFilter: (key) =>
+    set((state) => ({ sectorFilters: { ...state.sectorFilters, [key]: !state.sectorFilters[key] } })),
+  togglePurposeFilter: (key) =>
+    set((state) => ({ purposeFilters: { ...state.purposeFilters, [key]: !state.purposeFilters[key] } })),
+  setCountryFilter: (filter) => set({ countryFilter: filter }),
+  applyQueryFilters: (patch) => {
+    const s = get();
+    const delta = reconcileFilterSlices(
+      {
+        typeFilters: s.typeFilters,
+        statusFilters: s.statusFilters,
+        sectorFilters: s.sectorFilters,
+        purposeFilters: s.purposeFilters,
+        regimeFilters: s.regimeFilters,
+        countryFilter: s.countryFilter,
+        programFilter: s.programFilter,
+        launchFilter: s.launchFilter,
+        ownerFilter: s.ownerFilter,
+      },
+      patch,
+    );
+    if (Object.keys(delta).length > 0) set(delta);
+  },
+  clearQueryFilters: () => get().applyQueryFilters({}),
+  setVisibleFacetCounts: (counts) =>
+    // The satellite render pass counts only TLE objects, so its type.deep_space is
+    // always 0. DSOs (the only deep_space objects, owned by a separate layer) are
+    // never gated by this pass → keep their count = the maintained total.
+    set((state) => ({
+      visibleFacetCounts: {
+        ...counts,
+        type: { ...counts.type, deep_space: state.facetCounts.type.deep_space },
+      },
+    })),
   setCatalogData: (data) => set({ catalogData: data }),
   setSelectByIndex: (fn) => set({ selectByIndex: fn }),
+  setInjectSearchQuery: (fn) => set({ injectSearchQuery: fn }),
   setSelectedSatellite: (index, data, altitude) =>
     set((state) => ({
       selectedIndex: index,
@@ -285,32 +477,104 @@ export const useStore = create<AppState>((set) => ({
 
   simRate: 1,
   simTimeMs: Date.now(),
+  viewMode: 'live',
+  wallClockMs: Date.now(),
+  scrubberMode: false,
   triggerSimTimeJump: null,
+  triggerScrubPreview: null,
+  triggerReturnToPresent: null,
   setSimRate: (rate) =>
     set((state) => {
       simClock.setRate(rate);
       state.triggerSimTimeJump?.();
-      return { simRate: rate, simTimeMs: simClock.now() };
+      // Leaving rate 1 means we're no longer tracking the live present.
+      return {
+        simRate: rate,
+        simTimeMs: simClock.now(),
+        viewMode: rate !== 1 ? 'review' : state.viewMode,
+      };
     }),
   setSimTimeMs: (ms) => set({ simTimeMs: ms }),
+  setWallClockMs: (ms) => set({ wallClockMs: ms }),
+  setScrubberMode: (on) => set({ scrubberMode: on }),
   jumpToSimTime: (date) =>
     set((state) => {
       simClock.jumpTo(date);
       state.triggerSimTimeJump?.();
       return { simTimeMs: simClock.now() };
     }),
-  resetSimClock: () =>
+  reviewAt: (date) =>
+    set((state) => {
+      simClock.jumpTo(date);
+      state.triggerSimTimeJump?.();
+      return { simTimeMs: simClock.now(), viewMode: 'review' };
+    }),
+  scrubPreview: (date) =>
+    set((state) => {
+      // Move the view-clock (the sky follows every frame) WITHOUT the heavy snap/
+      // reconcile. Satellites get a day-aware throttled snap via the Engine hook;
+      // the full reseed happens on release (reviewAt).
+      simClock.jumpTo(date);
+      state.triggerScrubPreview?.();
+      return { simTimeMs: simClock.now(), viewMode: 'review' };
+    }),
+  goLive: () =>
     set((state) => {
       simClock.reset();
       state.triggerSimTimeJump?.();
-      return { simRate: 1, simTimeMs: simClock.now() };
+      return { simRate: 1, simTimeMs: simClock.now(), viewMode: 'live' };
+    }),
+  returnToPresent: () =>
+    set((state) => {
+      // Prefer the Engine's eased glide; fall back to an instant snap when no engine
+      // is attached (e.g. before bootstrap). The glide calls goLive() on landing.
+      if (state.triggerReturnToPresent) {
+        state.triggerReturnToPresent();
+        return {};
+      }
+      simClock.reset();
+      state.triggerSimTimeJump?.();
+      return { simRate: 1, simTimeMs: simClock.now(), viewMode: 'live' };
+    }),
+  resetSimClock: () =>
+    set((state) => {
+      // Thin alias of goLive — snap to the live present.
+      simClock.reset();
+      state.triggerSimTimeJump?.();
+      return { simRate: 1, simTimeMs: simClock.now(), viewMode: 'live' };
     }),
   setTriggerSimTimeJump: (fn) => set({ triggerSimTimeJump: fn }),
+  setTriggerScrubPreview: (fn) => set({ triggerScrubPreview: fn }),
+  setTriggerReturnToPresent: (fn) => set({ triggerReturnToPresent: fn }),
+
+  historyCoverage: null,
+  historyStatus: 'unknown',
+  historyDay: null,
+  historyLoading: false,
+  planetarium: false,
+  setHistoryCoverage: (coverage) =>
+    set({
+      historyCoverage: coverage,
+      historyStatus: coverage && coverage.from ? 'available' : 'unavailable',
+    }),
+  setHistoryDay: (day) => set({ historyDay: day }),
+  setHistoryLoading: (loading) => set({ historyLoading: loading }),
+  setPlanetarium: (on) => set({ planetarium: on }),
 
   setDsoObjects: (objects) =>
     set((state) => ({
       dsoObjects: objects,
       categoryCounts: { ...state.categoryCounts, deep_space: objects.length },
+      // DSOs are the only 'deep_space' objects (TLE catalog has none) — mirror the
+      // count into the new type facet (total + visible) so the type filter group agrees.
+      facetCounts: {
+        ...state.facetCounts,
+        type: { ...state.facetCounts.type, deep_space: objects.length },
+      },
+      visibleFacetCounts: {
+        ...state.visibleFacetCounts,
+        type: { ...state.visibleFacetCounts.type, deep_space: objects.length },
+      },
     })),
   setDsoEphemeris: (dsoId, snapshot) =>
     set((state) => ({

@@ -260,6 +260,13 @@ export class InputManager {
 
     if (!this.gpuPicker || !this.firstPositionReceived) return;
 
+    // Planetarium / empty catalog — nothing to pick; don't index an empty catalog.
+    if (this.catalogData.length === 0) {
+      this.canvas.style.cursor = '';
+      useStore.getState().setHover(null);
+      return;
+    }
+
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;

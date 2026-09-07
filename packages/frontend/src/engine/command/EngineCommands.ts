@@ -26,6 +26,10 @@ export interface EngineCommands {
   joyrideDso: (dsoId: string) => void;
   /** Re-propagate immediately at the new sim time (store invokes on rate/jump/reset). */
   simTimeJump: () => void;
+  /** Light scrub preview: day-aware throttled snap (store invokes during a wheel drag). */
+  scrubPreview: () => void;
+  /** Animate the view-clock smoothly back to the live present (store invokes from "Now"). */
+  returnToPresent: () => void;
 }
 
 /** Register the command surface into the store's slots in one shot. */
@@ -38,4 +42,6 @@ export function registerEngineCommands(commands: EngineCommands): void {
   store.setTriggerFlyToDso(commands.flyToDso);
   store.setTriggerJoyrideDso(commands.joyrideDso);
   store.setTriggerSimTimeJump(commands.simTimeJump);
+  store.setTriggerScrubPreview(commands.scrubPreview);
+  store.setTriggerReturnToPresent(commands.returnToPresent);
 }

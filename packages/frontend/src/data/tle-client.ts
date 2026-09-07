@@ -1,9 +1,16 @@
-import type { TLEInput, EnrichedTLEObject, ObjectCategory, OrbitalRegime } from './types';
+import type { TLEInput, EnrichedTLEObject, ObjectCategory, OrbitalRegime, FacetCounts } from './types';
+import { emptyFacetCounts } from './types';
+import type { Sector, Purpose, OrbitalStatus } from './metadata-types';
 import { readCatalogCache, writeCatalogCache } from './catalog-cache';
 import {
   fetchVisualList,
   type VisualListResolvedResult,
 } from './visualList';
+
+// COSPAR international designator ("1998-067A") → launch tag ("1998-067"): the
+// modern GYYYY-NNN form with a trailing piece letter. Pre-1963 "1957 ALP" tags
+// aren't COSPAR-shaped and are already inlined by the backend where relevant.
+const COSPAR_TO_TAG_RE = /^((?:19|20)\d{2}-\d{3})[A-Z]*$/;
 
 // ── TLE Catalog Fetch ─────────────────────────────────────────────────────
 
@@ -12,6 +19,8 @@ export interface TleCatalogResult {
   tles: TLEInput[];
   categoryCounts: Record<ObjectCategory, number>;
   regimeCounts: Record<OrbitalRegime, number>;
+  /** Rich-metadata facet totals (type/status/sector/purpose/country) — Phase B. */
+  facetCounts: FacetCounts;
 }
 
 // Warm-load staleness ceiling. Within this window we render from the IndexedDB
@@ -22,6 +31,24 @@ const CATALOG_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /** Derive the renderer-facing result (TLE inputs + counts) from raw catalog. */
 export function buildCatalogResult(catalogData: EnrichedTLEObject[]): TleCatalogResult {
+  // Defensive: a catalog cached before the facet fields existed (stale backend
+  // cache / old IndexedDB copy) would lack sectors/purpose/status, and the render
+  // path reads them unconditionally. Coalesce in place so nothing reads undefined.
+  for (const obj of catalogData) {
+    const o = obj as Partial<Pick<EnrichedTLEObject, 'sectors' | 'purpose' | 'status' | 'launchTag'>> & EnrichedTLEObject;
+    if (!o.sectors) o.sectors = [] as Sector[];
+    if (!o.purpose) o.purpose = 'other' as Purpose;
+    if (!o.status) o.status = 'unknown' as OrbitalStatus;
+    // G3: objects lacking the backend-inlined launchTag (catalogs cached before
+    // G3, post-snapshot launches) derive it from the COSPAR OBJECT_ID so the
+    // launch/vehicle/site query facets reach them. `owner` has no client-side
+    // source — an owner query over-filters a pre-G3 catalog until it refreshes.
+    if (!o.launchTag) {
+      const m = COSPAR_TO_TAG_RE.exec(obj.omm.OBJECT_ID.trim());
+      if (m) o.launchTag = m[1];
+    }
+  }
+
   const tles: TLEInput[] = catalogData.map((d) => ({
     noradId: d.noradId,
     omm: d.omm,
@@ -38,12 +65,28 @@ export function buildCatalogResult(catalogData: EnrichedTLEObject[]): TleCatalog
   const regimeCounts: Record<OrbitalRegime, number> = {
     LEO: 0, MEO: 0, GEO: 0, HEO: 0, OTHER: 0,
   };
+  // Phase B facet totals — tallied in the SAME pass. Sector is multi-valued: an
+  // object in {military, government} increments both; an unmatched object (no UCS
+  // sectors) lands in 'unspecified'. Country keys by the raw operator code so the
+  // counts match the render-side country gate exactly (empty '' bucketed as-is).
+  const facetCounts = emptyFacetCounts();
   for (const obj of catalogData) {
     categoryCounts[obj.category] = (categoryCounts[obj.category] ?? 0) + 1;
     regimeCounts[obj.regime] = (regimeCounts[obj.regime] ?? 0) + 1;
+
+    facetCounts.type[obj.objectType] += 1;
+    facetCounts.status[obj.status] += 1;
+    facetCounts.purpose[obj.purpose] += 1;
+    if (obj.sectors.length === 0) {
+      facetCounts.sector.unspecified += 1;
+    } else {
+      for (const s of obj.sectors) facetCounts.sector[s] += 1;
+    }
+    const code = obj.countryCode || 'TBD';
+    facetCounts.country[code] = (facetCounts.country[code] ?? 0) + 1;
   }
 
-  return { catalogData, tles, categoryCounts, regimeCounts };
+  return { catalogData, tles, categoryCounts, regimeCounts, facetCounts };
 }
 
 interface NetworkCatalog {

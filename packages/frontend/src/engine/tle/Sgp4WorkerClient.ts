@@ -215,6 +215,30 @@ export class Sgp4WorkerClient {
     this.schedulePropagation();
   }
 
+  // ── Re-seed (historical time-scrub) ──────────────────────────────────────
+
+  /**
+   * Re-seed the worker with a new catalog. Posts a fresh INIT — the worker's
+   * handleInit rebuilds satrecs, reallocates buffers, replies READY → first
+   * PROPAGATE + reschedule (the same path as construction, driven by the existing
+   * onmessage handler). Interpolation/velocity state is reset and the next
+   * POSITIONS is forced to SNAP so we never tween from the previous catalog.
+   */
+  reseed(tles: TLEInput[]): void {
+    // Drop velocity history — object count may change, so updateVelocityBuffers
+    // must reallocate against the new length.
+    this.prevVelocitiesTeme = null;
+    this.currVelocitiesTeme = null;
+    this._lastTickTime = 0;
+    this._lastPropagationTimestampMs = 0;
+
+    // Force the first positions after re-INIT to snap (no interpolation tween):
+    // the worker's READY handler posts a PROPAGATE with a seq > this marker.
+    this.snapAtOrAfterSeq = ++this.propagationSeq;
+
+    this.worker.postMessage({ type: 'INIT', tles, startIndex: 0 });
+  }
+
   // ── Dispose ─────────────────────────────────────────────────────────────
 
   dispose(): void {

@@ -12,8 +12,8 @@ const SearchBar = lazy(() => import('./ui/SearchBar').then((m) => ({ default: m.
 const InfoCard = lazy(() => import('./ui/InfoCard').then((m) => ({ default: m.InfoCard })));
 const Tooltip = lazy(() => import('./ui/Tooltip').then((m) => ({ default: m.Tooltip })));
 const ClusterPopup = lazy(() => import('./ui/ClusterPopup').then((m) => ({ default: m.ClusterPopup })));
-const TimeController = lazy(() =>
-  import('./ui/TimeController').then((m) => ({ default: m.TimeController })),
+const TimeScrubber = lazy(() =>
+  import('./ui/TimeScrubber').then((m) => ({ default: m.TimeScrubber })),
 );
 const DevOverlay = lazy(() => import('./ui/DevOverlay').then((m) => ({ default: m.DevOverlay })));
 const CompassStrip = lazy(() =>
@@ -86,6 +86,24 @@ function ResetViewButton() {
   );
 }
 
+function HudDimGroup({ children }: { children: React.ReactNode }) {
+  // Modal focus: dim the rest of the HUD while the time scrubber is open.
+  const dim = useStore((s) => s.scrubberMode);
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        opacity: dim ? 0.25 : 1,
+        transition: 'opacity 0.3s ease',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Engine | null>(null);
@@ -131,27 +149,29 @@ export default function App() {
             pointerEvents: 'none',
           }}
         >
-          <HUD />
-          <FilterPanel />
-          <div
-            style={{
-              position: 'absolute',
-              top: 16,
-              right: 16,
-              width: 280,
-              display: 'flex',
-              flexDirection: 'column',
-              pointerEvents: 'none',
-              zIndex: 10,
-            }}
-          >
-            <SearchBar />
-            <InfoCard />
-          </div>
-          <DsoLabels />
-          <TimeController />
-          <CompassStrip />
-          <ResetViewButton />
+          <HudDimGroup>
+            <HUD />
+            <FilterPanel />
+            <div
+              style={{
+                position: 'absolute',
+                top: 16,
+                right: 16,
+                width: 280,
+                display: 'flex',
+                flexDirection: 'column',
+                pointerEvents: 'none',
+                zIndex: 10,
+              }}
+            >
+              <SearchBar />
+              <InfoCard />
+            </div>
+            <DsoLabels />
+            <CompassStrip />
+            <ResetViewButton />
+          </HudDimGroup>
+          <TimeScrubber />
         </div>
         <Tooltip />
         <ClusterPopup />

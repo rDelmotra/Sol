@@ -38,6 +38,8 @@ export class SatellitesLayer implements Layer {
   private firstPositionReceived = false;
   private callbacks: SatellitesLayerCallbacks | null = null;
   private filterUnsub: (() => void) | null = null;
+  /** True while satellites are hidden for a planetarium (uncovered-past) scrub. */
+  private hidden = false;
 
   /**
    * The satellite renderer, or null if init hasn't run / failed. Nullable on
@@ -80,43 +82,75 @@ export class SatellitesLayer implements Layer {
     this.callbacks = callbacks;
 
     renderer.initFromCatalog(catalog);
+    renderer.recolorBy(catalog, useStore.getState().colorBy);
     this.devValidation?.initFromCatalog(catalog);
 
+    // Prominence boost for the ISS — size only; its color follows the active
+    // color-by dimension like every other object (no special-case tint).
     const issIndex = catalog.findIndex((d) => d.noradId === 25544);
     if (issIndex !== -1) {
-      renderer.setSatelliteColor(issIndex, 0.2, 1.0, 0.4);
       renderer.setSatelliteSize(issIndex, 2.0);
     }
 
-    // Satellite visibility reacts to category/regime filters, visibility mode, and
-    // observer location — the subscription lives HERE so "what changes satellite
-    // visibility" is in one place. Cross-cutting effects (observer marker, the
-    // observer-sky camera, the orbit trail) flow back to the Engine via callbacks.
-    // Fires on Zustand's notify turn (outside World), so it's wrapped in guard() —
-    // a throw escalates to the critical-error path instead of escaping the notifier.
-    let prevCat = useStore.getState().categoryFilters;
-    let prevReg = useStore.getState().regimeFilters;
-    let prevMode = useStore.getState().visibilityMode;
-    let prevObs = useStore.getState().observerLocation;
+    // Satellite visibility reacts to the facet filters (type/status/sector/purpose/
+    // country/regime), visibility mode, and observer location; the point-cloud COLOR
+    // reacts to `colorBy`. The subscription lives HERE so "what changes satellites" is
+    // in one place. Cross-cutting effects (observer marker, observer-sky camera, orbit
+    // trail) flow back to the Engine via callbacks. Fires on Zustand's notify turn
+    // (outside World) → wrapped in guard() so a throw escalates to the critical path.
+    const s0 = useStore.getState();
+    let prevType = s0.typeFilters;
+    let prevStatus = s0.statusFilters;
+    let prevSector = s0.sectorFilters;
+    let prevPurpose = s0.purposeFilters;
+    let prevCountry = s0.countryFilter;
+    let prevProgram = s0.programFilter;
+    let prevLaunch = s0.launchFilter;
+    let prevOwner = s0.ownerFilter;
+    let prevReg = s0.regimeFilters;
+    let prevColorBy = s0.colorBy;
+    let prevMode = s0.visibilityMode;
+    let prevObs = s0.observerLocation;
     this.filterUnsub = useStore.subscribe((state) => {
-      if (
-        state.categoryFilters === prevCat &&
-        state.regimeFilters === prevReg &&
-        state.visibilityMode === prevMode &&
-        state.observerLocation === prevObs
-      ) {
-        return;
-      }
+      const filtersChanged =
+        state.typeFilters !== prevType ||
+        state.statusFilters !== prevStatus ||
+        state.sectorFilters !== prevSector ||
+        state.purposeFilters !== prevPurpose ||
+        state.countryFilter !== prevCountry ||
+        state.programFilter !== prevProgram ||
+        state.launchFilter !== prevLaunch ||
+        state.ownerFilter !== prevOwner ||
+        state.regimeFilters !== prevReg;
+      const colorByChanged = state.colorBy !== prevColorBy;
       const obsLocChanged = state.observerLocation !== prevObs;
       const modeChanged = state.visibilityMode !== prevMode;
+      if (!filtersChanged && !colorByChanged && !obsLocChanged && !modeChanged) {
+        return;
+      }
       const fromMode = prevMode;
-      prevCat = state.categoryFilters;
+      prevType = state.typeFilters;
+      prevStatus = state.statusFilters;
+      prevSector = state.sectorFilters;
+      prevPurpose = state.purposeFilters;
+      prevCountry = state.countryFilter;
+      prevProgram = state.programFilter;
+      prevLaunch = state.launchFilter;
+      prevOwner = state.ownerFilter;
       prevReg = state.regimeFilters;
+      prevColorBy = state.colorBy;
       prevMode = state.visibilityMode;
       prevObs = state.observerLocation;
 
       this.guard('filter', () => {
-        this.recomputeVisibleCounts(state);
+        // Color-by changes only repaint the color buffer — no visibility recompute.
+        if (colorByChanged && this._renderer) {
+          this._renderer.recolorBy(this.catalog, state.colorBy);
+        }
+        // Filter / mode / observer changes recompute the visible set + counts.
+        if (filtersChanged || modeChanged || obsLocChanged) {
+          this.recomputeVisibleCounts(state);
+        }
 
         if (obsLocChanged) {
           callbacks.onObserverChange(state.observerLocation);
@@ -164,6 +198,10 @@ export class SatellitesLayer implements Layer {
     // Runs in the worker's onmessage turn (outside World) — guard escalates any
     // throw in the heavy path to the critical-error route. (P1)
     this.guard('onPositions', () => {
+      // Planetarium: while hidden (uncovered past) skip all render/count work so no
+      // stale counts leak. Only entered post-boot (boot is always live), so the
+      // firstPosition handshake below is never starved.
+      if (this.hidden) return;
       const renderer = this._renderer;
       const callbacks = this.callbacks;
       if (!renderer || !callbacks) return;
@@ -183,8 +221,7 @@ export class SatellitesLayer implements Layer {
             sunDir,
             state.visibilityMode,
             this.catalog,
-            state.categoryFilters,
-            state.regimeFilters,
+            state,
             visualNoradIds,
           )
         : renderer.updatePositions(
@@ -195,12 +232,13 @@ export class SatellitesLayer implements Layer {
             sunDir,
             state.visibilityMode,
             this.catalog,
-            state.categoryFilters,
-            state.regimeFilters,
+            state,
             visualNoradIds,
           );
 
-      useStore.getState().setVisibleCounts(counts.categoryCounts, counts.regimeCounts);
+      const store = useStore.getState();
+      store.setVisibleCounts(counts.categoryCounts, counts.regimeCounts);
+      store.setVisibleFacetCounts(counts.facetCounts);
 
       renderer.material.uniforms.uT.value = 0.0;
 
@@ -218,13 +256,14 @@ export class SatellitesLayer implements Layer {
     });
   }
 
-  /** Recompute category/regime counts (filter or visual-list change), no new propagation. */
+  /** Recompute visible facet/regime counts (filter or visual-list change), no new propagation. */
   recomputeVisibleCounts(state: ReturnType<typeof useStore.getState>): void {
     if (
       !this._renderer ||
       !this.callbacks ||
       !this.firstPositionReceived ||
-      this.catalog.length === 0
+      this.catalog.length === 0 ||
+      this.hidden
     ) {
       return;
     }
@@ -235,14 +274,15 @@ export class SatellitesLayer implements Layer {
 
     const counts = this._renderer.applyFilters(
       this.catalog,
-      state.categoryFilters,
-      state.regimeFilters,
+      state,
       observerPos,
       sunDir,
       state.visibilityMode,
       this.callbacks.getVisualNoradIds(),
     );
-    useStore.getState().setVisibleCounts(counts.categoryCounts, counts.regimeCounts);
+    const store = useStore.getState();
+    store.setVisibleCounts(counts.categoryCounts, counts.regimeCounts);
+    store.setVisibleFacetCounts(counts.facetCounts);
 
     const sel = state.selectedIndex;
     if (sel !== null && sel < this.catalog.length) {
@@ -269,7 +309,7 @@ export class SatellitesLayer implements Layer {
   }
 
   update(frame: FrameContext): void {
-    if (!this._renderer) return;
+    if (!this._renderer || this.hidden) return;
 
     this._renderer.material.uniforms.uT.value = frame.uT;
 
@@ -326,6 +366,50 @@ export class SatellitesLayer implements Layer {
   requestImmediateSnap(): void {
     this.client?.requestImmediateSnap();
     if (this._renderer) this._renderer.material.uniforms.uT.value = 0.0;
+  }
+
+  /**
+   * Re-seed the layer from a NEW catalog (historical time-scrub): rebuild the
+   * renderer's colors/pickIds in place — `reinitFromCatalog` clears any ghost tail
+   * a smaller catalog would leave — re-apply the ISS tint, and re-INIT the SGP4
+   * worker. Visible counts + positions refresh when the post-reseed SNAP arrives
+   * via `onPositions` (which reads the now-updated `this.catalog`). No-op before
+   * `activate()`. The Engine owns the surrounding orchestration (selection
+   * re-resolve, picker resize, store sync).
+   */
+  reseedCatalog(
+    catalog: EnrichedTLEObject[],
+    tles: ConstructorParameters<typeof Sgp4WorkerClient>[0],
+  ): void {
+    if (!this._renderer || !this.client) return;
+    this.catalog = catalog;
+    this._renderer.reinitFromCatalog(catalog);
+    this._renderer.recolorBy(catalog, useStore.getState().colorBy);
+    // Refresh dev-validation indices (ISS / GEO) for the new catalog — stale indices
+    // would validate the wrong objects after a re-seed.
+    this.devValidation?.initFromCatalog(catalog);
+
+    // ISS prominence boost (size only; color follows the active color-by).
+    const issIndex = catalog.findIndex((d) => d.noradId === 25544);
+    if (issIndex !== -1) {
+      this._renderer.setSatelliteSize(issIndex, 2.0);
+    }
+
+    this.client.reseed(tles);
+  }
+
+  /**
+   * Planetarium hide/show for an uncovered-past scrub: the point cloud goes
+   * invisible and the per-frame + worker-driven paths early-out
+   * (`onPositions`/`update`/`recomputeVisibleCounts`), so no stale counts leak
+   * while hidden. The Engine owns the surrounding orchestration (picker size 0,
+   * zeroed store counts, cleared selection) and re-seeds on restore. Mirrors
+   * {@link DsoLayer.setHidden}.
+   */
+  setHidden(hidden: boolean): void {
+    if (hidden === this.hidden) return;
+    this.hidden = hidden;
+    if (this._renderer) this._renderer.mesh.visible = !hidden;
   }
 
   /** Best-estimate propagation timestamp for the orbit-trail anchor. */

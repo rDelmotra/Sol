@@ -19,7 +19,7 @@ export class GPUPicker {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly pixelBuffer = new Uint8Array(4);
   private readonly areaBuffer = new Uint8Array(SAMPLE_SIZE * SAMPLE_SIZE * 4);
-  private readonly catalogSize: number;  // TLE-only count
+  private catalogSize: number;  // TLE-only count (mutable: changes on a history re-seed)
   private dsoCount = 0;                  // DSO count, set after init
   private dsoPickMesh: THREE.Points | null = null;
   private readonly sizeAttr: THREE.BufferAttribute;
@@ -220,6 +220,15 @@ export class GPUPicker {
     this.pickMaterial.uniforms.uPixelRatio.value = uPixelRatio;
     this.dsoPickMaterial.uniforms.uT.value = uT;
     this.dsoPickMaterial.uniforms.uPixelRatio.value = uPixelRatio;
+  }
+
+  /**
+   * Update the TLE catalog size after a historical re-seed. The satellite geometry
+   * is shared and stable across a re-seed, so no rebuild is needed — only the index
+   * clamp (totalCount) and the DSO base offset depend on this count.
+   */
+  setCatalogSize(catalogSize: number): void {
+    this.catalogSize = catalogSize;
   }
 
   dispose(): void {
