@@ -121,10 +121,14 @@ NOT_DERIVABLE and say that data isn't ingested yet — do not build a filter tha
 only return an empty set.
 Fields with a "values" list are string fields with a MEASURED, closed vocabulary —
 those are the ONLY values that exist for that field; a value not on the list matches
-NOTHING (silently zero results, not an error). Never invent or guess an unlisted
-value — if the question needs one, refuse NOT_DERIVABLE instead. String fields with
-no "values" list (e.g. name, launchTag) are open text or too numerous to enumerate;
-match those directly against what the question names.`;
+NOTHING (silently zero results, not an error). Never invent or guess an unlisted value.
+If a question HINGES on a string value that is genuinely absent from the list, refuse
+NOT_DERIVABLE. But if it can be answered another way — a different field, a numeric
+threshold, a broader grouping — take that route instead of refusing.
+This rule constrains string LITERALS only. It is NOT a general reason to refuse, and
+it says nothing about questions built on numeric, date, enum or derived fields.
+String fields with no "values" list (e.g. name, launchTag) are open text or too
+numerous to enumerate; match those directly against what the question names.`;
 }
 
 // ── §3 Physics functions (generated) ──────────────────────────────────────────

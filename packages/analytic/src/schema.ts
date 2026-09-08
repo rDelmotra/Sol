@@ -23,6 +23,19 @@
 
 export type FieldKind = 'number' | 'string' | 'bool' | 'date' | 'enum' | 'enumSet' | 'id';
 export type FieldPlane = 'live' | 'catalog' | 'static';
+// NOTE on plane for the space-weather fields below (solarFlux10cm/
+// geomagneticAp/geomagneticKp): none of the three planes actually describe
+// them. They're GLOBAL (same value for every object at a given instant,
+// unlike every other field here) and TIME-VARYING (unlike 'static', which
+// means "doesn't change"; unlike 'catalog', which means "per-object current
+// elset"; unlike 'live', which means "requires a live worker tick per
+// object"). They were filed under 'static' as the least-wrong fit — "doesn't
+// depend on which object you ask about" is the property 'static' shares with
+// them, even though the "doesn't change over time" half of that name is
+// false for them. A real 'global' plane (time-varying, object-independent,
+// safe on both universes, no per-object boot-measurement loop needed) is the
+// honest fix if a second global-value domain ever lands. See
+// providers/space-weather.ts and the P3 space-weather task report.
 
 export interface FieldSpec {
   kind: FieldKind;
@@ -121,6 +134,18 @@ export const FIELD_REGISTRY: Record<string, FieldSpec> = {
   'owner.stateCode': { kind: 'string', plane: 'static', derived: true },
   'owner.cls': { kind: 'string', plane: 'static', derived: true },
   'program.label': { kind: 'string', plane: 'static', derived: true, coverage: 0.773 },
+
+  // Space weather (NOAA SWPC daily indices) — global, time-varying, same
+  // value for every object at a given instant; see the FieldPlane note above
+  // for why these are filed under 'static'. Coverage: the source text
+  // products carry a trailing 30-day window, so these resolve to null for
+  // any bound time older than ~30 days — no fixed number captures that
+  // (it's a moving window, not a fraction of a fixed corpus), so coverage is
+  // left unset here (docs-only field; the real runtime number comes from
+  // DataSourceRegistry.snapshot() same as everything else).
+  solarFlux10cm: { kind: 'number', plane: 'static', unit: 'sfu' },
+  geomagneticAp: { kind: 'number', plane: 'static' },
+  geomagneticKp: { kind: 'number', plane: 'static' },
 };
 
 // ── Function specs (spec §5) ──────────────────────────────────────────────────

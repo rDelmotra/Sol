@@ -18,6 +18,7 @@ import { DataSourceRegistry } from './registry.js';
 import { createCatalogProvider, createAllSpineProvider } from './providers/catalog.js';
 import { createEnrichmentProvider } from './providers/enrichment.js';
 import { createSgp4Provider } from './providers/sgp4.js';
+import { createSpaceWeatherProvider } from './providers/space-weather.js';
 
 let singleton: DataSourceRegistry | null = null;
 
@@ -43,16 +44,23 @@ export function getAnalyticRegistry(): DataSourceRegistry {
     const allSpine = createAllSpineProvider();
     const enrichment = createEnrichmentProvider();
     const sgp4 = createSgp4Provider();
+    // One shared instance across both universes — it's a single global,
+    // noradId-ignorant provider (see space-weather.ts), so there's no
+    // per-universe state to keep separate, and reusing it avoids racing two
+    // independent background NOAA refreshes.
+    const spaceWeather = createSpaceWeatherProvider();
 
     registry.registerSpine('live', catalog);
     registry.register('live', catalog);
     registry.register('live', enrichment);
     registry.register('live', sgp4);
+    registry.register('live', spaceWeather);
 
     registry.registerSpine('all', allSpine);
     registry.register('all', catalog);
     registry.register('all', allSpine);
     registry.register('all', enrichment);
+    registry.register('all', spaceWeather);
 
     singleton = registry;
   }
