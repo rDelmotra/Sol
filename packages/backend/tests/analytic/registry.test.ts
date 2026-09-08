@@ -111,3 +111,93 @@ describe('DataSourceRegistry — chain order + coverage', () => {
     assert.equal(source.getField(i1, 'purpose', Date.now()), 'space_science');
   });
 });
+
+describe('DataSourceRegistry — topValues (D-1: measured string vocabulary)', () => {
+  it('counts distinct values for a string-kind field and orders them by frequency, most frequent first', () => {
+    const reg = new DataSourceRegistry();
+    reg.registerSpine('live', spineOf(SPINE10));
+    // 'program' is FIELD_REGISTRY kind:'string'. 5x starlink, 3x cosmos, 1x kuiper, 1 uncovered.
+    const providerProgram: FieldProvider = {
+      id: 'fixture:program',
+      fields: ['program'],
+      getField: (noradId, field) => {
+        if (field !== 'program') return null;
+        if (noradId <= 5) return 'starlink';
+        if (noradId <= 8) return 'cosmos';
+        if (noradId === 9) return 'kuiper';
+        return null;
+      },
+    };
+    reg.register('live', providerProgram);
+
+    const snap = reg.snapshot();
+    const cap = snap.universes[0].fields.find((f) => f.field === 'program')!;
+    assert.deepEqual(cap.topValues, ['starlink', 'cosmos', 'kuiper']);
+  });
+
+  it('never attaches topValues to a non-string-kind field', () => {
+    const reg = new DataSourceRegistry();
+    reg.registerSpine('live', spineOf(SPINE10));
+    // 'inclination' is kind:'number'.
+    const providerIncl: FieldProvider = {
+      id: 'fixture:incl',
+      fields: ['inclination'],
+      getField: (noradId, field) => (field === 'inclination' ? 51.6 : null),
+    };
+    reg.register('live', providerIncl);
+
+    const snap = reg.snapshot();
+    const cap = snap.universes[0].fields.find((f) => f.field === 'inclination')!;
+    assert.equal(cap.topValues, undefined);
+  });
+
+  it('skips topValues (stores nothing) when a string field is effectively unique per object', () => {
+    const ids = Array.from({ length: 2001 }, (_, i) => i + 1);
+    const reg = new DataSourceRegistry();
+    reg.registerSpine('live', spineOf(ids));
+    // 'name' is kind:'string'; every object gets a distinct value -> 2001 distinct > ceiling.
+    const providerUniqueName: FieldProvider = {
+      id: 'fixture:unique-name',
+      fields: ['name'],
+      getField: (noradId, field) => (field === 'name' ? `OBJ-${noradId}` : null),
+    };
+    reg.register('live', providerUniqueName);
+
+    const snap = reg.snapshot();
+    const cap = snap.universes[0].fields.find((f) => f.field === 'name')!;
+    assert.equal(cap.topValues, undefined);
+    assert.equal(cap.coverage, 1, 'coverage measurement itself is unaffected by the vocabulary skip');
+  });
+
+  it('caps topValues at 40 entries, keeping the most frequent', () => {
+    // 45 distinct 'program' values; value vK appears (K+1) times, so v44 is most
+    // frequent (45x) and v0 least frequent (1x). Top 40 by frequency excludes v0-v4.
+    const reg = new DataSourceRegistry();
+    const ids: number[] = [];
+    let nextId = 1;
+    const idToValue = new Map<number, string>();
+    for (let k = 0; k < 45; k++) {
+      const count = k + 1;
+      for (let c = 0; c < count; c++) {
+        idToValue.set(nextId, `v${k}`);
+        ids.push(nextId);
+        nextId++;
+      }
+    }
+    reg.registerSpine('live', spineOf(ids));
+    const provider: FieldProvider = {
+      id: 'fixture:program45',
+      fields: ['program'],
+      getField: (noradId, field) => (field === 'program' ? idToValue.get(noradId) ?? null : null),
+    };
+    reg.register('live', provider);
+
+    const snap = reg.snapshot();
+    const cap = snap.universes[0].fields.find((f) => f.field === 'program')!;
+    assert.equal(cap.topValues?.length, 40);
+    assert.equal(cap.topValues?.[0], 'v44', 'most frequent value first');
+    assert.ok(!cap.topValues?.includes('v0'), 'least-frequent values beyond the top 40 are dropped');
+    assert.ok(!cap.topValues?.includes('v4'), 'least-frequent values beyond the top 40 are dropped');
+    assert.ok(cap.topValues?.includes('v5'), '40th-most-frequent value is kept');
+  });
+});

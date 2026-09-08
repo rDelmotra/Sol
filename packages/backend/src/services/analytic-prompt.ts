@@ -53,6 +53,34 @@ function measuredCoverage(snapshot: RegistrySnapshot, universe: Universe, field:
   return u?.fields.find((f) => f.field === field)?.coverage ?? 0;
 }
 
+/** The measured top-values list for `field` on `universe`, if any (string-kind
+ *  fields only — see FieldCapability.topValues). */
+function measuredTopValues(snapshot: RegistrySnapshot, universe: Universe, field: string): string[] | undefined {
+  const u = snapshot.universes.find((x) => x.universe === universe);
+  return u?.fields.find((f) => f.field === field)?.topValues;
+}
+
+// Keep the values list token-cheap: individual values are truncated (some
+// string fields, e.g. `bus`/`shape`, carry long free-text values) and the
+// whole joined list is capped well under the per-field line budget — chosen
+// generously enough to fit 40 short values (program/owner/countryCode/...)
+// but bail out early for fields whose top values happen to be long strings.
+const MAX_VALUE_CHARS = 24;
+const MAX_VALUES_JOINED_CHARS = 360;
+
+function renderValueList(values: string[]): string {
+  const truncated = values.map((v) => (v.length > MAX_VALUE_CHARS ? `${v.slice(0, MAX_VALUE_CHARS - 1)}…` : v));
+  const out: string[] = [];
+  let len = 0;
+  for (const v of truncated) {
+    const next = len + v.length + 1;
+    if (out.length > 0 && next > MAX_VALUES_JOINED_CHARS) break;
+    out.push(v);
+    len = next;
+  }
+  return out.join('|');
+}
+
 function renderFieldCatalog(snapshot: RegistrySnapshot): string {
   const lines = Object.entries(FIELD_REGISTRY).map(([name, spec]) => {
     const parts: string[] = [spec.kind, spec.plane];
@@ -74,6 +102,11 @@ function renderFieldCatalog(snapshot: RegistrySnapshot): string {
       const primary: Universe = spec.plane === 'static' ? 'all' : 'live';
       const coverage = primary === 'all' ? onAll : onLive;
       if (coverage < 0.95) parts.push(`coverage ${Math.round(coverage * 100)}%`);
+
+      if (spec.kind === 'string') {
+        const values = measuredTopValues(snapshot, primary, name);
+        if (values && values.length > 0) parts.push(`values: ${renderValueList(values)}`);
+      }
     }
     return `- ${name} (${parts.join(', ')})`;
   });
@@ -85,7 +118,13 @@ reports the basis (meta.coverage) and the answer is honestly caveated downstream
 Fields marked UNSERVED are in the contract but have no data source wired up yet
 (every object reads null on both universes). If a question HINGES on one, refuse
 NOT_DERIVABLE and say that data isn't ingested yet — do not build a filter that can
-only return an empty set.`;
+only return an empty set.
+Fields with a "values" list are string fields with a MEASURED, closed vocabulary —
+those are the ONLY values that exist for that field; a value not on the list matches
+NOTHING (silently zero results, not an error). Never invent or guess an unlisted
+value — if the question needs one, refuse NOT_DERIVABLE instead. String fields with
+no "values" list (e.g. name, launchTag) are open text or too numerous to enumerate;
+match those directly against what the question names.`;
 }
 
 // ── §3 Physics functions (generated) ──────────────────────────────────────────

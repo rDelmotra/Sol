@@ -18,6 +18,7 @@ import {
 } from '@orbitwatch/analytic';
 import { createAnalyticCompiler, type AnalyticCompiler, type CompileOutcome } from '../services/analytic-compiler.js';
 import { getAnalyticRegistry, type DataSourceRegistry } from '../analytic/index.js';
+import { computeLowBasisFields } from '../eval/hollow.js';
 import { logger } from '../utils/logger.js';
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
@@ -180,6 +181,23 @@ export function createQueryRouter(deps: QueryRouterDeps = {}): Router {
       if (!execOutcome.ok) {
         res.status(200).json({ ok: false, runtime: execOutcome.error });
         return;
+      }
+
+      // Hollow-answer detection: a zero-match answer, or one built mostly from
+      // nulls (coverage present/total < 5% on a field the pipeline touched),
+      // carries no caveat on its own — log it as the system's growth signal.
+      // Best-effort: logGap never throws and must never fail the request.
+      const { matched, scanned, coverage } = execOutcome.result.meta;
+      const lowBasisFields = computeLowBasisFields(coverage);
+      if (matched === 0 || lowBasisFields.length > 0) {
+        compiler.logGap?.({
+          question: check.question,
+          kind: 'hollow',
+          code: matched === 0 ? 'E-ZERO-MATCH' : 'E-LOW-BASIS',
+          fields: lowBasisFields,
+          matched,
+          scanned,
+        });
       }
 
       res.status(200).json({

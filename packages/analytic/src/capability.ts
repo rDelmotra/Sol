@@ -130,10 +130,28 @@ export function collectProgramRefs(program: AnalyticProgram): ProgramRefs {
   }
 
   for (const stage of program.pipeline) walkStage(stage);
+  // output.columns belongs to the MAIN pipeline's relation, so BOTH pieces of
+  // traversal state it reads must reflect the main pipeline, not whatever the
+  // compare pipeline (walked below, on its own fresh relation) leaves behind.
+  //
+  // `inGroupMode` leaking here was a live mis-route (compare aggregates → main's
+  // output.columns skipped → a server-only column never collected → the client
+  // executes and reads null: a hollow answer produced by the router itself).
+  //
+  // `derivedLocal` is belt-and-braces: a compare-pipeline `derive` name can't
+  // currently collide with a real source field, because validate.ts rejects a
+  // derived name that shadows a FIELD_REGISTRY key and gives the compare
+  // pipeline its own `derived` map. We scope it anyway rather than let this
+  // file's correctness depend on an invariant enforced in another one.
+  const mainGroupMode = inGroupMode;
+  const mainDerivedLocal = new Set(derivedLocal);
   if (program.compare) {
     inGroupMode = false;
     for (const stage of program.compare.pipeline) walkStage(stage);
   }
+  inGroupMode = mainGroupMode;
+  derivedLocal.clear();
+  for (const n of mainDerivedLocal) derivedLocal.add(n);
   if (program.output.columns && !inGroupMode) {
     for (const c of program.output.columns) if (!derivedLocal.has(c)) fields.add(c);
   }

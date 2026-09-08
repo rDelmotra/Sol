@@ -2,6 +2,9 @@
 // The LLM is faked; nothing touches the network or disk (persist:false).
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it } from 'node:test';
 import {
   createAnalyticCompiler,
@@ -124,5 +127,62 @@ describe('createAnalyticCompiler', () => {
     const second = await c.compile('  which   satellites are slowing down ');
     assert.ok(second.ok && second.cached);
     assert.equal(llm.count(), 1);
+  });
+});
+
+describe('AnalyticCompiler.logGap (reused writer, P3 hollow-answer defect fix)', () => {
+  it('appends a hollow entry to the same gap-log.jsonl the compile path writes to', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-gaplog-'));
+    try {
+      const c = createAnalyticCompiler({ dataDir, persist: true });
+      c.logGap?.({
+        question: 'satellites owned by amazon',
+        kind: 'hollow',
+        code: 'E-ZERO-MATCH',
+        fields: [],
+        matched: 0,
+        scanned: 12345,
+      });
+      const gapLogPath = path.join(dataDir, 'gap-log.jsonl');
+      const lines = fs.readFileSync(gapLogPath, 'utf8').trim().split('\n');
+      assert.equal(lines.length, 1);
+      const entry = JSON.parse(lines[0]);
+      assert.equal(entry.kind, 'hollow');
+      assert.equal(entry.code, 'E-ZERO-MATCH');
+      assert.equal(entry.matched, 0);
+      assert.equal(entry.scanned, 12345);
+      assert.equal(entry.question, 'satellites owned by amazon');
+      assert.ok(typeof entry.ts === 'string' && !Number.isNaN(Date.parse(entry.ts)));
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('is best-effort: a write failure (unwritable dataDir) never throws', async () => {
+    // Point dataDir at a path that can't be created (a file, not a directory,
+    // as an intermediate segment) so fs.mkdirSync/appendFileSync fail.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-gaplog-fail-'));
+    const blockerFile = path.join(tmp, 'blocker');
+    fs.writeFileSync(blockerFile, 'x');
+    const unwritableDataDir = path.join(blockerFile, 'nested', 'data'); // 'blocker' is a file, not a dir
+    try {
+      const c = createAnalyticCompiler({ dataDir: unwritableDataDir, persist: true });
+      assert.doesNotThrow(() => {
+        c.logGap?.({ question: 'q', kind: 'hollow', code: 'E-ZERO-MATCH', matched: 0, scanned: 0 });
+      });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('persist:false never writes to disk', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-gaplog-nopersist-'));
+    try {
+      const c = createAnalyticCompiler({ dataDir, persist: false });
+      c.logGap?.({ question: 'q', kind: 'hollow', code: 'E-ZERO-MATCH', matched: 0, scanned: 0 });
+      assert.equal(fs.existsSync(path.join(dataDir, 'gap-log.jsonl')), false);
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 });

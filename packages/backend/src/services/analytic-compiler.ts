@@ -26,6 +26,19 @@ export type CompileOutcome =
   | { ok: false; kind: 'invalid'; issues: ValidationIssue[] }
   | { ok: false; kind: 'unavailable' };
 
+// ── Gap log entry (the compile-path writer, reused by /ask for hollow answers) ─
+
+export interface GapLogEntry {
+  question: string;
+  kind: 'refused' | 'invalid' | 'hollow';
+  code: string;
+  reason?: string;
+  /** Offending field(s) — e.g. low-basis coverage fields behind a 'hollow' entry. */
+  fields?: string[];
+  matched?: number;
+  scanned?: number;
+}
+
 // ── LLM seam ──────────────────────────────────────────────────────────────────
 // Conversation blocks are opaque to the compiler; it only threads them back
 // verbatim on the repair round. The real adapter maps these to SDK shapes.
@@ -131,6 +144,13 @@ function parseEmit(input: unknown): ParsedEmit {
 
 export interface AnalyticCompiler {
   compile(question: string): Promise<CompileOutcome>;
+  /**
+   * Append an entry to the gap log (`data/gap-log.jsonl`) — the same
+   * append-only, best-effort writer the compile path uses for refusals/invalid
+   * compiles. Never throws; a logging failure must never fail the request.
+   * Optional so existing fakes in tests don't need updating.
+   */
+  logGap?(entry: GapLogEntry): void;
 }
 
 export function createAnalyticCompiler(deps: CompilerDeps = {}): AnalyticCompiler {
@@ -175,11 +195,11 @@ export function createAnalyticCompiler(deps: CompilerDeps = {}): AnalyticCompile
     return { ok: false, kind: 'refused', code: entry.code, reason: entry.reason, cached: true };
   }
 
-  function appendGap(question: string, kind: 'refused' | 'invalid', code: string, reason?: string): void {
+  function appendGap(entry: GapLogEntry): void {
     if (!persist) return;
     try {
       fs.mkdirSync(dataDir, { recursive: true });
-      const line = JSON.stringify({ ts: new Date(nowMs()).toISOString(), question, kind, code, reason }) + '\n';
+      const line = JSON.stringify({ ts: new Date(nowMs()).toISOString(), ...entry }) + '\n';
       fs.appendFileSync(gapLogPath, line, 'utf8');
     } catch (err) {
       logger.warn('gap-log append failed (non-fatal):', err);
@@ -215,7 +235,7 @@ export function createAnalyticCompiler(deps: CompilerDeps = {}): AnalyticCompile
 
     if (emit1.kind === 'refuse') {
       touch(key, { kind: 'refused', code: emit1.code, reason: emit1.reason });
-      appendGap(question, 'refused', emit1.code, emit1.reason);
+      appendGap({ question, kind: 'refused', code: emit1.code, reason: emit1.reason });
       logCall(normalized, false, false, call1);
       return { ok: false, kind: 'refused', code: emit1.code, reason: emit1.reason, cached: false };
     }
@@ -249,7 +269,7 @@ export function createAnalyticCompiler(deps: CompilerDeps = {}): AnalyticCompile
 
     if (emit2.kind === 'refuse') {
       touch(key, { kind: 'refused', code: emit2.code, reason: emit2.reason });
-      appendGap(question, 'refused', emit2.code, emit2.reason);
+      appendGap({ question, kind: 'refused', code: emit2.code, reason: emit2.reason });
       logCall(normalized, false, true, call2);
       return { ok: false, kind: 'refused', code: emit2.code, reason: emit2.reason, cached: false };
     }
@@ -262,17 +282,17 @@ export function createAnalyticCompiler(deps: CompilerDeps = {}): AnalyticCompile
         return { ok: true, program: v2.program, interpretation: v2.program.interpretation, cached: false, tookMs: nowMs() - started };
       }
       // Still invalid — NOT cached (a later model/prompt may succeed).
-      appendGap(question, 'invalid', v2.issues[0]?.code ?? 'V-SHAPE');
+      appendGap({ question, kind: 'invalid', code: v2.issues[0]?.code ?? 'V-SHAPE' });
       logCall(normalized, false, true, call2);
       return { ok: false, kind: 'invalid', issues: v2.issues };
     }
 
-    appendGap(question, 'invalid', 'V-SHAPE', emit2.message);
+    appendGap({ question, kind: 'invalid', code: 'V-SHAPE', reason: emit2.message });
     logCall(normalized, false, true, call2);
     return { ok: false, kind: 'invalid', issues: [{ code: 'V-SHAPE', path: '', message: emit2.message }] };
   }
 
-  return { compile };
+  return { compile, logGap: appendGap };
 }
 
 function logCall(normalized: string, cached: boolean, repaired: boolean, call: LlmToolCall): void {

@@ -101,6 +101,18 @@ function ResultBody({ result }: { result: AnalyticResult }) {
   }
 }
 
+function ZeroMatchNotice() {
+  return (
+    <div style={zeroMatchStyle}>
+      <div style={zeroMatchHeadlineStyle}>No objects matched.</div>
+      <div>
+        If the question named a specific satellite, program, or owner, that value may not
+        exist in the catalog under that name — try a broader search or check the spelling.
+      </div>
+    </div>
+  );
+}
+
 function CoverageCaveats({ coverage }: { coverage: CoverageEntry[] }) {
   const thin = coverage.filter((c) => c.total > 0 && c.present / c.total < COVERAGE_CAVEAT_THRESHOLD);
   if (thin.length === 0) return null;
@@ -162,7 +174,7 @@ export function AnswerCard() {
           )}
 
           <div style={dividerStyle} />
-          <ResultBody result={answer.result} />
+          {answer.result.meta.matched === 0 ? <ZeroMatchNotice /> : <ResultBody result={answer.result} />}
 
           {answer.result.compare && (
             <>
@@ -275,6 +287,19 @@ const bigNumberUnitStyle: React.CSSProperties = {
 const emptyStyle: React.CSSProperties = {
   color: 'rgba(255, 255, 255, 0.5)',
   fontSize: '11px',
+};
+
+const zeroMatchStyle: React.CSSProperties = {
+  color: 'rgba(255, 255, 255, 0.65)',
+  fontSize: '11px',
+  lineHeight: 1.5,
+};
+
+const zeroMatchHeadlineStyle: React.CSSProperties = {
+  color: VIOLET_DIM,
+  fontSize: '13px',
+  fontWeight: 600,
+  marginBottom: 4,
 };
 
 const tableStyle: React.CSSProperties = {

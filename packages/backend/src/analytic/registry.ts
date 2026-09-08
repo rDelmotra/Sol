@@ -28,6 +28,12 @@ const ALL_FNS: readonly FnName[] = [
   'elevationDeg', 'rangeKm', 'observerDark', 'visuallyVisible', 'distToKm', 'descendsFrom',
 ];
 
+/** Top-N values kept per string field (frequency-sorted, most frequent first). */
+const TOP_VALUES_LIMIT = 40;
+/** Distinct-value ceiling above which a string field isn't a closed vocabulary
+ *  worth rendering (e.g. name/cospar/launchTag — effectively unique per object). */
+const TOP_VALUES_DISTINCT_CEILING = 2000;
+
 interface UniverseState {
   spine?: SpineProvider;
   providers: FieldProvider[];
@@ -122,11 +128,33 @@ export class DataSourceRegistry {
           fields.push({ field, servedBy, coverage: 1 });
           continue;
         }
+        const isStringKind = FIELD_REGISTRY[field]?.kind === 'string';
+        const valueCounts: Map<string, number> | null = isStringKind ? new Map() : null;
+
         let present = 0;
         for (const noradId of spine) {
-          if (chainGetByNorad(chain, noradId, field, tMsFixed) !== null) present++;
+          const v = chainGetByNorad(chain, noradId, field, tMsFixed);
+          if (v === null) continue;
+          present++;
+          if (valueCounts && typeof v === 'string') {
+            valueCounts.set(v, (valueCounts.get(v) ?? 0) + 1);
+          }
         }
-        fields.push({ field, servedBy, coverage: spine.length === 0 ? 0 : present / spine.length });
+
+        let topValues: string[] | undefined;
+        if (valueCounts && valueCounts.size > 0 && valueCounts.size <= TOP_VALUES_DISTINCT_CEILING) {
+          topValues = [...valueCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, TOP_VALUES_LIMIT)
+            .map(([value]) => value);
+        }
+
+        fields.push({
+          field,
+          servedBy,
+          coverage: spine.length === 0 ? 0 : present / spine.length,
+          ...(topValues ? { topValues } : {}),
+        });
       }
 
       const fns = ALL_FNS

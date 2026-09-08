@@ -27,18 +27,21 @@ function makeSnapshot(opts: {
   omit?: string[];
   degradedLive?: boolean;
   liveSpineSize?: number;
+  topValues?: Record<string, string[]>;
 } = {}): RegistrySnapshot {
   const omit = new Set(opts.omit ?? []);
   const overrides = opts.overrides ?? {};
+  const topValues = opts.topValues ?? {};
   const liveFields: FieldCapability[] = [];
   const allFields: FieldCapability[] = [];
 
   for (const [name, spec] of Object.entries(FIELD_REGISTRY)) {
     if (omit.has(name)) continue;
     const ov = overrides[name];
-    liveFields.push({ field: name, servedBy: 'fixture', coverage: ov?.live ?? 1 });
+    const tv = topValues[name];
+    liveFields.push({ field: name, servedBy: 'fixture', coverage: ov?.live ?? 1, ...(tv ? { topValues: tv } : {}) });
     if (spec.plane !== 'live') {
-      allFields.push({ field: name, servedBy: 'fixture', coverage: ov?.all ?? 1 });
+      allFields.push({ field: name, servedBy: 'fixture', coverage: ov?.all ?? 1, ...(tv ? { topValues: tv } : {}) });
     }
   }
 
@@ -206,6 +209,49 @@ describe('buildCompilerSystemPrompt — measured coverage rendering (P3 S6 Part 
     assert.doesNotThrow(() => buildCompilerSystemPrompt(degraded));
     const prompt = buildCompilerSystemPrompt(degraded);
     assert.ok(prompt.includes('FIELD CATALOG'));
+  });
+});
+
+describe('buildCompilerSystemPrompt — D-1: measured string vocabulary rendering', () => {
+  it("renders program's measured values list, including starlink and kuiper", () => {
+    const snap = makeSnapshot({
+      topValues: { program: ['starlink', 'cosmos', 'fengyun', 'kuiper'] },
+    });
+    const prompt = buildCompilerSystemPrompt(snap);
+    const idx = prompt.indexOf('- program (');
+    assert.ok(idx >= 0);
+    const line = prompt.slice(idx, prompt.indexOf(')', idx) + 1);
+    assert.ok(line.includes('values: starlink|cosmos|fengyun|kuiper'), line);
+  });
+
+  it('a string field with no measured topValues renders no "values:" fragment', () => {
+    const snap = makeSnapshot();
+    const prompt = buildCompilerSystemPrompt(snap);
+    const idx = prompt.indexOf('- owner (');
+    const line = prompt.slice(idx, prompt.indexOf(')', idx) + 1);
+    assert.ok(!line.includes('values:'), line);
+  });
+
+  it('a non-string field (e.g. an enum) never gets a "values:" fragment even if the fixture attaches topValues', () => {
+    const snap = makeSnapshot({ topValues: { operationalStatus: ['operational', 'unknown'] } });
+    const prompt = buildCompilerSystemPrompt(snap);
+    const idx = prompt.indexOf('- operationalStatus (');
+    const line = prompt.slice(idx, prompt.indexOf(')', idx) + 1);
+    assert.ok(!line.includes('values:'), line);
+    // enum fields keep their hand-written domain instead.
+    assert.ok(line.includes('enum:'));
+  });
+
+  it('teaches the refuse-rather-than-guess rule for fields with a measured values list', () => {
+    const prompt = buildCompilerSystemPrompt(makeSnapshot({ topValues: { program: ['starlink'] } }));
+    assert.ok(prompt.includes('a value not on the list matches'));
+    assert.ok(prompt.includes('Never invent or guess an unlisted'));
+  });
+
+  it('promptVersion changes when the measured values list changes (cache auto-invalidation)', () => {
+    const a = makeSnapshot({ topValues: { program: ['starlink', 'cosmos'] } });
+    const b = makeSnapshot({ topValues: { program: ['starlink', 'cosmos', 'kuiper'] } });
+    assert.notEqual(getPromptVersion(a), getPromptVersion(b));
   });
 });
 

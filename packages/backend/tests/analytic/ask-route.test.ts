@@ -11,7 +11,7 @@ import express from 'express';
 import type { Server } from 'node:http';
 import { DataSourceRegistry } from '../../src/analytic/registry.js';
 import { createQueryRouter } from '../../src/routes/query.js';
-import type { AnalyticCompiler, CompileOutcome } from '../../src/services/analytic-compiler.js';
+import type { AnalyticCompiler, CompileOutcome, GapLogEntry } from '../../src/services/analytic-compiler.js';
 import type { AnalyticProgram } from '@orbitwatch/analytic';
 import type { FieldProvider, SpineProvider } from '../../src/analytic/types.js';
 
@@ -77,9 +77,13 @@ function freshSpyRegistry(): SpyRegistry {
   return registry;
 }
 
-function fakeCompiler(outcome: CompileOutcome | ((question: string) => CompileOutcome)): AnalyticCompiler {
+function fakeCompiler(
+  outcome: CompileOutcome | ((question: string) => CompileOutcome),
+  gapLog?: GapLogEntry[],
+): AnalyticCompiler {
   return {
     compile: async (question: string) => (typeof outcome === 'function' ? outcome(question) : outcome),
+    logGap: gapLog ? (entry: GapLogEntry) => gapLog.push(entry) : undefined,
   };
 }
 
@@ -274,6 +278,44 @@ describe('POST /api/query/ask', () => {
       const json = await res.json();
       assert.equal(res.status, 200);
       assert.deepEqual(json, { ok: true, program: clientProgram, interpretation: 'x', cached: true });
+    } finally {
+      await close();
+    }
+  });
+
+  it('9. server-side zero-match result → compiler.logGap called with kind:hollow, matched:0', async () => {
+    const zeroMatchProgram = program({
+      pipeline: [{ op: 'filter', where: { op: '>', args: [{ field: 'launchMassKg' }, { lit: 999999 }] } }],
+    });
+    const outcome: CompileOutcome = { ok: true, program: zeroMatchProgram, interpretation: 'implausibly heavy objects', cached: false, tookMs: 1 };
+    const gapLog: GapLogEntry[] = [];
+    const { url, close } = await startApp({ compiler: fakeCompiler(outcome, gapLog), registry: freshFixtureRegistry() });
+    try {
+      const { status, json } = await post(url, { question: 'implausibly heavy objects' });
+      assert.equal(status, 200);
+      assert.equal(json.result.meta.matched, 0);
+      assert.equal(gapLog.length, 1);
+      assert.equal(gapLog[0].kind, 'hollow');
+      assert.equal(gapLog[0].matched, 0);
+      assert.equal(gapLog[0].question, 'implausibly heavy objects');
+    } finally {
+      await close();
+    }
+  });
+
+  it('10. healthy server-side result (matched > 0, full coverage) → compiler.logGap not called', async () => {
+    const healthyProgram = program({
+      universe: 'all',
+      pipeline: [{ op: 'filter', where: { op: 'in', field: 'name', values: ['Delta'] } }],
+    });
+    const outcome: CompileOutcome = { ok: true, program: healthyProgram, interpretation: 'named Delta', cached: false, tookMs: 1 };
+    const gapLog: GapLogEntry[] = [];
+    const { url, close } = await startApp({ compiler: fakeCompiler(outcome, gapLog), registry: freshFixtureRegistry() });
+    try {
+      const { status, json } = await post(url, { question: 'find the object named delta' });
+      assert.equal(status, 200);
+      assert.ok(json.result.meta.matched > 0);
+      assert.equal(gapLog.length, 0);
     } finally {
       await close();
     }

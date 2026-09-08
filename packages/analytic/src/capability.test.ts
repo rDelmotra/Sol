@@ -89,6 +89,28 @@ describe('capability — collectProgramRefs', () => {
     assert.ok(!refs.fields.has('avgMass'));
   });
 
+  it('output.columns is still checked against the MAIN pipeline group state, not left clobbered by an aggregating compare pipeline', () => {
+    // Regression: inGroupMode was reset to false before walking compare.pipeline
+    // but never restored afterward, so if compare aggregates, the output.columns
+    // check below (gated on inGroupMode) was wrongly skipped — silently dropping
+    // a client-unserved field from the routing check (a "hollow answer" bug).
+    const program = baseProgram({
+      pipeline: [
+        { op: 'filter', where: { op: '>', args: [{ field: 'meanMotion' }, { lit: 0 }] } },
+      ],
+      compare: {
+        label: 'cmp',
+        pipeline: [
+          { op: 'groupBy', key: 'countryCode', aggs: { n: { fn: 'count' } } },
+        ],
+      },
+      output: { shape: 'table', columns: ['name', 'launchMassKg'] },
+    });
+    const refs = collectProgramRefs(program);
+    assert.ok(refs.fields.has('launchMassKg'));
+    assert.equal(programNeedsServer(program), true);
+  });
+
   it('a timeScan predicate contributes its field refs', () => {
     const program = baseProgram({
       pipeline: [

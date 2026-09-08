@@ -42,6 +42,17 @@ export interface FieldCapability {
   field: string;
   servedBy: string;
   coverage: number;
+  /**
+   * For FIELD_REGISTRY kind:'string' fields only: the top (by frequency,
+   * most-frequent-first) distinct values actually observed over the real
+   * spine at boot, capped at 40. Omitted (undefined) when the field's kind
+   * isn't 'string', its plane is 'live' (not measured at boot at all), or
+   * its distinct-value count exceeded the "this isn't a closed vocabulary"
+   * threshold (~2000) — a list that large isn't useful to a prompt and
+   * would blow the token budget. Measured, never hand-written — see
+   * DataSourceRegistry.snapshot().
+   */
+  topValues?: string[];
 }
 
 export interface UniverseSnapshot {
