@@ -291,6 +291,34 @@ describe('executor — corpus answers over the fixture', () => {
     assert.equal(r.meta.clipped?.length, 1);
   });
 
+  // sweep (P3): this fixture's elevationDeg is STATIC (ignores tMs — see LIVE_ELEV),
+  // so a sweep against it degenerates to "above threshold the whole horizon, or
+  // never" — a real but minimal integration check against the SAME shared fixture
+  // and AnalyticDataSource port every other corpus test uses. Interval-shape/edge/
+  // peak precision is covered exhaustively in sweep.test.ts's own time-varying fixture.
+  it('C5: sweep over the shared fixture — VANGUARD 1 (elev 88) full-horizon pass, STARLINK-1007 (elev -10) none', () => {
+    const r = run(prog({
+      pipeline: [
+        { op: 'pick', ids: [44713, 5] },
+        {
+          op: 'sweep',
+          predicate: { op: '>', args: [{ fn: 'elevationDeg', observer: 'user' }, { lit: 10 }] },
+          horizonMinutes: 30,
+          stepSeconds: 60,
+        },
+      ],
+      output: { shape: 'grouped' },
+    }));
+    assert.deepEqual(r.rows, [{
+      noradId: 5,
+      name: 'VANGUARD 1',
+      startIso: new Date(NOW).toISOString(),
+      endIso: new Date(NOW + 30 * 60_000).toISOString(),
+      durationMinutes: 30,
+      clippedEdge: 'both',
+    }]);
+  });
+
   it('D2: launch families — Falcon 9 (3) then Tsyklon (2)', () => {
     const r = run(prog({
       pipeline: [

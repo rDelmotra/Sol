@@ -168,6 +168,22 @@ describe('golden corpus — C. physics & observer', () => {
     pipeline: [{ op: 'pick', ids: [25544] }],
     output: { shape: 'object', columns: ['name', 'latDeg', 'lonDeg', 'altitudeKm'] },
   }), 'C6'));
+
+  it('C5: which satellites pass over Sydney in the next hour? (sweep — the P3 gap)', () => ok(prog({
+    interpretation:
+      "'Pass over' = elevation above 10° from Sydney (-33.8714, 151.2125) at some point in the next hour. Narrowed to LEO first — GEO/MEO objects do not produce short rise/set passes from a fixed ground point.",
+    pipeline: [
+      { op: 'filter', where: { op: 'in', field: 'regime', values: ['LEO'] } },
+      {
+        op: 'sweep',
+        predicate: { op: '>', args: [{ fn: 'elevationDeg', observer: { latDeg: -33.8714, lonDeg: 151.2125 } }, { lit: 10 }] },
+        horizonMinutes: 60,
+        stepSeconds: 30,
+        peakOf: { fn: 'elevationDeg', observer: { latDeg: -33.8714, lonDeg: 151.2125 } },
+      },
+    ],
+    output: { shape: 'grouped' },
+  }), 'C5'));
 });
 
 // ── D. Entity graph ───────────────────────────────────────────────────────────
@@ -427,6 +443,39 @@ describe('validator contract — typed refusals', () => {
     ],
     output: { shape: 'scalar' },
   }), 'V-SCAN'));
+
+  // Regression: this exact program used to VALIDATE and then die at runtime with
+  // E-INTERNAL ("'object' output on a grouped relation") — verified 2026-09-09.
+  // timeScan returns a GROUP relation, but 'object'/'table' materialization
+  // asserts an object relation. The guard existed for `sweep` from the start and
+  // was simply missing for `timeScan`. E-INTERNAL says "our bug"; V-OUTPUT says
+  // "this program is malformed" — which is what it actually is.
+  it('V-OUTPUT: timeScan + object output (was a validate-then-crash path)', () => bad(prog({
+    pipeline: [
+      { op: 'pick', ids: [25544] },
+      { op: 'timeScan', predicate: { field: 'eclipsed' }, direction: 'forward', stepMinutes: 1, maxSteps: 10 },
+    ],
+    output: { shape: 'object', columns: ['name'] },
+  }), 'V-OUTPUT'));
+
+  // `limit` must come BEFORE the timeScan — it is the final stage, and a trailing
+  // limit trips V-SCAN first, which would test the wrong rule. Ordered this way the
+  // program satisfies 'table's limit requirement and reaches the guard under test.
+  it('V-OUTPUT: timeScan + table output (same grouped-relation crash path)', () => bad(prog({
+    pipeline: [
+      { op: 'pick', ids: [25544] },
+      { op: 'limit', n: 1 },
+      { op: 'timeScan', predicate: { field: 'eclipsed' }, direction: 'forward', stepMinutes: 1, maxSteps: 10 },
+    ],
+    output: { shape: 'table', columns: ['name'] },
+  }), 'V-OUTPUT'));
+
+  it('V-SWEEP: a bare whole-catalog sweep (no prior filter/pick/limit) is rejected', () => bad(prog({
+    pipeline: [
+      { op: 'sweep', predicate: { field: 'eclipsed' }, horizonMinutes: 60, stepSeconds: 30 },
+    ],
+    output: { shape: 'grouped' },
+  }), 'V-SWEEP'));
 
   it('V-TIMECAP: timeBinding beyond the +14 d future horizon', () => bad(prog({
     timeBinding: { mode: 'at', t: '2026-08-20T00:00:00Z' },

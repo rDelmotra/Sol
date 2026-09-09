@@ -27,6 +27,22 @@ export const MAX_TIMESCAN_STEPS = 240;
 export const TIMESCAN_MAX_OBJECTS = 5;
 /** Runtime group-cardinality guard (executor enforces; exported for it). */
 export const MAX_GROUPS = 2000;
+// ── sweep caps (spec: P3 `sweep` brief §2) ─────────────────────────────────────
+/** Runtime cap on the incoming relation (executor enforces; exported for it). A
+ *  filter's result size is NOT knowable at validate time — that is exactly why
+ *  this is a RUNTIME cap, not a validator rule (the validator can only require
+ *  that SOME narrowing stage exists syntactically; see V-SWEEP below). */
+export const SWEEP_MAX_OBJECTS = 2000;
+export const SWEEP_MAX_HORIZON_MINUTES = 10_080; // 7 days
+export const SWEEP_MIN_STEP_SECONDS = 5;
+export const SWEEP_MAX_STEP_SECONDS = 300;
+/** N × steps; ~250 ms at the measured 0.4 µs/propagation cost. Runtime-enforced
+ *  (see SWEEP_MAX_OBJECTS's note) — the validator can only bound a SINGLE
+ *  object's step count on its own (see the 'sweep' case below). */
+export const SWEEP_MAX_OBJECT_STEPS = 500_000;
+export const SWEEP_MAX_INTERVALS_PER_OBJECT = 64;
+/** 30 s coarse step → ~30 ms edge precision (stepMs / 2^10). */
+export const SWEEP_BISECT_ITERATIONS = 10;
 export const PAST_CAP_DAYS = 60;
 export const FUTURE_CAP_DAYS = 14;
 
@@ -46,6 +62,7 @@ export type ValidationCode =
   | 'V-PLANE'   // live-plane reference under universe 'all'
   | 'V-TIMECAP' // timeBinding outside the propagation window
   | 'V-SCAN'    // timeScan constraints
+  | 'V-SWEEP'   // sweep constraints
   | 'V-GROUP'   // groupBy/aggregate misuse (multi-valued key, double grouping…)
   | 'V-LIMIT'   // limit bounds / unbounded table
   | 'V-OUTPUT'  // output/pipeline inconsistency, unresolvable columns
@@ -328,6 +345,11 @@ interface PipeState {
   pickCount: number | null;
   limitMin: number | null;
   timeScanUsed: boolean;
+  sweepUsed: boolean;
+  /** A pick/filter/limit has been seen so far — sweep's precondition (§2: "must be
+   *  preceded by SOME narrowing stage"). Deliberately NOT a cardinality check: a
+   *  filter's result size isn't knowable here (see SWEEP_MAX_OBJECTS's doc comment). */
+  hasNarrowing: boolean;
   lastAggCount: number;
 }
 
@@ -340,7 +362,10 @@ function checkPipeline(ctx: Ctx, pipeline: unknown, path: string): PipeState | n
     issue(ctx, 'V-PIPE', path, `pipeline longer than ${MAX_PIPELINE_STAGES} stages`);
     return null;
   }
-  const state: PipeState = { pickCount: null, limitMin: null, timeScanUsed: false, lastAggCount: 0 };
+  const state: PipeState = {
+    pickCount: null, limitMin: null, timeScanUsed: false, sweepUsed: false,
+    hasNarrowing: false, lastAggCount: 0,
+  };
   let deriveTotal = 0;
 
   for (let i = 0; i < pipeline.length; i++) {
@@ -351,8 +376,9 @@ function checkPipeline(ctx: Ctx, pipeline: unknown, path: string): PipeState | n
       issue(ctx, 'V-SHAPE', p, 'stage must be an object with an op');
       return null;
     }
-    if (ctx.aggregated || state.timeScanUsed) {
-      issue(ctx, 'V-PIPE', p, `no stages allowed after ${state.timeScanUsed ? 'timeScan' : 'aggregate'}`);
+    if (ctx.aggregated || state.timeScanUsed || state.sweepUsed) {
+      const after = state.sweepUsed ? 'sweep' : state.timeScanUsed ? 'timeScan' : 'aggregate';
+      issue(ctx, 'V-PIPE', p, `no stages allowed after ${after}`);
       return null;
     }
 
@@ -365,9 +391,11 @@ function checkPipeline(ctx: Ctx, pipeline: unknown, path: string): PipeState | n
           return null;
         }
         state.pickCount = stage.ids.length;
+        state.hasNarrowing = true;
         break;
       }
       case 'filter': {
+        state.hasNarrowing = true;
         const k = checkExpr(ctx, stage.where, `${p}.where`, 1);
         if (k !== null && k !== 'bool') issue(ctx, 'V-TYPE', `${p}.where`, 'filter.where must be bool');
         break;
@@ -411,6 +439,7 @@ function checkPipeline(ctx: Ctx, pipeline: unknown, path: string): PipeState | n
           break;
         }
         state.limitMin = state.limitMin === null ? stage.n : Math.min(state.limitMin, stage.n);
+        state.hasNarrowing = true;
         break;
       }
       case 'aggregate': {
@@ -470,6 +499,44 @@ function checkPipeline(ctx: Ctx, pipeline: unknown, path: string): PipeState | n
         const k = checkExpr(ctx, stage.predicate, `${p}.predicate`, 1);
         if (k !== null && k !== 'bool') issue(ctx, 'V-TYPE', `${p}.predicate`, 'timeScan.predicate must be bool');
         state.timeScanUsed = true;
+        break;
+      }
+      case 'sweep': {
+        if (!final) { issue(ctx, 'V-SWEEP', p, 'sweep must be the final stage'); return null; }
+        if (ctx.grouped) { issue(ctx, 'V-SWEEP', p, 'sweep does not apply to grouped relations'); return null; }
+        if (ctx.universe !== 'live') { issue(ctx, 'V-SWEEP', p, 'sweep needs universe live'); return null; }
+        // Only a SYNTACTIC narrowing check — a filter's actual result size isn't
+        // knowable here. SWEEP_MAX_OBJECTS is the real backstop, enforced by the
+        // executor at runtime (see its doc comment in this file).
+        if (!state.hasNarrowing) {
+          issue(ctx, 'V-SWEEP', p, 'sweep needs a prior filter/pick/limit stage to narrow the object set — a bare whole-catalog sweep is rejected');
+          return null;
+        }
+        if (!isInt(stage.horizonMinutes) || stage.horizonMinutes < 1 || stage.horizonMinutes > SWEEP_MAX_HORIZON_MINUTES) {
+          issue(ctx, 'V-SWEEP', p, `sweep.horizonMinutes must be an int 1..${SWEEP_MAX_HORIZON_MINUTES}`);
+          return null;
+        }
+        if (!isInt(stage.stepSeconds) || stage.stepSeconds < SWEEP_MIN_STEP_SECONDS || stage.stepSeconds > SWEEP_MAX_STEP_SECONDS) {
+          issue(ctx, 'V-SWEEP', p, `sweep.stepSeconds must be an int ${SWEEP_MIN_STEP_SECONDS}..${SWEEP_MAX_STEP_SECONDS}`);
+          return null;
+        }
+        // A single object's own step count must not exceed the object-step budget
+        // on its own. With today's SWEEP_MAX_HORIZON_MINUTES/SWEEP_MIN_STEP_SECONDS
+        // this is unreachable via values that also pass the two checks above (the
+        // worst case is 10_080*60/5 = 120_960 ≤ 500_000) — kept anyway as
+        // defense-in-depth against those caps changing independently later.
+        const soloSteps = Math.ceil((stage.horizonMinutes * 60) / stage.stepSeconds);
+        if (soloSteps > SWEEP_MAX_OBJECT_STEPS) {
+          issue(ctx, 'V-SWEEP', p, `sweep spans ${soloSteps} steps for a single object, over the ${SWEEP_MAX_OBJECT_STEPS}-step cap`);
+          return null;
+        }
+        const k = checkExpr(ctx, stage.predicate, `${p}.predicate`, 1);
+        if (k !== null && k !== 'bool') issue(ctx, 'V-TYPE', `${p}.predicate`, 'sweep.predicate must be bool');
+        if (stage.peakOf !== undefined) {
+          const pk = checkExpr(ctx, stage.peakOf, `${p}.peakOf`, 1);
+          if (pk !== null && pk !== 'number') issue(ctx, 'V-TYPE', `${p}.peakOf`, 'sweep.peakOf must be number');
+        }
+        state.sweepUsed = true;
         break;
       }
       default:
@@ -542,27 +609,42 @@ export function validateProgram(input: unknown, opts?: { nowMs?: number }): Vali
     const grouped = ctx.grouped !== null && !ctx.aggregated;
     switch (shape) {
       case 'grouped':
-        if (!grouped) issues.push({ code: 'V-OUTPUT', path: '$.output', message: `'grouped' output needs a groupBy pipeline` });
+        // sweep's relation is a group relation too (one row per interval, not per
+        // object) — exactly like timeScanUsed already earns 'scalar' below despite
+        // never running a groupBy.
+        if (!grouped && !state.sweepUsed) {
+          issues.push({ code: 'V-OUTPUT', path: '$.output', message: `'grouped' output needs a groupBy or sweep pipeline` });
+        }
         break;
       case 'scalar':
         if (!((ctx.aggregated && state.lastAggCount === 1) || state.timeScanUsed)) {
           issues.push({ code: 'V-OUTPUT', path: '$.output', message: `'scalar' output needs a single-aggregate or timeScan pipeline` });
         }
         break;
+      // `timeScanUsed` belongs in both guards below for the same reason
+      // `sweepUsed` does: BOTH stages return a GROUP relation, and 'object'/
+      // 'table' materialization asserts an object relation (execute.ts's output
+      // switch). Without it, `[pick 1 id, timeScan] + output:'object'` passed
+      // validation and then died at runtime with E-INTERNAL ("'object' output
+      // on a grouped relation") — verified 2026-09-09. That is a latent
+      // pre-existing timeScan defect, not a sweep one; sweep was written with
+      // the guard from the start and merely made the asymmetry visible.
+      // E-INTERNAL means "our bug"; a typed V-OUTPUT means "this program is
+      // malformed", which is what this actually is.
       case 'object':
-        if (grouped || ctx.aggregated || !(state.pickCount === 1 || state.limitMin === 1)) {
+        if (grouped || ctx.aggregated || state.sweepUsed || state.timeScanUsed || !(state.pickCount === 1 || state.limitMin === 1)) {
           issues.push({ code: 'V-OUTPUT', path: '$.output', message: `'object' output needs an ungrouped pipeline narrowed to one row (pick 1 id or limit 1)` });
         }
         break;
       case 'table':
-        if (grouped || ctx.aggregated) {
-          issues.push({ code: 'V-OUTPUT', path: '$.output', message: `use 'grouped'/'scalar' for grouped or aggregated pipelines` });
+        if (grouped || ctx.aggregated || state.sweepUsed || state.timeScanUsed) {
+          issues.push({ code: 'V-OUTPUT', path: '$.output', message: `use 'grouped'/'scalar' for grouped, aggregated, timeScan or sweep pipelines` });
         } else if (state.limitMin === null) {
           issues.push({ code: 'V-LIMIT', path: '$.output', message: `'table' output requires a limit stage (use 'ids' for unbounded sets)` });
         }
         break;
       case 'ids':
-        if (grouped || ctx.aggregated || state.timeScanUsed) {
+        if (grouped || ctx.aggregated || state.timeScanUsed || state.sweepUsed) {
           issues.push({ code: 'V-OUTPUT', path: '$.output', message: `'ids' output needs a plain object-set pipeline` });
         }
         break;

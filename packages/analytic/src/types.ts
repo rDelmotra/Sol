@@ -63,6 +63,24 @@ export interface TimeScanStage {
   stepMinutes: number;
   maxSteps: number;
 }
+/**
+ * Forward interval scan: for each object, every window in [t0, t0+horizon] where
+ * `predicate` holds. Final stage only. The generalization of timeScan from "first
+ * transition, one scalar" to "N objects → interval rows" — a pass predictor is
+ * `sweep` with predicate `elevationDeg(obs) > 10` and `peakOf: elevationDeg(obs)`;
+ * observers/elevation/"passes" are not baked into the grammar.
+ *
+ * Forward only — deliberate, not an oversight. A pass predictor is inherently about
+ * the future; timeScan already covers backward, so a `direction` field here would
+ * double the test surface for a capability nobody asked for.
+ */
+export interface SweepStage {
+  op: 'sweep';
+  predicate: Expr;          // bool, evaluated per object per instant
+  horizonMinutes: number;   // how far forward to look
+  stepSeconds: number;      // coarse sampling interval
+  peakOf?: Expr;            // optional numeric expr maximized within each interval
+}
 
 export type Stage =
   | PickStage
@@ -72,7 +90,8 @@ export type Stage =
   | LimitStage
   | AggregateStage
   | GroupByStage
-  | TimeScanStage;
+  | TimeScanStage
+  | SweepStage;
 
 // ── Aggregates ────────────────────────────────────────────────────────────────
 

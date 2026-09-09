@@ -12,6 +12,7 @@ import {
   type LlmMessage,
   type LlmToolCall,
 } from '../../src/services/analytic-compiler.js';
+import type { Gazetteer, GazetteerHit } from '../../src/services/gazetteer.js';
 
 const VALID_PROGRAM = {
   v: 1,
@@ -181,6 +182,241 @@ describe('AnalyticCompiler.logGap (reused writer, P3 hollow-answer defect fix)',
       const c = createAnalyticCompiler({ dataDir, persist: false });
       c.logGap?.({ question: 'q', kind: 'hollow', code: 'E-ZERO-MATCH', matched: 0, scanned: 0 });
       assert.equal(fs.existsSync(path.join(dataDir, 'gap-log.jsonl')), false);
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ============================================================
+// Place-name grounding (gazetteer defect fix). The LLM is faked exactly as
+// above; the gazetteer is ALSO faked (an injected `Gazetteer`) so these tests
+// never touch the network either — see services/gazetteer.ts for the real
+// implementation and tests/services/gazetteer.test.ts for its own coverage.
+// ============================================================
+
+const SYDNEY_HIT: GazetteerHit = {
+  name: 'Sydney',
+  latDeg: -33.8714,
+  lonDeg: 151.2125,
+  countryName: 'Australia',
+  admin1: 'New South Wales',
+  population: 4630000,
+  sourceId: 'ne:syd-au',
+  ambiguousWith: {
+    name: 'Sydney',
+    countryName: 'Canada',
+    admin1: 'Nova Scotia',
+    population: 37538,
+  },
+};
+
+function fakeGazetteer(hits: Record<string, GazetteerHit>, opts: { version?: string } = {}): Gazetteer {
+  return {
+    async ensureReady() {},
+    resolvePlace: (name: string) => hits[name] ?? null,
+    getVersion: () => opts.version ?? 'fixture-v1',
+  };
+}
+
+describe('place-name grounding (gazetteer)', () => {
+  it('DEMONSTRATION: "visible from Sydney" produces a user turn containing the Natural Earth coordinates (151.2125), not a model guess', async () => {
+    const llm = fakeLlm([toolCall({ program: VALID_PROGRAM })]);
+    const c = createAnalyticCompiler({
+      llmCall: llm.fn,
+      persist: false,
+      gazetteer: fakeGazetteer({ Sydney: SYDNEY_HIT }),
+    });
+
+    await c.compile('Which satellites are visible from Sydney right now?');
+
+    const sentContent = llm.calls[0].messages[0].content as string;
+    assert.ok(sentContent.includes('(resolved places:'), 'expected a resolved-places line in the user turn');
+    assert.ok(sentContent.includes('151.2125'), 'expected the Natural Earth longitude verbatim');
+    assert.ok(sentContent.includes('33.8714'), 'expected the Natural Earth latitude verbatim');
+    assert.ok(sentContent.includes('Natural Earth'), 'expected the source to be named');
+    assert.ok(sentContent.includes('pop 4630000'), 'expected the measured population');
+    assert.ok(sentContent.includes('also matches'), 'expected the Nova Scotia ambiguity to be disclosed, not silently dropped');
+    assert.ok(sentContent.includes('37538'), 'expected the runner-up population');
+  });
+
+  it('produces a BYTE-IDENTICAL user turn to the pre-grounding format when the question has no place candidates', async () => {
+    const fixedNow = new Date('2026-09-09T12:00:00.000Z').getTime();
+    const llm = fakeLlm([toolCall({ program: VALID_PROGRAM })]);
+    const gaz: Gazetteer = {
+      async ensureReady() {
+        throw new Error('must not be called for a place-free question');
+      },
+      resolvePlace: () => {
+        throw new Error('must not be called for a place-free question');
+      },
+      getVersion: () => 'should-not-matter',
+    };
+    const c = createAnalyticCompiler({ llmCall: llm.fn, persist: false, gazetteer: gaz, nowMs: () => fixedNow });
+
+    const question = 'Which satellites are slowing down?';
+    await c.compile(question);
+
+    const sentContent = llm.calls[0].messages[0].content;
+    assert.equal(sentContent, `${question}\n(current UTC time: ${new Date(fixedNow).toISOString()})`);
+  });
+
+  it('CRITICAL: a grounded and an ungrounded compile of the SAME place-mentioning question never share a cache entry', async () => {
+    const llm = fakeLlm([toolCall({ program: VALID_PROGRAM }), toolCall({ program: VALID_PROGRAM })]);
+    let version = 'unloaded';
+    const gaz: Gazetteer = {
+      async ensureReady() {},
+      resolvePlace: () => null, // resolution result is irrelevant here; only the version marker changes
+      getVersion: () => version,
+    };
+    const c = createAnalyticCompiler({ llmCall: llm.fn, persist: false, gazetteer: gaz });
+
+    const q = 'Which satellites are visible from Sydney right now?';
+    const a = await c.compile(q);
+    assert.ok(a.ok && !a.cached);
+
+    version = '2026-09-08T00:00:00.000Z'; // simulates the gazetteer finishing its first real load
+    const b = await c.compile(q);
+    assert.ok(b.ok && !b.cached, 'a gazetteer state change must bust the cache, never silently reuse the differently-grounded compile');
+    assert.equal(llm.count(), 2, 'both compiles must hit the LLM — they must not share a cache key');
+  });
+
+  it('a PLACE-FREE question stays cached across a gazetteer version change (the common case keeps full cache efficiency)', async () => {
+    const llm = fakeLlm([toolCall({ program: VALID_PROGRAM })]);
+    let version = 'v-a';
+    const gaz: Gazetteer = { async ensureReady() {}, resolvePlace: () => null, getVersion: () => version };
+    const c = createAnalyticCompiler({ llmCall: llm.fn, persist: false, gazetteer: gaz });
+
+    const q = 'Which satellites are slowing down?';
+    await c.compile(q);
+    version = 'v-b'; // this question never looks at the gazetteer at all
+    const second = await c.compile(q);
+    assert.ok(second.ok && second.cached);
+    assert.equal(llm.count(), 1, 'a place-free question must not be invalidated by gazetteer version churn');
+  });
+
+  it('logs an unresolved place candidate to gap-log.jsonl with kind "unresolved-place" (measures the real miss rate)', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-gaplog-place-'));
+    try {
+      const llm = fakeLlm([toolCall({ program: VALID_PROGRAM })]);
+      const gaz = fakeGazetteer({}); // resolves nothing
+      const c = createAnalyticCompiler({ llmCall: llm.fn, persist: true, dataDir, gazetteer: gaz });
+
+      await c.compile('Which satellites are visible from Nowhereville right now?');
+
+      const gapLogPath = path.join(dataDir, 'gap-log.jsonl');
+      const entries = fs
+        .readFileSync(gapLogPath, 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l) as { kind: string; code: string; reason?: string; question: string });
+      const placeEntry = entries.find((e) => e.kind === 'unresolved-place');
+      assert.ok(placeEntry, 'expected an unresolved-place gap entry');
+      assert.equal(placeEntry!.code, 'GAZETTEER_MISS');
+      assert.equal(placeEntry!.reason, 'Nowhereville');
+      assert.equal(placeEntry!.question, 'Which satellites are visible from Nowhereville right now?');
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('a cache HIT does not re-resolve places or re-log gaps (mirrors the refused/invalid gap-log discipline)', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-gaplog-place-hit-'));
+    try {
+      let resolveCalls = 0;
+      const llm = fakeLlm([toolCall({ program: VALID_PROGRAM })]);
+      const gaz: Gazetteer = {
+        async ensureReady() {},
+        resolvePlace: () => {
+          resolveCalls += 1;
+          return null;
+        },
+        getVersion: () => 'v1',
+      };
+      const c = createAnalyticCompiler({ llmCall: llm.fn, persist: true, dataDir, gazetteer: gaz });
+
+      const q = 'Which satellites are visible from Nowhereville right now?';
+      await c.compile(q);
+      const afterFirst = resolveCalls;
+      assert.ok(afterFirst > 0);
+
+      await c.compile(q); // cache hit
+      assert.equal(resolveCalls, afterFirst, 'resolvePlace must not be called again on a cache hit');
+      assert.equal(llm.count(), 1);
+
+      const gapLogPath = path.join(dataDir, 'gap-log.jsonl');
+      const placeEntries = fs
+        .readFileSync(gapLogPath, 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l) as { kind: string })
+        .filter((e) => e.kind === 'unresolved-place');
+      assert.equal(placeEntries.length, 1, 'the gap must be logged exactly once, not once per repeat ask');
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does NOT gap-log n-gram fragments that overlap a candidate which DID resolve', async () => {
+    // extractPlaceCandidates grows every 1–3 word n-gram from one anchor, so
+    // "anything over New York City" yields ["New", "New York", "New York City"]
+    // and only the middle one is in Natural Earth (verified against the real
+    // 7,342-feature file). Filing GAZETTEER_MISS for the other two would make
+    // the log measure the tokenizer rather than the gazetteer — and this log's
+    // whole purpose is to supply the real miss rate that decides whether rule
+    // 17 later becomes a refusal. A fabricated number there is worse than none.
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-gaplog-ngram-'));
+    try {
+      const llm = fakeLlm([toolCall({ program: VALID_PROGRAM })]);
+      const gaz = fakeGazetteer({ 'New York': SYDNEY_HIT }); // only the middle n-gram resolves
+      const c = createAnalyticCompiler({ llmCall: llm.fn, persist: true, dataDir, gazetteer: gaz });
+
+      await c.compile('Which satellites are over New York City right now?');
+
+      const gapLogPath = path.join(dataDir, 'gap-log.jsonl');
+      const placeEntries = fs.existsSync(gapLogPath)
+        ? fs
+            .readFileSync(gapLogPath, 'utf8')
+            .trim()
+            .split('\n')
+            .filter((l) => l.length > 0)
+            .map((l) => JSON.parse(l) as { kind: string; reason?: string })
+            .filter((e) => e.kind === 'unresolved-place')
+        : [];
+
+      assert.deepEqual(
+        placeEntries.map((e) => e.reason),
+        [],
+        'neither "New" nor "New York City" is a real miss — "New York" resolved',
+      );
+    } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('still gap-logs every candidate when NOTHING resolves (the suppression is overlap-scoped, not blanket)', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-gaplog-allmiss-'));
+    try {
+      const llm = fakeLlm([toolCall({ program: VALID_PROGRAM })]);
+      const c = createAnalyticCompiler({
+        llmCall: llm.fn,
+        persist: true,
+        dataDir,
+        gazetteer: fakeGazetteer({}), // resolves nothing
+      });
+
+      await c.compile('Which satellites are over New York City right now?');
+
+      const reasons = fs
+        .readFileSync(path.join(dataDir, 'gap-log.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l) as { kind: string; reason?: string })
+        .filter((e) => e.kind === 'unresolved-place')
+        .map((e) => e.reason);
+
+      assert.ok(reasons.includes('New York City'), 'a genuine total miss must still be recorded');
+      assert.ok(reasons.length > 1, 'with no hit to overlap, every candidate is a real miss');
     } finally {
       fs.rmSync(dataDir, { recursive: true, force: true });
     }

@@ -255,6 +255,37 @@ describe('buildCompilerSystemPrompt — D-1: measured string vocabulary renderin
   });
 });
 
+describe('buildCompilerSystemPrompt — gazetteer place-name grounding rule (rule 17)', () => {
+  const prompt = buildCompilerSystemPrompt(FIXTURE);
+
+  it('teaches the model to use a "(resolved places: ...)" line verbatim rather than recalled coordinates', () => {
+    assert.ok(prompt.includes('resolved places'));
+    assert.ok(prompt.includes('MEASURED'));
+    assert.ok(prompt.includes('VERBATIM'));
+    assert.ok(prompt.includes('never substitute coordinates you recall yourself'));
+  });
+
+  it('tells the model to name the disambiguation in "interpretation" when a line notes "also matches"', () => {
+    assert.ok(prompt.includes('also matches'));
+    assert.ok(prompt.includes('"interpretation"'));
+  });
+
+  it('is grounding-only: does not introduce a new refusal code or steer toward refusing unresolved places', () => {
+    const rule17Start = prompt.indexOf('17. If the user turn includes a line starting');
+    assert.ok(rule17Start >= 0, 'expected to find rule 17');
+    const rule17End = prompt.indexOf('\n\n', rule17Start);
+    const rule17Text = prompt.slice(rule17Start, rule17End === -1 ? undefined : rule17End);
+    assert.ok(!rule17Text.includes('refuse'), 'rule 17 must not add refusal pressure — grounding only, per the over-refusal regression lesson');
+  });
+
+  it('REGRESSION GUARD: rule 12 (named regions refuse; explicit numeric coordinates are filterable) is untouched', () => {
+    assert.ok(prompt.includes('Named geographic regions ("over the Pacific/Europe/Asia/America") → refuse NOT_DERIVABLE'));
+    // Source wraps mid-sentence across lines — match tolerant of the line break.
+    assert.match(prompt, /BUT explicit numeric coordinates ARE directly\s+filterable/);
+    assert.ok(prompt.includes('Only NAMED places refuse.'));
+  });
+});
+
 describe('getPromptVersion', () => {
   it('is 12 hex chars derived from the prompt content', () => {
     const v = getPromptVersion(FIXTURE);

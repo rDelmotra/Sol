@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { validateProgram, type AnalyticProgram, type ValidationIssue } from '@orbitwatch/analytic';
 import { buildCompilerSystemPrompt, getPromptVersion } from './analytic-prompt.js';
+import { getDefaultGazetteer, extractPlaceCandidates, type Gazetteer, type GazetteerHit } from './gazetteer.js';
 import { logger } from '../utils/logger.js';
 
 // ── Public outcome type ───────────────────────────────────────────────────────
@@ -30,8 +31,10 @@ export type CompileOutcome =
 
 export interface GapLogEntry {
   question: string;
-  kind: 'refused' | 'invalid' | 'hollow';
+  kind: 'refused' | 'invalid' | 'hollow' | 'unresolved-place';
   code: string;
+  /** Refusal reason text, OR — for 'unresolved-place' — the candidate place
+   *  text the gazetteer could not resolve (the real-miss-rate signal). */
   reason?: string;
   /** Offending field(s) — e.g. low-basis coverage fields behind a 'hollow' entry. */
   fields?: string[];
@@ -76,6 +79,10 @@ interface CompilerDeps {
   persist?: boolean;
   /** Override the data directory (tests). */
   dataDir?: string;
+  /** Injected gazetteer (place-name grounding). Defaults to the real
+   *  network/cache-backed singleton; tests inject a fixture-backed one so
+   *  nothing touches the network. */
+  gazetteer?: Gazetteer;
 }
 
 const LRU_CAP = 500;
@@ -89,8 +96,44 @@ function normalize(question: string): string {
   return question.trim().replace(/\s+/g, ' ').toLowerCase().replace(/[?.!]+$/, '').trim();
 }
 
-function cacheKey(normalized: string): string {
-  return createHash('sha256').update(`${getPromptVersion()}\n${normalized}`).digest('hex');
+// groundingMarker folds the gazetteer's readiness/version state into the key
+// so a question compiled BEFORE the gazetteer had loaded (ungrounded user
+// turn) and the same question compiled AFTER it loaded (grounded user turn,
+// different content) can never collide on one cache entry — see compile()
+// below for why this only applies to questions that actually contain a place
+// candidate (the common, place-free case is unaffected).
+function cacheKey(normalized: string, groundingMarker: string): string {
+  return createHash('sha256').update(`${getPromptVersion()}\n${groundingMarker}\n${normalized}`).digest('hex');
+}
+
+// ── Resolved-places line (user-turn grounding) ────────────────────────────────
+
+function formatLatLon(latDeg: number, lonDeg: number): string {
+  const lat = `${Math.abs(latDeg).toFixed(4)}°${latDeg >= 0 ? 'N' : 'S'}`;
+  const lon = `${Math.abs(lonDeg).toFixed(4)}°${lonDeg >= 0 ? 'E' : 'W'}`;
+  return `${lat}, ${lon}`;
+}
+
+function formatPlaceDescriptor(parts: { name: string; admin1: string | null; countryName: string | null; population: number | null }): string {
+  const place = [parts.name, parts.admin1, parts.countryName].filter((x): x is string => !!x).join(', ');
+  const pop = parts.population != null ? `, pop ${parts.population}` : '';
+  return `${place}${pop}`;
+}
+
+function formatOneHit(hit: GazetteerHit): string {
+  let s = `${hit.name} = ${formatLatLon(hit.latDeg, hit.lonDeg)} — ${formatPlaceDescriptor(hit)} [Natural Earth].`;
+  if (hit.ambiguousWith) {
+    s += ` Note: also matches ${formatPlaceDescriptor(hit.ambiguousWith)}.`;
+  }
+  return s;
+}
+
+/** Renders the resolved-places line appended to the user turn. Null when
+ *  there are no hits at all (so a question with a candidate that turned out
+ *  unresolvable produces no line, not an empty one). */
+function formatResolvedPlacesLine(hits: GazetteerHit[]): string | null {
+  if (hits.length === 0) return null;
+  return `(resolved places: ${hits.map(formatOneHit).join(' ')})`;
 }
 
 // ── Tool schema (forced) ──────────────────────────────────────────────────────
@@ -170,6 +213,10 @@ export function createAnalyticCompiler(deps: CompilerDeps = {}): AnalyticCompile
         ? createAnthropicLlmCall()
         : undefined);
 
+  // Place-name grounding (fail-soft: see gazetteer.ts's contract). Real
+  // network/cache-backed singleton by default; tests inject a fixture.
+  const gazetteer = deps.gazetteer ?? getDefaultGazetteer();
+
   // LRU: Map preserves insertion order; touch = delete+set to move to newest.
   const cache = new Map<string, CachedEntry>();
   if (persist) loadCache(cachePath, cache);
@@ -208,7 +255,24 @@ export function createAnalyticCompiler(deps: CompilerDeps = {}): AnalyticCompile
 
   async function compile(question: string): Promise<CompileOutcome> {
     const normalized = normalize(question);
-    const key = cacheKey(normalized);
+
+    // Candidate extraction is pure text work — cheap for every question, even
+    // ones with no place mention (the overwhelming majority), so it's safe to
+    // run before the cache lookup. Only when there IS a candidate do we await
+    // gazetteer readiness and fold its version into the cache key: this keeps
+    // the cache fully effective for place-free questions (unaffected by the
+    // gazetteer's load state) while still guaranteeing a grounded and an
+    // ungrounded compile of the same place-mentioning question can never
+    // share a cache entry (the CRITICAL requirement this feature exists to
+    // satisfy — see gazetteer.ts's Gazetteer.getVersion doc).
+    const candidates = extractPlaceCandidates(question);
+    let groundingMarker = 'no-places';
+    if (candidates.length > 0) {
+      await gazetteer.ensureReady();
+      groundingMarker = gazetteer.getVersion();
+    }
+
+    const key = cacheKey(normalized, groundingMarker);
 
     const hit = fromCache(key);
     if (hit) {
@@ -221,13 +285,63 @@ export function createAnalyticCompiler(deps: CompilerDeps = {}): AnalyticCompile
       return { ok: false, kind: 'unavailable' };
     }
 
+    // Resolve place candidates against the gazetteer (only on a genuine cache
+    // miss — a cache hit above already returns the outcome compiled the first
+    // time, so there's no need to re-resolve or re-log gaps on every repeat
+    // of a popular question, mirroring how 'refused'/'invalid' gap entries
+    // are only ever logged on the LLM-invoking path, never on a cache hit).
+    // Fail-soft: gazetteer.resolvePlace never throws (see gazetteer.ts).
+    let resolvedLine: string | null = null;
+    if (candidates.length > 0) {
+      const seenSourceIds = new Set<string>();
+      const hits: GazetteerHit[] = [];
+      const resolvedTexts: string[] = [];
+      const missedTexts: string[] = [];
+      for (const candidate of candidates) {
+        const placeHit = gazetteer.resolvePlace(candidate);
+        if (placeHit) {
+          resolvedTexts.push(candidate);
+          if (!seenSourceIds.has(placeHit.sourceId)) {
+            seenSourceIds.add(placeHit.sourceId);
+            hits.push(placeHit);
+          }
+        } else {
+          missedTexts.push(candidate);
+        }
+      }
+      // Gap-log the misses that are REAL misses. extractPlaceCandidates emits
+      // every 1–3 word n-gram grown from one anchor, so a single successful
+      // resolution normally arrives alongside overlapping fragments that miss:
+      // "anything over New York City" yields ["New", "New York", "New York
+      // City"], of which only "New York" is in Natural Earth. Logging the other
+      // two would file two GAZETTEER_MISSes for a place that resolved perfectly.
+      //
+      // That matters more than tidiness. This log exists to measure the real
+      // miss rate so we can later decide whether to tighten rule 17 into a
+      // refusal; a log dominated by n-gram debris measures the tokenizer, not
+      // the gazetteer, and would make that decision on a fabricated number.
+      // So: suppress a miss that overlaps any candidate that DID resolve
+      // (substring either way — fragments and over-extensions of the same
+      // anchor). A question where nothing resolves still logs every candidate.
+      for (const missed of missedTexts) {
+        const overlapsAHit = resolvedTexts.some(
+          (r) => r.includes(missed) || missed.includes(r),
+        );
+        if (overlapsAHit) continue;
+        // Deliberate: measures the real gazetteer miss rate (my_plans/marvin
+        // awareness-model growth loop) rather than silently dropping it.
+        appendGap({ question, kind: 'unresolved-place', code: 'GAZETTEER_MISS', reason: missed });
+      }
+      resolvedLine = formatResolvedPlacesLine(hits);
+    }
+
     const started = nowMs();
     const system = buildCompilerSystemPrompt();
     // Time context rides in the USER turn (after cache-key computation) so
     // "tonight"/"yesterday" resolve to real dates without touching promptVersion.
-    const messages: LlmMessage[] = [
-      { role: 'user', content: `${question}\n(current UTC time: ${new Date(nowMs()).toISOString()})` },
-    ];
+    const timeLine = `(current UTC time: ${new Date(nowMs()).toISOString()})`;
+    const userContent = resolvedLine ? `${question}\n${timeLine}\n${resolvedLine}` : `${question}\n${timeLine}`;
+    const messages: LlmMessage[] = [{ role: 'user', content: userContent }];
 
     // ── LLM call #1 ──
     const call1 = await llmCall({ system, messages });

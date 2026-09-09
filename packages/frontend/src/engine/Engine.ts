@@ -27,6 +27,8 @@ import { HorizonLayer } from './world/layers/HorizonLayer';
 import { DomeSkyLayer } from './world/layers/DomeSkyLayer';
 import { registerEngineCommands, type EngineCommands } from './command/EngineCommands';
 import type { FrameContext } from './render/Layer';
+import { ResidentSet } from './resident/ResidentSet';
+import { validateProgram } from '@orbitwatch/analytic';
 
 /** What the satellite render plane currently shows for the view-time. */
 type CatalogTarget =
@@ -66,6 +68,10 @@ export class Engine {
   private inputManager: InputManager | null = null;
   private trailsLayer: TrailsLayer;
   private nav: NavigationController;
+  /** P2: standing analytic programs re-evaluated every SGP4 worker tick (~1 Hz)
+   *  via SatellitesLayer's onTick callback. Cross-cutting orchestration (not a
+   *  layer concern) — owned here, driven by `satellitesLayer.runAnalyticProgram`. */
+  private residentSet: ResidentSet = new ResidentSet();
   private trailUnsub: (() => void) | null = null;
   private visualListPoller: VisualListPoller | null = null;
   private lastSimTimeUpdateAt = 0;
@@ -234,6 +240,30 @@ export class Engine {
 
       registerEngineCommands(this.buildEngineCommands());
 
+      // ── Dev-only resident-set console (P2) ────────────────────────────────────
+      // window.__resident.add(program) — validate → ResidentSet.add() → typed
+      // {ok:true,hash} or a typed rejection (universe:'all' / timeScan cap /
+      // total cap). Mirrors SatellitesLayer's window.__analytic hook, but lives
+      // here because the Engine (not the layer) owns the ResidentSet. Doesn't
+      // need the satellites layer to be activated yet — add()/remove()/list()/
+      // getRecentDeltas() are pure bookkeeping; only tick() (driven by the
+      // worker) actually executes anything. Removed in dispose().
+      if (import.meta.env.DEV) {
+        (window as unknown as Record<string, unknown>).__resident = {
+          add: (program: unknown) => {
+            const v = validateProgram(program, { nowMs: simClock.now() });
+            if (!v.ok) return { issues: v.issues };
+            return this.residentSet.add(v.program);
+          },
+          remove: (hash: string) => this.residentSet.remove(hash),
+          list: () => this.residentSet.list(),
+          deltas: (n?: number) => this.residentSet.getRecentDeltas(n),
+        };
+        console.info(
+          '[resident] window.__resident.{add,remove,list,deltas} ready — add(program) validates first',
+        );
+      }
+
       // ── Satellites layer activation (renderer prime + SGP4 worker) ───────────
       // Critical layer: if activate throws, World escalates it (onCriticalError →
       // setLoadingError) — same user-visible outcome as the old try/catch around
@@ -277,6 +307,7 @@ export class Engine {
             },
             onEnterObserverSky: (loc, mode) => this.nav.enterObserverSky(loc, mode),
             onExitObserverSky: () => this.nav.exitObserverSky(),
+            onTick: () => this.tickResidentSet(),
           }),
       );
 
@@ -398,6 +429,31 @@ export class Engine {
         return 'notReady' in out ? null : out;
       },
     };
+  }
+
+  /**
+   * P2 resident-set clock: called from SatellitesLayer's onTick, itself fired
+   * once per SGP4 worker tick (~1 Hz) right after fresh buffers land. Re-runs
+   * every standing program via `runAnalyticProgram` (side-effect-free — reads
+   * the same buffers the renderer just consumed) and reports the entered/
+   * exited deltas. `ResidentSet.tick()` contractually never throws — a bad
+   * resident is contained inside it — but this call still runs inside
+   * SatellitesLayer's `guard('onPositions', …)`, the same critical-escalation
+   * path everything else in that callback uses, so nothing here can bypass it.
+   */
+  private tickResidentSet(): void {
+    const deltas = this.residentSet.tick(
+      (program) => this.satellitesLayer.runAnalyticProgram(program),
+      simClock.now(),
+    );
+    if (import.meta.env.DEV) {
+      for (const d of deltas) {
+        console.info(
+          `[resident ${d.programHash}] +${d.entered.length} entered, -${d.exited.length} exited`,
+          d,
+        );
+      }
+    }
   }
 
   private getVisualNoradIds(): Set<number> {
@@ -840,6 +896,10 @@ export class Engine {
 
   dispose(): void {
     this.isDisposed = true;
+    if (import.meta.env.DEV) {
+      delete (window as unknown as Record<string, unknown>).__resident;
+    }
+    this.residentSet.clear();
     if (this.reconcileTimer) {
       clearTimeout(this.reconcileTimer);
       this.reconcileTimer = null;

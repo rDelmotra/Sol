@@ -121,6 +121,28 @@ describe('capability — collectProgramRefs', () => {
     });
     assert.ok(collectProgramRefs(program).fields.has('eclipsed'));
   });
+
+  it('a sweep predicate AND peakOf both contribute field/fn refs', () => {
+    const program = baseProgram({
+      pipeline: [
+        { op: 'filter', where: { op: 'in', field: 'regime', values: ['LEO'] } },
+        {
+          op: 'sweep',
+          predicate: { op: '>', args: [{ fn: 'elevationDeg', observer: 'user' }, { lit: 10 }] },
+          horizonMinutes: 60,
+          stepSeconds: 30,
+          peakOf: { field: 'launchMassKg' },
+        },
+      ],
+      output: { shape: 'grouped' },
+    });
+    const refs = collectProgramRefs(program);
+    assert.ok(refs.fields.has('regime'));
+    assert.ok(refs.fns.has('elevationDeg'));
+    // peakOf is a SEPARATE expression from predicate — must be walked too, or a
+    // server-only peakOf field would silently route client-side and read null.
+    assert.ok(refs.fields.has('launchMassKg'));
+  });
 });
 
 describe('capability — programNeedsServer', () => {
@@ -150,6 +172,39 @@ describe('capability — programNeedsServer', () => {
     assert.equal(programNeedsServer(program), true);
   });
 
+  it('false for a plain client-servable sweep (elevationDeg pass over an observer)', () => {
+    const program = baseProgram({
+      pipeline: [
+        { op: 'filter', where: { op: 'in', field: 'regime', values: ['LEO'] } },
+        {
+          op: 'sweep',
+          predicate: { op: '>', args: [{ fn: 'elevationDeg', observer: 'user' }, { lit: 10 }] },
+          horizonMinutes: 60,
+          stepSeconds: 30,
+        },
+      ],
+      output: { shape: 'grouped' },
+    });
+    assert.equal(programNeedsServer(program), false);
+  });
+
+  it('true for a sweep whose peakOf reads a server-only field — the field must not be missed just because it is in peakOf, not predicate', () => {
+    const program = baseProgram({
+      pipeline: [
+        { op: 'filter', where: { op: 'in', field: 'regime', values: ['LEO'] } },
+        {
+          op: 'sweep',
+          predicate: { op: '>', args: [{ fn: 'elevationDeg', observer: 'user' }, { lit: 10 }] },
+          horizonMinutes: 60,
+          stepSeconds: 30,
+          peakOf: { field: 'launchMassKg' },
+        },
+      ],
+      output: { shape: 'grouped' },
+    });
+    assert.equal(programNeedsServer(program), true);
+  });
+
   it('golden-corpus sweep: locks the client/server routing split', () => {
     assert.ok(GOLDEN_VALID.length > 0, 'golden.test.ts did not populate GOLDEN_VALID');
     const split = GOLDEN_VALID
@@ -158,7 +213,7 @@ describe('capability — programNeedsServer', () => {
     assert.deepEqual(split, [
       'A1:client', 'A2:client', 'A3:client', 'A5:client', 'A6:client', 'A7:client', 'A8:client',
       'B1:client',
-      'C1:client', 'C2:client', 'C3:client', 'C4:client', 'C6:client',
+      'C1:client', 'C2:client', 'C3:client', 'C4:client', 'C5:client', 'C6:client',
       'D2:client', 'D4:client', 'D5:client', 'D7:client', 'D8:server',
       'E1:server', 'E4:client', 'E5:client', 'E6:client',
       'F1:client', 'F3:client', 'F4:client', 'F6:server',

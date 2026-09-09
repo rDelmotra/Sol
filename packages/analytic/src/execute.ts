@@ -24,10 +24,17 @@ import type {
   Expr,
   Agg,
   Stage,
+  SweepStage,
   ObserverRef,
   Universe,
 } from './types.js';
-import { MAX_GROUPS } from './validate.js';
+import {
+  MAX_GROUPS,
+  SWEEP_MAX_OBJECTS,
+  SWEEP_MAX_OBJECT_STEPS,
+  SWEEP_MAX_INTERVALS_PER_OBJECT,
+  SWEEP_BISECT_ITERATIONS,
+} from './validate.js';
 
 // ── Data-source port ──────────────────────────────────────────────────────────
 
@@ -59,6 +66,13 @@ export interface ExecuteOptions {
   nowMs?: number;
   /** Resolution of ObserverRef 'user'. Absent + 'user' referenced → E-OBSERVER. */
   observer?: ResolvedObserver | null;
+  /**
+   * Test-only escape hatch: disables sweep's geometric pre-filter (§6 of the P3
+   * sweep brief) so a test can assert the optimization changes nothing about the
+   * result — the whole safety argument for shipping it. NOT part of the IR; no
+   * real caller ever sets this.
+   */
+  __testDisableSweepPrefilter?: boolean;
 }
 
 export type RuntimeErrorCode = 'E-OBSERVER' | 'E-UNIVERSE' | 'E-GROUP' | 'E-INTERNAL';
@@ -95,6 +109,62 @@ interface GrpRel {
 
 type Relation = ObjRel | GrpRel;
 
+// ── Sweep helpers (P3 `sweep` brief §6) ─────────────────────────────────────────
+//
+// The geometric pre-filter: excludes an object from a sweep scan BEFORE any
+// propagation when its ground track can never bring it within the visibility
+// footprint of a fixed observer. Pure math, no I/O — lives here (not a provider)
+// because it optimizes the interpreter's own scan loop for ANY predicate shape it
+// can recognize, regardless of which AnalyticDataSource is behind it.
+
+const SWEEP_EARTH_RADIUS_KM = 6371;
+const SWEEP_RAD_PER_DEG = Math.PI / 180;
+const SWEEP_DEG_PER_RAD = 180 / Math.PI;
+const GOLDEN_SECTION_ITERATIONS = 20;
+
+/**
+ * Earth-central half-angle (deg) of the visibility footprint at elevation
+ * threshold `elevationThresholdDeg` for an object at apogee altitude `apogeeKm`.
+ * Re = 6371 km. Sanity-pinned in sweep.test.ts: ε=0°,h=400 → 19.8°; ε=90° → 0°;
+ * ε=10°,h=400 → ≈12.1°.
+ */
+export function footprintHalfAngleDeg(apogeeKm: number, elevationThresholdDeg: number): number {
+  const ratio = SWEEP_EARTH_RADIUS_KM / (SWEEP_EARTH_RADIUS_KM + apogeeKm);
+  const cosEps = Math.cos(elevationThresholdDeg * SWEEP_RAD_PER_DEG);
+  const clamped = Math.max(-1, Math.min(1, ratio * cosEps));
+  return Math.acos(clamped) * SWEEP_DEG_PER_RAD - elevationThresholdDeg;
+}
+
+interface ElevationGate {
+  thresholdDeg: number;
+  observerRef: ObserverRef;
+}
+
+/**
+ * Detect predicate shape `elevationDeg(observer) > lit` / `>= lit`, either
+ * directly or as one top-level conjunct of an `and`. Only this exact
+ * orientation (the fn on the left, a numeric literal on the right) is
+ * recognized — any other logically-equivalent phrasing just fails open (no
+ * speed-up; never a correctness risk, since the pre-filter only EXCLUDES
+ * objects it can prove can never satisfy the predicate).
+ */
+function detectElevationGate(e: Expr): ElevationGate | null {
+  if ('op' in e && (e.op === '>' || e.op === '>=')) {
+    const [a, b] = e.args;
+    if ('fn' in a && a.fn === 'elevationDeg' && 'lit' in b && typeof b.lit === 'number') {
+      return { thresholdDeg: b.lit, observerRef: a.observer };
+    }
+    return null;
+  }
+  if ('op' in e && e.op === 'and') {
+    for (const arg of e.args) {
+      const hit = detectElevationGate(arg);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
 // ── Executor ──────────────────────────────────────────────────────────────────
 
 export function execute(
@@ -121,6 +191,7 @@ class Runner {
   private rowReads: Map<string, boolean> | null = null;
   private readonly clipped: string[] = [];
   private missingIds: number[] | undefined;
+  private readonly sweepPrefilterDisabled: boolean;
 
   constructor(
     private readonly program: AnalyticProgram,
@@ -134,6 +205,7 @@ class Runner {
     const nowMs = opts?.nowMs ?? Date.now();
     this.tMs = program.timeBinding.mode === 'at' ? Date.parse(program.timeBinding.t) : nowMs;
     this.observer = opts?.observer ?? null;
+    this.sweepPrefilterDisabled = opts?.__testDisableSweepPrefilter === true;
   }
 
   run(): AnalyticResult {
@@ -150,7 +222,7 @@ class Runner {
       const sub = new Runner(
         { ...this.program, pipeline: this.program.compare.pipeline, compare: undefined },
         { live: this.source, all: this.source },
-        { nowMs: this.tMs, observer: this.observer },
+        { nowMs: this.tMs, observer: this.observer, __testDisableSweepPrefilter: this.sweepPrefilterDisabled },
       );
       compare = sub.runAsCompare();
     }
@@ -297,7 +369,225 @@ class Runner {
         }
         return { kind: 'groups', rows, aggregated: false, timeScanned: true };
       }
+      case 'sweep': {
+        if (rel.kind === 'groups') throw new ExecError('E-INTERNAL', 'sweep on a grouped relation');
+        return this.runSweep(rel, stage);
+      }
     }
+  }
+
+  // ── Sweep (P3 `sweep` brief §4) ─────────────────────────────────────────────
+
+  private runSweep(rel: ObjRel, stage: SweepStage): GrpRel {
+    const stepMs = stage.stepSeconds * 1000;
+    const tEnd = this.tMs + stage.horizonMinutes * 60_000;
+    const stepsPerObject = Math.ceil((tEnd - this.tMs) / stepMs);
+
+    // §5 runtime bounds. Both reduce the OBJECT COUNT, never the horizon or step
+    // size — the user asked for that time window at that resolution; silently
+    // shortening either would answer a different question than was asked.
+    let objectCap = rel.idx.length;
+    if (objectCap > SWEEP_MAX_OBJECTS) {
+      this.clipped.push(`sweep truncated to the first ${SWEEP_MAX_OBJECTS} of ${objectCap} objects`);
+      objectCap = SWEEP_MAX_OBJECTS;
+    }
+    const stepBudgetCap = Math.max(1, Math.floor(SWEEP_MAX_OBJECT_STEPS / Math.max(1, stepsPerObject)));
+    if (objectCap > stepBudgetCap) {
+      this.clipped.push(
+        `sweep truncated to ${stepBudgetCap} objects to stay within the ${SWEEP_MAX_OBJECT_STEPS}-object-step budget (horizon kept at ${stage.horizonMinutes} min, step at ${stage.stepSeconds} s)`,
+      );
+      objectCap = stepBudgetCap;
+    }
+
+    // §6 geometric pre-filter: only engages when the predicate has the exact
+    // recognized shape AND the observer it names resolves. A resolution failure
+    // (e.g. observer:'user' with none configured) fails OPEN here — the normal
+    // per-object evalObj() call below throws E-OBSERVER exactly as it does for
+    // every other stage, rather than surfacing the error from a new code path.
+    const gate = detectElevationGate(stage.predicate);
+    const gateObserver = gate && !this.sweepPrefilterDisabled ? this.tryResolveObserver(gate.observerRef) : null;
+
+    const rows: Record<string, FieldValue>[] = [];
+    for (let pos = 0; pos < objectCap; pos++) {
+      if (gateObserver && gate && this.isGeometricallyExcluded(rel, pos, gate.thresholdDeg, gateObserver)) {
+        continue; // provably zero intervals for this object — see footprintHalfAngleDeg
+      }
+      this.sweepObject(rel, pos, stage, tEnd, stepMs, rows);
+    }
+    return { kind: 'groups', rows, aggregated: false, timeScanned: false };
+  }
+
+  private isGeometricallyExcluded(rel: ObjRel, pos: number, thresholdDeg: number, obs: ResolvedObserver): boolean {
+    const i = rel.idx[pos];
+    const inclination = this.source.getField(i, 'inclination', this.tMs);
+    const apogeeKm = this.source.getField(i, 'apogeeKm', this.tMs);
+    // Any null input -> fail-safe, do NOT skip (run the full scan for this object).
+    if (typeof inclination !== 'number' || typeof apogeeKm !== 'number') return false;
+    const latMax = inclination <= 90 ? inclination : 180 - inclination;
+    const lambda = footprintHalfAngleDeg(apogeeKm, thresholdDeg);
+    return Math.abs(obs.latDeg) > latMax + lambda;
+  }
+
+  private tryResolveObserver(ref: ObserverRef): ResolvedObserver | null {
+    try {
+      return this.resolveObserver(ref);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Next lever if the scan ever gets hot: a provably-safe adaptive skip.
+   * Topocentric angular rate is bounded by ω_max = v/h (max at zenith, where
+   * slant range equals altitude), so with v = n·r a satellite at elevation E
+   * below threshold ε cannot rise for at least (ε − E)/ω_max. Worth ~2–3× on
+   * LEO and orders of magnitude on MEO/GEO (ISS ≈ 1.1 °/s vs GEO ≈ 0.005 °/s).
+   * Deliberately NOT built: unnecessary at the measured 0.4 µs/propagation, and
+   * an over-optimistic bound silently skips passes. Needs v from vis-viva at
+   * perigee plus an observer-motion margin before it is trustworthy.
+   */
+  private sweepObject(
+    rel: ObjRel,
+    pos: number,
+    stage: SweepStage,
+    tEnd: number,
+    stepMs: number,
+    rows: Record<string, FieldValue>[],
+  ): void {
+    const srcIdx = rel.idx[pos];
+    const norad = this.source.noradId(srcIdx);
+    const name = this.source.getField(srcIdx, 'name', this.tMs);
+
+    // A null predicate result is NOT true (spec: evalObj returns boolean|null) —
+    // coercing via `=== true` treats null exactly like false, so an object
+    // outside its propagation window never opens an interval.
+    const evalPred = (t: number): boolean => this.evalObj(stage.predicate, rel, pos, t) === true;
+
+    interface OpenInterval { startMs: number; clippedStart: boolean }
+    interface ClosedInterval { startMs: number; endMs: number; clippedStart: boolean; clippedEnd: boolean }
+
+    const intervals: ClosedInterval[] = [];
+    let prev = evalPred(this.tMs);
+    let open: OpenInterval | null = prev ? { startMs: this.tMs, clippedStart: true } : null;
+
+    for (let t = this.tMs + stepMs; t <= tEnd; t += stepMs) {
+      const cur = evalPred(t);
+      if (cur && !prev) {
+        const aos = this.refineEdge(rel, pos, stage.predicate, t - stepMs, t);
+        open = { startMs: aos, clippedStart: false };
+      } else if (!cur && prev && open) {
+        const los = this.refineEdge(rel, pos, stage.predicate, t - stepMs, t);
+        intervals.push({ startMs: open.startMs, endMs: los, clippedStart: open.clippedStart, clippedEnd: false });
+        open = null;
+      }
+      prev = cur;
+    }
+    if (open) {
+      intervals.push({ startMs: open.startMs, endMs: tEnd, clippedStart: open.clippedStart, clippedEnd: true });
+    }
+
+    let out = intervals;
+    if (out.length > SWEEP_MAX_INTERVALS_PER_OBJECT) {
+      this.clipped.push(`sweep exhausted ${SWEEP_MAX_INTERVALS_PER_OBJECT} intervals for ${norad}`);
+      out = out.slice(0, SWEEP_MAX_INTERVALS_PER_OBJECT);
+    }
+
+    for (const iv of out) {
+      let clippedEdge: 'start' | 'end' | 'both' | null = null;
+      if (iv.clippedStart && iv.clippedEnd) clippedEdge = 'both';
+      else if (iv.clippedStart) clippedEdge = 'start';
+      else if (iv.clippedEnd) clippedEdge = 'end';
+
+      const row: Record<string, FieldValue> = {
+        noradId: norad,
+        name,
+        startIso: new Date(iv.startMs).toISOString(),
+        endIso: new Date(iv.endMs).toISOString(),
+        durationMinutes: (iv.endMs - iv.startMs) / 60_000,
+        clippedEdge,
+      };
+      if (stage.peakOf) {
+        const peak = this.findPeak(rel, pos, stage.peakOf, iv.startMs, iv.endMs, stepMs);
+        row.peak = peak ? peak.value : null;
+        row.peakIso = peak ? new Date(peak.tMs).toISOString() : null;
+      }
+      rows.push(row);
+    }
+  }
+
+  /**
+   * Plain bisection, SWEEP_BISECT_ITERATIONS times. Invariant on entry:
+   * predicate(tLo) !== predicate(tHi) — bisection on a boolean is just
+   * root-finding on a step function; keep the half whose endpoints still
+   * disagree. Returns the midpoint of the final bracket.
+   */
+  private refineEdge(rel: ObjRel, pos: number, predicate: Expr, tLo: number, tHi: number): number {
+    let lo = tLo;
+    let hi = tHi;
+    const loVal = this.evalObj(predicate, rel, pos, lo) === true;
+    for (let i = 0; i < SWEEP_BISECT_ITERATIONS; i++) {
+      const mid = (lo + hi) / 2;
+      const midVal = this.evalObj(predicate, rel, pos, mid) === true;
+      if (midVal === loVal) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  }
+
+  /**
+   * Coarse-argmax-then-local-refine: evaluate `expr` at every coarse sample
+   * inside [startMs, endMs] (both edges included), take the argmax, then
+   * golden-section refine within [argmax − step, argmax + step]. Robust to a
+   * multimodal `peakOf` shape — a plain ternary search over the WHOLE interval
+   * is not, since it assumes unimodality across the entire pass. Returns null
+   * iff `expr` is null at every sampled instant.
+   */
+  private findPeak(
+    rel: ObjRel,
+    pos: number,
+    expr: Expr,
+    startMs: number,
+    endMs: number,
+    stepMs: number,
+  ): { value: number; tMs: number } | null {
+    let bestT = startMs;
+    let bestV = -Infinity;
+    let found = false;
+    for (let t = startMs; t < endMs; t += stepMs) {
+      const v = this.evalObj(expr, rel, pos, t);
+      if (typeof v === 'number' && v > bestV) { bestV = v; bestT = t; found = true; }
+    }
+    // Always sample the exact right edge too — the loop above steps from
+    // startMs and generally will not land on endMs exactly (interval edges are
+    // bisection-refined, not grid-aligned).
+    const vEnd = this.evalObj(expr, rel, pos, endMs);
+    if (typeof vEnd === 'number' && vEnd > bestV) { bestV = vEnd; bestT = endMs; found = true; }
+    if (!found) return null;
+
+    const evalOrNegInf = (t: number): number => {
+      const v = this.evalObj(expr, rel, pos, t);
+      return typeof v === 'number' ? v : -Infinity;
+    };
+    let lo = Math.max(startMs, bestT - stepMs);
+    let hi = Math.min(endMs, bestT + stepMs);
+    const invPhi = (Math.sqrt(5) - 1) / 2;
+    let c = hi - invPhi * (hi - lo);
+    let d = lo + invPhi * (hi - lo);
+    let fc = evalOrNegInf(c);
+    let fd = evalOrNegInf(d);
+    for (let i = 0; i < GOLDEN_SECTION_ITERATIONS; i++) {
+      if (fc >= fd) {
+        hi = d; d = c; fd = fc;
+        c = hi - invPhi * (hi - lo);
+        fc = evalOrNegInf(c);
+      } else {
+        lo = c; c = d; fc = fd;
+        d = lo + invPhi * (hi - lo);
+        fd = evalOrNegInf(d);
+      }
+    }
+    if (fc > bestV) { bestV = fc; bestT = c; }
+    if (fd > bestV) { bestV = fd; bestT = d; }
+    return { value: bestV, tMs: Math.round(bestT) };
   }
 
   // ── Aggregation ─────────────────────────────────────────────────────────────

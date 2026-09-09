@@ -20,6 +20,9 @@ import {
   MAX_PICK_IDS,
   MAX_TIMESCAN_STEPS,
   TIMESCAN_MAX_OBJECTS,
+  SWEEP_MAX_HORIZON_MINUTES,
+  SWEEP_MIN_STEP_SECONDS,
+  SWEEP_MAX_STEP_SECONDS,
   PAST_CAP_DAYS,
   FUTURE_CAP_DAYS,
   type Universe,
@@ -172,6 +175,13 @@ STAGES (pipeline max ${MAX_PIPELINE_STAGES}; each transforms the current relatio
 - {"op":"groupBy","key":"<field>"|["f1","f2"],"aggs":{"name":<Agg>,...}}
 - {"op":"timeScan","predicate":<Expr>,"direction":"forward"|"backward",
    "stepMinutes":<n>,"maxSteps":<n>}                   (final stage only; set ≤ ${TIMESCAN_MAX_OBJECTS} objects, steps ≤ ${MAX_TIMESCAN_STEPS})
+- {"op":"sweep","predicate":<Expr>,"horizonMinutes":<n>,"stepSeconds":<n>,
+   "peakOf":<Expr>?}                                   (final stage only; FORWARD only, from now; must be preceded
+                                                          by a filter/pick/limit — a bare whole-catalog sweep is
+                                                          rejected; horizonMinutes ≤ ${SWEEP_MAX_HORIZON_MINUTES}, stepSeconds
+                                                          ${SWEEP_MIN_STEP_SECONDS}..${SWEEP_MAX_STEP_SECONDS}; returns one row per rise/fall
+                                                          interval — {noradId,name,startIso,endIso,durationMinutes,
+                                                          peak?,peakIso?,clippedEdge}; output shape "grouped")
 
 AGGREGATES: {"fn":"count"} | {"fn":"sum"|"avg"|"median"|"min"|"max"|"stddev","of":"<numeric field>"}
 | {"fn":"share","where":<Expr>}   (fraction of the relation satisfying where)
@@ -188,7 +198,7 @@ EXPRESSIONS (max depth ${MAX_EXPR_DEPTH}):
 TIME: timeBinding 'at' must be within −${PAST_CAP_DAYS} d … +${FUTURE_CAP_DAYS} d of now (SGP4 propagation window).
 
 OUTPUT SHAPES: "ids" (lights up the 3D globe) | "scalar" | "object" (one row) |
-"table" (rows; requires sort+limit; give columns) | "grouped" (after groupBy).`;
+"table" (rows; requires sort+limit; give columns) | "grouped" (after groupBy OR sweep).`;
 }
 
 // ── §5 Hard rules (hand-written) ──────────────────────────────────────────────
@@ -267,14 +277,20 @@ const HARD_RULES = `HARD RULES:
    The interpretation MUST state the survivorship bias (only still-tracked objects).
    With universe "all" the survivorship caveat disappears — prefer "all" for
    since-<year> growth counts and say so.
-15. NOT expressible in v1 → refuse NOT_DERIVABLE: pass prediction over a place ("which
-   satellites pass over <city> in the next hour" — timeScan is a single-object countdown,
-   ≤5 objects, not a sweep) and all-pairs proximity ("which satellites are close to each
-   other" — distToKm needs ONE fixed target).
+15. NOT expressible in v1 → refuse NOT_DERIVABLE: all-pairs proximity ("which satellites
+   are close to each other" — distToKm needs ONE fixed target). Pass prediction over a
+   place ("which satellites pass over <city> in the next hour") IS expressible now — see
+   the "sweep" stage and its worked examples below; do NOT refuse it.
 16. "what else went up on the same launch as <object>" → filter launchTag equality with that
    launch's COSPAR-style tag (e.g. NOAA-18 → "2005-018"), output {"shape":"ids"} — never an
    unbounded table. Only use a tag you are confident of; otherwise refuse NOT_DERIVABLE and
-   say the launch tag lookup is the missing step.`;
+   say the launch tag lookup is the missing step.
+17. If the user turn includes a line starting "(resolved places: ...)", those coordinates are
+   MEASURED (a real gazetteer), not memory — use the given {latDeg, lonDeg} VERBATIM as the
+   observer argument for that place; never substitute coordinates you recall yourself for a
+   place named on that line. If the line notes a name "also matches" another place, briefly
+   name the alternative in "interpretation" (the coordinates given ARE the resolved pick —
+   already the higher-population match, nothing more to decide).`;
 
 // ── §6 Few-shot examples (hand-picked constants) ──────────────────────────────
 
@@ -512,6 +528,42 @@ const FEW_SHOTS: FewShot[] = [
         code: 'NEEDS_HISTORY',
         reason:
           "Detecting a maneuver needs comparing this week's orbital elements against last week's; only the CURRENT elset is queryable, so past states can't be reconstructed. I can report the current decay rate (meanMotionDot) or current altitude instead.",
+      },
+    },
+  },
+  {
+    question: 'Which satellites pass over Sydney in the next hour?',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          "'Pass over' = elevation above 10° from Sydney (-33.8714, 151.2125) at some point in the next hour. Narrowed to LEO first — GEO/MEO objects do not produce short rise/set passes from a fixed ground point. sweep returns one row per rise-to-set interval, with the peak elevation and its timestamp.",
+        pipeline: [
+          { op: 'filter', where: { op: 'in', field: 'regime', values: ['LEO'] } },
+          {
+            op: 'sweep',
+            predicate: { op: '>', args: [{ fn: 'elevationDeg', observer: { latDeg: -33.8714, lonDeg: 151.2125 } }, { lit: 10 }] },
+            horizonMinutes: 60,
+            stepSeconds: 30,
+            peakOf: { fn: 'elevationDeg', observer: { latDeg: -33.8714, lonDeg: 151.2125 } },
+          },
+        ],
+        output: { shape: 'grouped' },
+      },
+    },
+  },
+  {
+    question: 'Which Starlink satellites will be eclipsed at some point in the next 2 hours?',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          "Starlink = objects whose program is 'starlink'. sweep finds every window over the next 2 hours where the satellite is inside Earth's shadow — the same eclipsed field the single-object countdown example above uses, generalized to many objects with interval edges instead of one 'minutes until' scalar.",
+        pipeline: [
+          { op: 'filter', where: { op: 'in', field: 'program', values: ['starlink'] } },
+          { op: 'sweep', predicate: { field: 'eclipsed' }, horizonMinutes: 120, stepSeconds: 60 },
+        ],
+        output: { shape: 'grouped' },
       },
     },
   },

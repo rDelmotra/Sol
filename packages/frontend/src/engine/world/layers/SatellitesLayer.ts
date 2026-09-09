@@ -271,6 +271,16 @@ export class SatellitesLayer implements Layer {
         timestamp: result.timestamp,
       };
 
+      // P2 resident-set tick: fires AFTER latestBuffers is fresh so a resident
+      // program re-executed from this callback sees this tick's data. The
+      // Engine owns the ResidentSet (cross-cutting orchestration, not a layer
+      // concern) — this is just the callback firing, same pattern as every
+      // other cross-cutting effect below. Runs inside this fn's guard(), so a
+      // throw from the Engine's onTick still escalates through the normal
+      // critical-error route rather than propagating raw — though ResidentSet
+      // itself is contractually never allowed to throw out of tick().
+      callbacks.onTick?.();
+
       const state = useStore.getState();
       const propagationDate = new Date(result.timestamp);
       const observerPos = this.getObserverScenePositionForState(state, propagationDate);
@@ -526,4 +536,12 @@ export interface SatellitesLayerCallbacks {
   onEnterObserverSky: (loc: ObserverLoc, mode: VisibilityMode) => void;
   /** Left visual/dome for a non-observer mode → return the camera home. */
   onExitObserverSky: () => void;
+  /**
+   * Fires once per SGP4 worker tick (~1 Hz), right after `latestBuffers` is
+   * refreshed. (P2) The Engine's clock for the resident set — it owns a
+   * `ResidentSet` and drives its `tick()` from here, reusing
+   * `runAnalyticProgram` for execution. Optional so call sites that don't
+   * need residency (tests, a future non-Engine host) can omit it.
+   */
+  onTick?: () => void;
 }

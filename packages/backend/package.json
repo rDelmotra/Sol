@@ -11,7 +11,7 @@
     "dso-worker:start": "node dist/dso-worker.js",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --test 'tests/**/*.test.ts'",
     "test:golden": "tsx --test tests/dso/normalize/convert.test.ts",
     "history:migrate": "tsx src/history/db/migrate-cli.ts"
   },

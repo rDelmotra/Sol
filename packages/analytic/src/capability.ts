@@ -126,6 +126,10 @@ export function collectProgramRefs(program: AnalyticProgram): ProgramRefs {
       case 'timeScan':
         walkExpr(stage.predicate);
         return;
+      case 'sweep':
+        walkExpr(stage.predicate);
+        if (stage.peakOf) walkExpr(stage.peakOf);
+        return;
     }
   }
 
