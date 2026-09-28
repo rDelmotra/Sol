@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PACKAGES = ['orbital-core', 'analytic', 'backend', 'frontend'] as const;
+const PACKAGES = ['contracts', 'orbital-core', 'analytic', 'backend', 'frontend'] as const;
 type Pkg = (typeof PACKAGES)[number];
 
 // ── Zones ─────────────────────────────────────────────────────────────────────
@@ -116,10 +116,19 @@ const RULES: Rule[] = [
     forbidden: (e) => e.toZone.startsWith('pkg:'),
   },
   {
+    id: 'contracts-is-leaf',
+    why: 'packages/contracts is the one home for shared domain/wire types: no @orbitwatch package imports, and satellite.js only as a type-only re-export (OMMJsonObject) — never a second runtime dependency.',
+    applies: (e) => e.pkg === 'contracts',
+    forbidden: (e) => e.toZone.startsWith('pkg:') && e.toZone !== 'pkg:satellite.js',
+  },
+  {
     id: 'analytic-is-pure',
     why: 'packages/analytic is the pure IR core: no I/O and no runtime dependencies beyond the shared leaf packages.',
     applies: (e) => e.pkg === 'analytic',
-    forbidden: (e) => e.toZone.startsWith('pkg:') && e.toZone !== 'pkg:@orbitwatch/orbital-core',
+    forbidden: (e) =>
+      e.toZone.startsWith('pkg:') &&
+      e.toZone !== 'pkg:@orbitwatch/orbital-core' &&
+      e.toZone !== 'pkg:@orbitwatch/contracts',
   },
 
   // ── frontend tiers: core ← render ← data ← layers ← world ← controllers ← Engine ──

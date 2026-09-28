@@ -17,6 +17,7 @@
     "test": "tsx --test 'src/**/*.test.ts'"
   },
   "dependencies": {
+    "@orbitwatch/contracts": "*",
     "@orbitwatch/orbital-core": "*"
   },
   "devDependencies": {

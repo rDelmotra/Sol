@@ -1,0 +1,7 @@
+{
+  "//": "Type-checks src INCLUDING *.test.ts (the build config excludes tests; tsx does not type-check). Run by `npm run typecheck`.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true, "types": ["node"] },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

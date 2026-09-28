@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "workspaces": [
+    "packages/contracts",
     "packages/orbital-core",
     "packages/analytic",
     "packages/backend",
@@ -12,7 +13,7 @@
   "scripts": {
     "predev": "npm run build:libs",
     "dev": "npm run dev --workspaces --if-present",
-    "build:libs": "npm run build -w @orbitwatch/orbital-core && npm run build -w @orbitwatch/analytic",
+    "build:libs": "npm run build -w @orbitwatch/contracts && npm run build -w @orbitwatch/orbital-core && npm run build -w @orbitwatch/analytic",
     "build": "npm run build:libs && npm run build -w @orbitwatch/backend && npm run build -w @orbitwatch/frontend",
     "build:wasm": "cd packages/wasm-sgp4 && wasm-pack build --target web --release && rm -f pkg/.gitignore",
     "start": "node packages/backend/dist/index.js",

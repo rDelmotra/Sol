@@ -21,6 +21,16 @@
 // of scope for the analytic universe in v1.
 // ============================================================
 
+import {
+  ANALYTIC_OBJECT_TYPES,
+  OBJECT_CATEGORIES,
+  ORBITAL_REGIMES,
+  ORBITAL_STATUSES,
+  OPERATIONAL_STATUSES,
+  SECTORS,
+  PURPOSES,
+} from '@orbitwatch/contracts/enums';
+
 export type FieldKind = 'number' | 'string' | 'bool' | 'date' | 'enum' | 'enumSet' | 'id';
 export type FieldPlane = 'live' | 'catalog' | 'static';
 // NOTE on plane for the space-weather fields below (solarFlux10cm/
@@ -52,14 +62,19 @@ export interface FieldSpec {
 }
 
 // ── Enum domains ──────────────────────────────────────────────────────────────
+// Sourced from @orbitwatch/contracts/enums (C1 — see
+// PROJECT_MAP/15_ORBITAL_CORE_AND_CONTRACTS.md §1/§C1) so this schema and the
+// backend/frontend wire-type mirrors can't drift apart silently. Names +
+// as-const-literal types are preserved unchanged so every existing consumer
+// (validator, prompt generator, golden corpus) keeps compiling as-is.
 
-export const OBJECT_TYPE_DOMAIN = ['payload', 'rocket_body', 'debris', 'component', 'unknown'] as const;
-export const CATEGORY_DOMAIN = ['active_satellite', 'inactive_satellite', 'rocket_body', 'debris', 'unknown', 'deep_space'] as const;
-export const REGIME_DOMAIN = ['LEO', 'MEO', 'GEO', 'HEO', 'OTHER'] as const;
-export const ORBITAL_STATUS_DOMAIN = ['in_orbit', 'decayed', 'deorbited', 'beyond_earth', 'exploded', 'unknown'] as const;
-export const OPERATIONAL_STATUS_DOMAIN = ['operational', 'partial', 'nonoperational', 'backup', 'spare', 'extended', 'unknown'] as const;
-export const SECTOR_DOMAIN = ['commercial', 'government', 'military', 'civil'] as const;
-export const PURPOSE_DOMAIN = ['communications', 'earth_observation', 'navigation', 'technology_dev', 'space_science', 'space_observation', 'surveillance', 'meteorological', 'other'] as const;
+export const OBJECT_TYPE_DOMAIN = ANALYTIC_OBJECT_TYPES;
+export const CATEGORY_DOMAIN = OBJECT_CATEGORIES;
+export const REGIME_DOMAIN = ORBITAL_REGIMES;
+export const ORBITAL_STATUS_DOMAIN = ORBITAL_STATUSES;
+export const OPERATIONAL_STATUS_DOMAIN = OPERATIONAL_STATUSES;
+export const SECTOR_DOMAIN = SECTORS;
+export const PURPOSE_DOMAIN = PURPOSES;
 
 // ── The registry ──────────────────────────────────────────────────────────────
 
