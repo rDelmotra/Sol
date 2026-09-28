@@ -149,7 +149,7 @@ function stableStringify(value: unknown): string {
  * `node:crypto`, no Web Crypto `subtle` — both are async and/or unavailable
  * in one of the two runtimes this file executes under: the browser bundle
  * and plain `node:test`). Not cryptographic — it doesn't need to be; it's an
- * identity/dedup key over a resident set capped at ~34 entries, where an
+ * identity/dedup key over a resident set capped at 6 entries, where an
  * accidental collision between two DIFFERENT programs is astronomically
  * unlikely (~1e-7 at this scale) and a collision between two EQUAL programs
  * is the intended, correct behavior (see `add()`'s idempotency note).
@@ -182,7 +182,7 @@ export class ResidentSet {
    * PROJECT_MAP/09_BUILD_PLAN.md "P2": `universe:'all'` is rejected outright
    * (server-only — the live source this runs against cannot serve it); a
    * program carrying a `timeScan` stage draws from a tight 2-concurrent
-   * budget; everything else draws from a 32-resident sanity ceiling. A
+   * budget; everything else draws from the FREE_RESIDENT_CAP (4) budget. A
    * rejection is returned, never thrown.
    *
    * Adding a program that is structurally identical (same stable hash) to an

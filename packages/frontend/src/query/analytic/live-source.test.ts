@@ -10,6 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import * as satellite from 'satellite.js';
 import type { OMMJsonObject } from 'satellite.js';
 import type { EnrichedTLEObject } from '../../data/types';
 import type { QueryVocab } from '../../data/query-vocab-client';
@@ -118,6 +119,41 @@ describe('live source — on-demand SGP4 path (no buffers)', () => {
     assert.equal(src.getField(0, 'owner.name', NOW), 'NASA Houston');
     assert.equal(src.getField(0, 'ownerFamily', NOW), 'NASA'); // NASAH → parent NASA
     assert.equal(src.getField(0, 'launch.date', NOW), null); // vocab gap, honest null
+  });
+});
+
+describe('live source — propagation-window guard (far-time wedge)', () => {
+  // A GEO (24-h resonant) elset takes satellite.js's deep-space SDP4 path — the
+  // integrator whose cost grows with |t − epoch|. Stable orbit, no drag: SGP4
+  // itself still returns a valid state at ±61 d (asserted as a control below),
+  // so a null from the source there can only come from the guard.
+  const EPOCH_MS = Date.parse('2026-07-10T00:00:00Z');
+  const DAY = 86_400_000;
+  const GEO_OMM = { MEAN_MOTION: 1.0027, ECCENTRICITY: 0.0002, INCLINATION: 0.05, BSTAR: 0, MEAN_MOTION_DOT: 0 };
+  const geo = mkObj(40000, { regime: 'GEO', apogee: 35800, perigee: 35780, inclination: 0.05, period: 1436 }, GEO_OMM);
+  const src = createLiveAnalyticSource({ catalog: [geo], getBuffers: () => null, getVocab: () => VOCAB });
+
+  it('inside the ±60-day window it propagates', () => {
+    for (const t of [EPOCH_MS + 59 * DAY, EPOCH_MS - 59 * DAY]) {
+      const alt = src.getField(0, 'altitudeKm', t);
+      assert.ok(typeof alt === 'number' && alt > 35000 && alt < 36500, `alt ${String(alt)}`);
+    }
+  });
+
+  it('outside the window it returns null instead of propagating', () => {
+    // Control: unguarded SGP4 WOULD produce a finite state at +61 d.
+    const rec = satellite.json2satrec(geo.omm);
+    const raw = satellite.propagate(rec, new Date(EPOCH_MS + 61 * DAY));
+    assert.ok(raw && typeof raw.position === 'object' && Number.isFinite(raw.position.x), 'control: SGP4 itself succeeds at +61 d');
+
+    for (const t of [EPOCH_MS + 61 * DAY, EPOCH_MS - 61 * DAY, EPOCH_MS + 36_525 * DAY]) {
+      assert.equal(src.getField(0, 'altitudeKm', t), null, `altitudeKm at ${new Date(t).toISOString()}`);
+      assert.equal(src.getField(0, 'speedKmS', t), null);
+    }
+  });
+
+  it('a non-finite instant returns null', () => {
+    assert.equal(src.getField(0, 'altitudeKm', Number.NaN), null);
   });
 });
 

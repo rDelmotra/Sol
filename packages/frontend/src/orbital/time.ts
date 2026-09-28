@@ -22,17 +22,6 @@ export function getGAST(date: Date): number {
 }
 
 /**
- * Earth Rotation Angle in radians for the given UTC time.
- * Capitaine et al. (2003) definition.
- */
-export function getEarthRotationAngle(date: Date): number {
-  const jd = toJulianDate(date);
-  const du = jd - 2451545.0;
-  const frac = ((0.7790572732640 + 1.00273781191135448 * du) % 1.0 + 1.0) % 1.0;
-  return 2 * Math.PI * frac;
-}
-
-/**
  * Sun direction as a Y-up world-space unit vector (ECI frame).
  *
  * Steps: Julian date → mean anomaly → ecliptic longitude →

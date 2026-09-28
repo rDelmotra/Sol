@@ -85,10 +85,6 @@ export interface EnrichedTLEObject {
   owner?: string;
 }
 
-export type WorkerInMessage =
-    | { type: 'INIT'; tles: TLEInput[]; startIndex: number }
-    | { type: 'PROPAGATE'; timestamp: number; seq: number }
-
 export type WorkerOutMessage =
     | { type: 'READY'; objectCount: number }
     | {

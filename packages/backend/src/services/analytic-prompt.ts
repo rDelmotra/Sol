@@ -19,6 +19,7 @@ import {
   MAX_LIMIT,
   MAX_PICK_IDS,
   MAX_TIMESCAN_STEPS,
+  MAX_TIMESCAN_STEP_MINUTES,
   TIMESCAN_MAX_OBJECTS,
   SWEEP_MAX_HORIZON_MINUTES,
   SWEEP_MIN_STEP_SECONDS,
@@ -174,7 +175,7 @@ STAGES (pipeline max ${MAX_PIPELINE_STAGES}; each transforms the current relatio
 - {"op":"aggregate","aggs":{"name":<Agg>, ...}}
 - {"op":"groupBy","key":"<field>"|["f1","f2"],"aggs":{"name":<Agg>,...}}
 - {"op":"timeScan","predicate":<Expr>,"direction":"forward"|"backward",
-   "stepMinutes":<n>,"maxSteps":<n>}                   (final stage only; set ≤ ${TIMESCAN_MAX_OBJECTS} objects, steps ≤ ${MAX_TIMESCAN_STEPS})
+   "stepMinutes":<n>,"maxSteps":<n>}                   (final stage only; set ≤ ${TIMESCAN_MAX_OBJECTS} objects, steps ≤ ${MAX_TIMESCAN_STEPS}, stepMinutes ≤ ${MAX_TIMESCAN_STEP_MINUTES})
 - {"op":"sweep","predicate":<Expr>,"horizonMinutes":<n>,"stepSeconds":<n>,
    "peakOf":<Expr>?}                                   (final stage only; FORWARD only, from now; must be preceded
                                                           by a filter/pick/limit — a bare whole-catalog sweep is

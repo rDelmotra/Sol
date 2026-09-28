@@ -57,8 +57,9 @@ function sendVisualResponse(
 // GET /api/tle/all
 //
 // Returns the full enriched TLE dataset.
-// Response is gzip-compressed by the `compression` middleware applied in
-// index.ts (~500 KB–1 MB compressed for 25 000 objects).
+// Served from the version-keyed, pre-gzipped payload in
+// cache/tle-payload-cache.ts (compression() skips it — Content-Encoding is
+// already set). ~27 MB uncompressed for the ~32k-object catalog.
 //
 // Headers:
 //   Cache-Control: public, max-age=3600   (clients may cache for 1 hour)

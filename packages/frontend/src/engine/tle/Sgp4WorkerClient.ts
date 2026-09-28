@@ -108,16 +108,6 @@ export class Sgp4WorkerClient {
     this.worker.postMessage({ type: 'INIT', tles, startIndex: 0 });
   }
 
-  // ── Public readonly state ───────────────────────────────────────────────
-
-  get objectCount(): number {
-    return this._objectCount;
-  }
-
-  get firstPositionReceived(): boolean {
-    return this._firstPositionReceived;
-  }
-
   // ── Timing (single source of truth) ─────────────────────────────────────
 
   /**

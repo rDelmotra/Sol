@@ -74,8 +74,8 @@ app.use('/api', rateLimit({
   message: { error: 'Too many requests. Try again later.' },
 }));
 
-// Gzip all JSON responses.  For the full TLE dataset (~4–6 MB uncompressed)
-// this reduces payload to ~500 KB–1 MB.
+// Gzip JSON responses. (/api/tle/all bypasses this — it is served pre-gzipped
+// from cache/tle-payload-cache.ts; the full catalog is ~27 MB uncompressed.)
 app.use(compression());
 
 app.use(express.json());
@@ -182,8 +182,9 @@ app.listen(PORT, async () => {
   }
 
   // P3 S2: measure the analytic server-executor's capability+coverage at boot.
-  // Nothing routes to this yet (S4 lands /api/query/ask) — cheap, and it
-  // surfaces artifact/provider problems at boot instead of first-query.
+  // /api/query/ask (routes/query.ts) executes against this registry; measuring
+  // it here is cheap and surfaces artifact/provider problems at boot instead
+  // of first-query.
   try {
     const analyticSnapshot = getAnalyticRegistry().snapshot();
     for (const u of analyticSnapshot.universes) {

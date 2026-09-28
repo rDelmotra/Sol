@@ -58,3 +58,6 @@ pnpm-debug.log*
 my_plans
 # Large gzipped build artifact is committed as .json.gz; never the plain JSON
 packages/backend/enrichment-data/metadata-enrichment.json
+
+# ── Cleanup parking lot (local only; moved-out dead files + removed-code records) ──
+DELETE/

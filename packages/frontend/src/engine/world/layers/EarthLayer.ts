@@ -4,10 +4,10 @@ import { useStore, isDomeView } from '../../../store/useStore';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 
 /**
- * Earth globe — the ACTIVE Earth path (inlined GLSL in {@link EarthRenderer};
- * the `geospatial/` tile pipeline is scaffolding, not yet wired). This is the
- * single seam for the Earth model + cloud colour. Non-critical: if it throws,
- * the rest of the scene still renders.
+ * Earth globe (inlined GLSL in {@link EarthRenderer}). This is the single seam
+ * for the Earth model + cloud colour — a future tiled Earth (Takram) replaces
+ * the renderer behind this layer. Non-critical: if it throws, the rest of the
+ * scene still renders.
  */
 export class EarthLayer implements Layer {
   readonly name = 'earth';

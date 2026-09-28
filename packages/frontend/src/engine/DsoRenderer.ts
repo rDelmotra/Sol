@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import dsoVertexShader from '../shaders/dso.vert.glsl?raw';
 import dsoFragmentShader from '../shaders/dso.frag.glsl?raw';
-import type { DsoObject, DsoSnapshot } from '../data/dso-types';
-import { interpolateDsoPosition } from '../data/dso-interpolator';
+import type { DsoObject } from '../data/dso-types';
 import { writeSourceToScene } from '../orbital/frames';
 
 const INITIAL_DSO_CAPACITY = 64;
@@ -159,46 +158,6 @@ export class DsoRenderer {
     this.currPosAttr.needsUpdate = true;
     this.prevPosAttr.needsUpdate = true;
     this.sizeAttr.needsUpdate = true;
-  }
-
-  /** Legacy main-thread interpolation path (kept as fallback). */
-  updatePositions(
-    ephemerisById: Record<string, DsoSnapshot>,
-    timestampMs: number,
-  ): void {
-    const posArr  = this.currPosAttr.array as Float32Array;
-    const prevArr = this.prevPosAttr.array as Float32Array;
-    const sizeArr = this.sizeAttr.array as Float32Array;
-
-    // Shift current → previous (picking shader needs this for lerp compat)
-    prevArr.set(posArr.subarray(0, this.activeCount * 3));
-
-    for (let i = 0; i < this.activeCount; i++) {
-      const dso      = this.dsoObjects[i];
-      const snapshot = ephemerisById[dso.dsoId];
-      const i3       = i * 3;
-
-      if (!snapshot) {
-        posArr[i3] = posArr[i3 + 1] = posArr[i3 + 2] = 0;
-        sizeArr[i] = 0;
-        continue;
-      }
-
-      const pos = interpolateDsoPosition(snapshot, timestampMs);
-      if (!pos) {
-        posArr[i3] = posArr[i3 + 1] = posArr[i3 + 2] = 0;
-        sizeArr[i] = 0;
-        continue;
-      }
-
-      // TEME → Three.js scene frame
-      writeSourceToScene(posArr, i3, pos.x, pos.y, pos.z);
-      sizeArr[i]     = DSO_BASE_SIZE;
-    }
-
-    this.currPosAttr.needsUpdate = true;
-    this.prevPosAttr.needsUpdate = true;
-    this.sizeAttr.needsUpdate    = true;
   }
 
   /** Three.js scene-space position for DSO at the given local index. */

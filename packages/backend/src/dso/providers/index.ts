@@ -1,5 +1,5 @@
 /**
- * DSO provider adapter scaffold.
+ * DSO provider adapters (JPL Horizons today; factory.ts selects by DsoProvider).
  *
  * Owns:
  * - source-specific adapters for DSO truth providers
@@ -11,9 +11,6 @@
  * - manifests
  * - route response shaping
  * - imports from TLE-specific types or updater logic
- *
- * Filled in by:
- * - a later phase that adds Horizons and future provider adapters
  */
 export * from './types.js';
 export * from './horizons.js';

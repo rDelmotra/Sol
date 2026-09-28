@@ -1,7 +1,7 @@
 import type { FrameContext, Layer, LayerContext } from '../render/Layer';
 
 /**
- * The engine-level layer registry — generalizes `geospatial/EarthGroupManager`.
+ * The engine-level layer registry.
  *
  * Owns the set of {@link Layer}s, drives their init/update/dispose, and isolates
  * failures: a non-critical layer that throws is logged once, marked failed, and

@@ -1,5 +1,3 @@
-import * as THREE from 'three';
-
 const TWILIGHT_SIN = Math.sin(-6 * (Math.PI / 180));
 
 export function isEclipsedFromComponents(
@@ -18,22 +16,6 @@ export function isEclipsedFromComponents(
   return distSq < 1.0;
 }
 
-/**
- * Checks if a satellite is in Earth's cylindrical shadow (umbra).
- * @param satPos - Satellite position in scene units (Earth radius = 1.0)
- * @param sunDir - Sun direction unit vector in scene coordinates
- */
-export function isEclipsed(satPos: THREE.Vector3, sunDir: THREE.Vector3): boolean {
-  return isEclipsedFromComponents(
-    satPos.x,
-    satPos.y,
-    satPos.z,
-    sunDir.x,
-    sunDir.y,
-    sunDir.z,
-  );
-}
-
 export function isObserverInDarkFromComponents(
   obsX: number,
   obsY: number,
@@ -50,22 +32,6 @@ export function isObserverInDarkFromComponents(
   const invObsLen = 1 / obsLen;
   const sinElev = ((obsX * invObsLen) * sunX) + ((obsY * invObsLen) * sunY) + ((obsZ * invObsLen) * sunZ);
   return sinElev < TWILIGHT_SIN;
-}
-
-/**
- * Checks if the observer is in twilight or night (Sun elevation < -6 degrees).
- * @param obsPos - Observer position in scene units
- * @param sunDir - Sun direction unit vector
- */
-export function isObserverInDark(obsPos: THREE.Vector3, sunDir: THREE.Vector3): boolean {
-  return isObserverInDarkFromComponents(
-    obsPos.x,
-    obsPos.y,
-    obsPos.z,
-    sunDir.x,
-    sunDir.y,
-    sunDir.z,
-  );
 }
 
 export function getPhaseMultiplierFromComponents(
@@ -90,24 +56,4 @@ export function getPhaseMultiplierFromComponents(
   const invVLen = 1 / vLen;
   const phaseCos = ((vx * invVLen) * sunX) + ((vy * invVLen) * sunY) + ((vz * invVLen) * sunZ);
   return Math.max(0.1, (phaseCos + 0.5) / 1.5);
-}
-
-/**
- * Calculates a visual multiplier based on lighting phase angle.
- * @param satPos - Satellite position
- * @param obsPos - Observer position
- * @param sunDir - Sun direction unit vector
- */
-export function getPhaseMultiplier(satPos: THREE.Vector3, obsPos: THREE.Vector3, sunDir: THREE.Vector3): number {
-  return getPhaseMultiplierFromComponents(
-    satPos.x,
-    satPos.y,
-    satPos.z,
-    obsPos.x,
-    obsPos.y,
-    obsPos.z,
-    sunDir.x,
-    sunDir.y,
-    sunDir.z,
-  );
 }

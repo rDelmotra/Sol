@@ -23,6 +23,9 @@ export const CLIENT_UNSERVED_FIELDS: ReadonlySet<string> = new Set([
   // Dotted (6)
   'launch.date', 'launch.lvType', 'launch.pad', 'launch.success',
   'owner.stateCode', 'owner.cls',
+  // Space weather (3) — served only by the backend NOAA SWPC provider; the
+  // browser has no source for them (live-source.ts falls through to null).
+  'solarFlux10cm', 'geomagneticAp', 'geomagneticKp',
 ]);
 
 /** Fns the client serves. descendsFrom is NOT here (live-source returns false). */

@@ -3,8 +3,6 @@
  * No cross-package imports; these are defined from the API contract.
  */
 
-import type { EnrichedTLEObject } from './types';
-
 export type DsoFreshnessState = 'fresh' | 'stale' | 'degraded' | 'unavailable';
 
 export type DsoRegime = 'LUNAR' | 'CISLUNAR' | 'INTERPLANETARY' | 'OTHER';
@@ -75,8 +73,7 @@ export interface DsoManifestObjectStatus {
 
 /**
  * Frontend-local DSO object — the product of merging a DsoCatalogEntry
- * with its loaded ephemeris state. Used alongside EnrichedTLEObject in
- * the unified TrackedObject union.
+ * with its loaded ephemeris state.
  */
 export interface DsoObject {
   source: 'dso';
@@ -90,11 +87,3 @@ export interface DsoObject {
   freshnessState: DsoFreshnessState;
   searchAliases: string[];
 }
-
-/**
- * Discriminated union for all trackable objects in the scene.
- * TLE objects get `source: 'tle'` at the app layer.
- */
-export type TrackedObject =
-  | (EnrichedTLEObject & { source: 'tle' })
-  | DsoObject;

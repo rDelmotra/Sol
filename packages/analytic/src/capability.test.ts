@@ -165,6 +165,19 @@ describe('capability — programNeedsServer', () => {
     assert.equal(programNeedsServer(program), true);
   });
 
+  // Regression: space-weather fields used to route to the browser, which has no
+  // SWPC source — every space-weather question came back all-null.
+  it('true for a space-weather field ref (geomagneticKp) — only the server serves it', () => {
+    const program = baseProgram({
+      pipeline: [{ op: 'aggregate', aggs: { kp: { fn: 'max', of: 'geomagneticKp' } } }],
+      output: { shape: 'scalar' },
+    });
+    assert.equal(programNeedsServer(program), true);
+    for (const f of ['solarFlux10cm', 'geomagneticAp', 'geomagneticKp']) {
+      assert.equal(CLIENT_SERVED_FIELDS.has(f), false, `${f} must not be client-served`);
+    }
+  });
+
   it('true for a client-unserved fn ref (descendsFrom)', () => {
     const program = baseProgram({
       pipeline: [{ op: 'filter', where: { fn: 'descendsFrom', ancestor: 13552 } }],

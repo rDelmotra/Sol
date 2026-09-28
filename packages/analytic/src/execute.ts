@@ -13,8 +13,8 @@
 // basis. Coverage is recorded during filter/derive/aggregate/groupBy scans
 // (one count per field per row), not during sort or output materialization.
 //
-// Time: one instant per program. timeScan is the only construct that
-// evaluates at other instants, which is why source methods take tMs.
+// Time: one instant per program. timeScan and sweep are the constructs that
+// evaluate at other instants, which is why source methods take tMs.
 // ============================================================
 
 import type {

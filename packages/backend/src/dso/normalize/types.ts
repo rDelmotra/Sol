@@ -21,11 +21,3 @@ export type CanonicalStateVector = [
   vy: number,
   vz: number,
 ];
-
-export interface CanonicalEphemeris {
-  frame: 'TEME';
-  distanceUnits: 'earth_radii';
-  velocityUnits: 'earth_radii_per_second';
-  sampleStepSec: number;
-  stateVectors: CanonicalStateVector[];
-}

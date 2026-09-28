@@ -61,11 +61,6 @@ export function sectorColor(sectors: Sector[]): RGB {
   return sectors.length > 0 ? (SECTOR_COLORS[sectors[0]] ?? FALLBACK_GREY) : SECTOR_COLORS.unspecified;
 }
 
-/** Operator color for a canonical country code; grey for the long tail. */
-export function countryColor(code: string): RGB {
-  return COUNTRY_COLORS[code] ?? FALLBACK_GREY;
-}
-
 /** RGB [0..1] tuple → CSS `rgb(...)` string for swatches. */
 export function rgbToCss(rgb: RGB): string {
   return `rgb(${Math.round(rgb[0] * 255)}, ${Math.round(rgb[1] * 255)}, ${Math.round(rgb[2] * 255)})`;

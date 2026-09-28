@@ -47,29 +47,6 @@ export interface SpaceTrackGPElement {
   GP_ID: string;
 }
 
-// ── Space-Track SATCAT entry ──────────────────────────────────────────────────
-// OPS_STATUS_CODE is the key field — it distinguishes active from inactive payloads.
-// This is NOT present in the GP class; requires a separate SATCAT query.
-export interface SpaceTrackSatCatEntry {
-  NORAD_CAT_ID: string;
-  SATNAME: string;
-  INTLDES: string;
-  OBJECT_TYPE: string;           // "PAY" | "R/B" | "DEB" | "UNK"
-  OPS_STATUS_CODE: string;       // "+" active, "-" inactive, "P" partial, "B" backup,
-                                 // "S" spare, "X" extended mission, "D" decayed, "" unknown
-  OWNER: string;
-  LAUNCH_DATE: string;
-  LAUNCH_SITE: string;
-  DECAY_DATE: string;            // "" for active
-  PERIOD: string;
-  APOGEE: string;
-  PERIGEE: string;
-  RCS: string;
-  RCS_SIZE: string;
-  COMMENT: string;
-  CURRENT: string;               // "Y" | "N"
-}
-
 // ── CelesTrak GP element ──────────────────────────────────────────────────────
 // CelesTrak returns proper JSON types (numbers are numbers, not strings).
 // Used as fallback when Space-Track is unavailable.

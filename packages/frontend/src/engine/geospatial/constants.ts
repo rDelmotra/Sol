@@ -1,3 +1,0 @@
-export const EARTH_RADIUS_METERS = 6_371_000;
-export const METERS_TO_ER = 1 / EARTH_RADIUS_METERS;
-export const ER_TO_METERS = EARTH_RADIUS_METERS;

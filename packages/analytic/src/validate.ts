@@ -45,6 +45,12 @@ export const SWEEP_MAX_INTERVALS_PER_OBJECT = 64;
 export const SWEEP_BISECT_ITERATIONS = 10;
 export const PAST_CAP_DAYS = 60;
 export const FUTURE_CAP_DAYS = 14;
+/** Upper bound on timeScan.stepMinutes, so a full scan (stepMinutes ×
+ *  MAX_TIMESCAN_STEPS) spans at most the 60-day propagation window:
+ *  360 min (6 h) × 240 steps = 60 d. Beyond that every step would land outside
+ *  the window (all-null), and a huge step is how a program could push SDP4's
+ *  deep-space integrator to a far time (the far-time wedge). */
+export const MAX_TIMESCAN_STEP_MINUTES = Math.floor((PAST_CAP_DAYS * 1440) / MAX_TIMESCAN_STEPS);
 
 const MS_PER_DAY = 86_400_000;
 const DERIVE_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_]*$/;
@@ -490,8 +496,8 @@ function checkPipeline(ctx: Ctx, pipeline: unknown, path: string): PipeState | n
         if (stage.direction !== 'forward' && stage.direction !== 'backward') {
           issue(ctx, 'V-SHAPE', p, 'timeScan.direction must be forward|backward'); return null;
         }
-        if (!isInt(stage.stepMinutes) || stage.stepMinutes < 1) {
-          issue(ctx, 'V-SCAN', p, 'timeScan.stepMinutes must be an int ≥ 1'); return null;
+        if (!isInt(stage.stepMinutes) || stage.stepMinutes < 1 || stage.stepMinutes > MAX_TIMESCAN_STEP_MINUTES) {
+          issue(ctx, 'V-SCAN', p, `timeScan.stepMinutes must be an int 1..${MAX_TIMESCAN_STEP_MINUTES}`); return null;
         }
         if (!isInt(stage.maxSteps) || stage.maxSteps < 1 || stage.maxSteps > MAX_TIMESCAN_STEPS) {
           issue(ctx, 'V-SCAN', p, `timeScan.maxSteps must be 1..${MAX_TIMESCAN_STEPS}`); return null;

@@ -96,19 +96,6 @@ function coerceManifest(entries: readonly DsoRegistryEntry[], manifest: DsoManif
   };
 }
 
-export function createBaseDsoManifest(
-  entries: readonly DsoRegistryEntry[] = DSO_REGISTRY,
-  workerLastRunAt: string | null = null,
-): DsoManifest {
-  return {
-    generatedAt: new Date().toISOString(),
-    workerLastRunAt,
-    objects: Object.fromEntries(
-      entries.map((entry) => [entry.dsoId, createUnavailableStatus(entry)]),
-    ) as Record<DsoId, DsoObjectStatus>,
-  };
-}
-
 export function deriveDsoFreshnessState(
   status: Pick<DsoObjectStatus, 'currentSnapshotVersion' | 'lastSuccessAt' | 'validTo'>,
   refreshIntervalSec: number,

@@ -3,11 +3,11 @@
 // Spec: my_plans/marvin/perceptor_p3_server_executor.md §2 + p3/S0_contracts_registry.md
 // + p3/S2_catalog_provider_universe_all.md Part C + p3/S3_sgp4_provider_astro.md.
 //
-// Real chain composition: `live` = catalog spine + [catalog, enrichment, sgp4];
-// `all` = all-spine spine + [catalog, all-spine, enrichment] (no sgp4 — V-PLANE
-// already refuses live-plane refs under universe 'all' at validate time, so the
-// registry never sees them). The /api/query/ask route (S4) is the first caller
-// of buildSource(). Nothing here wires into backend/src/index.ts's request path yet.
+// Real chain composition: `live` = catalog spine + [catalog, enrichment, sgp4,
+// spaceWeather]; `all` = all-spine spine + [catalog, all-spine, enrichment,
+// spaceWeather] (no sgp4 — V-PLANE already refuses live-plane refs under
+// universe 'all' at validate time, so the registry never sees them). The
+// /api/query/ask route (routes/query.ts) calls buildSource() per request.
 // ============================================================
 
 export * from './types.js';

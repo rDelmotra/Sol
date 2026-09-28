@@ -13,7 +13,13 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { validateProgram, type ValidationCode } from './validate.js';
+import {
+  validateProgram,
+  MAX_TIMESCAN_STEPS,
+  MAX_TIMESCAN_STEP_MINUTES,
+  PAST_CAP_DAYS,
+  type ValidationCode,
+} from './validate.js';
 import type { AnalyticProgram } from './types.js';
 
 const NOW = Date.parse('2026-07-10T12:00:00Z');
@@ -443,6 +449,28 @@ describe('validator contract — typed refusals', () => {
     ],
     output: { shape: 'scalar' },
   }), 'V-SCAN'));
+
+  // Far-time wedge guard: an unbounded step let a 240-step scan reach years past
+  // epoch (e.g. 100000 min × 240 ≈ 45 years), driving SDP4's deep-space integrator.
+  it('V-SCAN: timeScan.stepMinutes over MAX_TIMESCAN_STEP_MINUTES', () => bad(prog({
+    pipeline: [
+      { op: 'pick', ids: [25544] },
+      { op: 'timeScan', predicate: { field: 'eclipsed' }, direction: 'forward', stepMinutes: MAX_TIMESCAN_STEP_MINUTES + 1, maxSteps: 10 },
+    ],
+    output: { shape: 'scalar' },
+  }), 'V-SCAN'));
+
+  it('timeScan.stepMinutes exactly at the cap is valid, and the full scan fits the 60-day window', () => {
+    assert.equal(MAX_TIMESCAN_STEP_MINUTES, 360);
+    assert.ok(MAX_TIMESCAN_STEP_MINUTES * MAX_TIMESCAN_STEPS <= PAST_CAP_DAYS * 1440);
+    ok(prog({
+      pipeline: [
+        { op: 'pick', ids: [25544] },
+        { op: 'timeScan', predicate: { field: 'eclipsed' }, direction: 'forward', stepMinutes: MAX_TIMESCAN_STEP_MINUTES, maxSteps: MAX_TIMESCAN_STEPS },
+      ],
+      output: { shape: 'scalar' },
+    }));
+  });
 
   // Regression: this exact program used to VALIDATE and then die at runtime with
   // E-INTERNAL ("'object' output on a grouped relation") — verified 2026-09-09.

@@ -12,7 +12,8 @@
 // buffers (TEME, earth-radii + ER/s — free). Any other instant falls back to
 // on-demand SGP4 via a lazy per-object satrec cache (json2satrec), memoized
 // per (object, t) so a timeScan predicate reading several fields at one step
-// propagates once.
+// propagates once. On-demand propagation is gated by the ±60-day window in
+// orbital/propagation-limits.ts (outside it → null state).
 //
 // Frame: all internal math is TEME in earth-radii (buffer-native; the eclipse
 // umbra test expects ER). Scene-frame helpers (sun direction, observer
@@ -23,7 +24,10 @@
 // Known adapter gaps (fields that return null/false on the LIVE universe,
 // honest via skip-and-count): jcat/parentJcat (not inlined → descendsFrom is
 // always false until a parent index artifact ships), launch.date/lvType/pad/
-// success and owner.stateCode/cls (vocab doesn't carry them).
+// success and owner.stateCode/cls (vocab doesn't carry them), and the space-
+// weather fields (server-only NOAA SWPC provider). All are listed in
+// packages/analytic capability.ts CLIENT_UNSERVED_FIELDS, so the router sends
+// programs that read them to the server instead.
 // ============================================================
 
 import * as satellite from 'satellite.js';
@@ -34,6 +38,7 @@ import { getGAST, getSunDirection } from '../../orbital/time';
 import { getObserverScenePosition } from '../../orbital/coordinates';
 import { isEclipsedFromComponents, isObserverInDarkFromComponents } from '../../orbital/lighting';
 import { evaluateVisualVisibility } from '../../orbital/visual-visibility';
+import { withinPropagationWindow } from '../../orbital/propagation-limits';
 import type { AnalyticDataSource, FieldValue, ResolvedObserver } from '@orbitwatch/analytic';
 
 const EARTH_RADIUS_KM = 6371;
@@ -114,7 +119,13 @@ export function createLiveAnalyticSource(deps: LiveSourceDeps): AnalyticDataSour
       satrecs[i] = rec;
     }
     let s: StateVec | null = null;
-    if (rec) {
+    // Propagation-window guard — the same policy as the SGP4 worker and the
+    // server provider (backend analytic/providers/sgp4.ts): never let SDP4's
+    // deep-space integrator run far from epoch (the far-time wedge; timeScan
+    // steps can land past the validator's timeBinding caps). Out of window →
+    // null, the honest "not derivable" value counted in meta.coverage.
+    const jdNow = Number.isFinite(tMs) ? satellite.jday(new Date(tMs)) : NaN;
+    if (rec && withinPropagationWindow(jdNow, rec.jdsatepoch)) {
       try {
         const r = satellite.propagate(rec, new Date(tMs));
         const p = r?.position;

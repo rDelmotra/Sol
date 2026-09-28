@@ -5,10 +5,8 @@ import type * as THREE from 'three';
  * subsystem (Earth, satellites, DSO, starfield, trails, observer marker) with a
  * uniform init/update/dispose lifecycle, managed by {@link World}.
  *
- * This is the engine-wide generalization of `geospatial/types.ts`'s
- * `GeospatialModule` — which stays in place as the Earth sub-domain's internal
- * contract (consumed inside EarthLayer / EarthGroupManager). Layers must never
- * import other layers; cross-layer wiring is done by the Engine via callbacks.
+ * Layers must never import other layers; cross-layer wiring is done by the
+ * Engine via callbacks.
  */
 
 /** Init-time dependencies handed to every layer once, from Engine/Renderer/Camera. */

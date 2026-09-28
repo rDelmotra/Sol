@@ -17,7 +17,12 @@ import type { DsoId, DsoRegistryEntry } from './types.js';
 
 const DEFAULT_SAMPLE_STEP_SEC = 600;
 const DEFAULT_REFRESH_INTERVAL_SEC = 21_600;
-const DEFAULT_VALID_PAST_WINDOW_SEC = 864_00000; // 10 days
+// NOTE: 864_00000 s = 1000 days, not the 10 days this line once claimed (10 d
+// would be 864_000). Because computeWindow() clamps the start to launchDate, the
+// effective default is "since launch" for any entry with a launchDate. Whether
+// 10 d or since-launch is intended is an open owner decision — kept as-is so
+// the Horizons request window doesn't change silently.
+const DEFAULT_VALID_PAST_WINDOW_SEC = 864_00000;
 const DEFAULT_VALID_FUTURE_WINDOW_SEC = 21600; // 6 hours
 
 function createRegistryEntry(

@@ -20,7 +20,7 @@ function assertVecClose(actual: THREE.Vector3, expected: [number, number, number
 
 describe('CameraController joyride vectors', () => {
   it('getJoyrideEntryTarget aims along the velocity at the look-ahead distance', () => {
-    const cam = new THREE.PerspectiveCamera(60, 1, 0.01, 1000);
+    const cam = new THREE.PerspectiveCamera(27, 1, 0.01, 1000); // FOV matches render/Camera.ts (not asserted)
     const ctrl = new CameraController(cam);
 
     const pos = new THREE.Vector3(2, 0, 0); // radius 2 ER → lookAhead = 0.12
@@ -32,7 +32,7 @@ describe('CameraController joyride vectors', () => {
   });
 
   it('getJoyrideEntryTarget falls back to the radial direction when velocity is zero', () => {
-    const cam = new THREE.PerspectiveCamera(60, 1, 0.01, 1000);
+    const cam = new THREE.PerspectiveCamera(27, 1, 0.01, 1000); // FOV matches render/Camera.ts (not asserted)
     const ctrl = new CameraController(cam);
 
     const pos = new THREE.Vector3(0, 2, 0); // radial up = (0, 1, 0); lookAhead = 0.12
@@ -44,7 +44,7 @@ describe('CameraController joyride vectors', () => {
   });
 
   it('updateJoyride seats the camera along the radial and looks ahead down velocity', () => {
-    const cam = new THREE.PerspectiveCamera(60, 1, 0.01, 1000);
+    const cam = new THREE.PerspectiveCamera(27, 1, 0.01, 1000); // FOV matches render/Camera.ts (not asserted)
     const ctrl = new CameraController(cam);
 
     const pos = new THREE.Vector3(2, 0, 0); // radial = (1,0,0); seat = 0.00045

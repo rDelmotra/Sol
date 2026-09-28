@@ -41,7 +41,7 @@ const GP_BASE =
 // Space-Track's max rows per request. Staying at 25 000 is safe and well-tested.
 const PAGE_SIZE = 25_000;
 
-// Generous timeout — SATCAT response can be 10–15 MB.
+// Generous timeout — a full GP page (25k objects) is a multi-MB response.
 const TIMEOUT_MS = 120_000;
 
 // ============================================================
