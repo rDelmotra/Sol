@@ -26,7 +26,15 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { DecayedCatalogRow, ObjectMetadata, PROGRAM_LABELS, Purpose, Sector } from '@orbitwatch/contracts';
+import {
+  DecayedCatalogRow,
+  LaunchRecord,
+  ObjectMetadata,
+  OrgRecord,
+  PROGRAM_LABELS,
+  Purpose,
+  Sector,
+} from '@orbitwatch/contracts';
 import {
   EnrichmentArtifactMeta,
   UCS_USER_TO_SECTOR,
@@ -35,12 +43,11 @@ import {
 import { canonicalFromUcsCountry } from './country-codes.js';
 import { PROGRAMS, matchProgram, applyProgramDefaults } from './programs.js';
 import { ingestGcat } from './gcat/ingest.js';
-import { parseGcatOrgs, OrgRecord } from './gcat/orgs.js';
+import { parseGcatOrgs } from './gcat/orgs.js';
 import {
   parseGcatLaunches,
   parseLvFamilies,
   parseSiteNames,
-  LaunchRecord,
 } from './gcat/launches.js';
 import { applyGraphInheritance } from './gcat/inherit.js';
 import { buildQueryVocab } from './query-vocab.js';

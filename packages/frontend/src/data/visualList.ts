@@ -1,3 +1,5 @@
+import type { VisualListResponse } from '@orbitwatch/contracts';
+
 const STORAGE_KEY = 'orbitwatch:visualNoradIds:v3';
 const REQUEST_TIMEOUT_MS = 8_000;
 // Align local fallback cache with backend visual TTL (8h).
@@ -23,13 +25,6 @@ export interface VisualListNotModifiedResult {
 }
 
 export type VisualListFetchResult = VisualListResolvedResult | VisualListNotModifiedResult;
-
-interface VisualListApiResponse {
-  version: unknown;
-  ids: unknown;
-  source: unknown;
-  stale: unknown;
-}
 
 interface VisualNoradCacheEnvelope {
   cachedAt: string;
@@ -150,7 +145,7 @@ export function parseVisualListResponse(
     throw new Error('Visual endpoint returned invalid payload');
   }
 
-  const body = payload as Partial<VisualListApiResponse>;
+  const body = payload as Partial<VisualListResponse>;
   if (!Array.isArray(body.ids)) {
     throw new Error('Visual endpoint payload missing ids[]');
   }

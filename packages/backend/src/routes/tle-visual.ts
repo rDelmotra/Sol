@@ -1,9 +1,11 @@
+import type { VisualDataSource, VisualListResponse } from '@orbitwatch/contracts';
+
+export type { VisualDataSource };
+
 export interface VisualCacheSnapshot {
   version: string;
   ids: number[];
 }
-
-export type VisualDataSource = 'celestrak' | 'cache';
 
 interface VisualResolveOk {
   kind: 'ok';
@@ -20,26 +22,18 @@ interface VisualResolveError {
 
 export type VisualResolveResult = VisualResolveOk | VisualResolveError;
 
-export interface VisualEndpointResponse {
-  version: string;
-  count: number;
-  ids: number[];
-  source: VisualDataSource;
-  stale: boolean;
-}
-
 export function buildVisualEndpointResponse(
   payload: VisualCacheSnapshot,
   source: VisualDataSource,
   stale: boolean,
-): VisualEndpointResponse {
+): VisualListResponse {
   return {
     version: payload.version,
     count: payload.ids.length,
     ids: payload.ids,
     source,
     stale,
-  };
+  } satisfies VisualListResponse;
 }
 
 export async function resolveVisualPayload(

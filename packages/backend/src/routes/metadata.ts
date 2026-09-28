@@ -8,7 +8,7 @@ import {
   primaryOwnerCode,
   loadQueryVocabRaw,
 } from '../enrichment/store.js';
-import type { OrgRecord } from '../enrichment/gcat/orgs.js';
+import type { ObjectMetadataResponse, OrgRef } from '@orbitwatch/contracts';
 
 // ============================================================
 // Rich-metadata routes (lazy — read the boot-loaded in-memory store, never the
@@ -32,10 +32,10 @@ export const orgRouter = Router();
 export const queryRouter = Router();
 
 /** Slim org projection embedded in responses (full record via /api/org/:code). */
-function orgRef(code: string | null): { code: string; name: string; sectors: OrgRecord['sectors'] } | undefined {
+function orgRef(code: string | null): OrgRef | undefined {
   if (!code) return undefined;
   const org = getOrg(code);
-  return org ? { code: org.code, name: org.name, sectors: org.sectors } : undefined;
+  return org ? ({ code: org.code, name: org.name, sectors: org.sectors } satisfies OrgRef) : undefined;
 }
 
 // ── GET /api/metadata/:noradId ────────────────────────────────────────────────
@@ -57,8 +57,7 @@ metadataRouter.get('/:noradId', (req: Request, res: Response) => {
     ? meta.gcat.manufacturer.split('/')[0].trim().replace(/\?$/, '')
     : null;
 
-  res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.json({
+  const body = {
     ...meta,
     ...(launch
       ? {
@@ -72,7 +71,10 @@ metadataRouter.get('/:noradId', (req: Request, res: Response) => {
       : {}),
     ...(orgRef(primaryOwnerCode(meta)) ? { ownerOrg: orgRef(primaryOwnerCode(meta)) } : {}),
     ...(orgRef(manufacturerCode) ? { manufacturerOrg: orgRef(manufacturerCode) } : {}),
-  });
+  } satisfies ObjectMetadataResponse;
+
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.json(body);
 });
 
 // ── GET /api/launch/:tag ──────────────────────────────────────────────────────

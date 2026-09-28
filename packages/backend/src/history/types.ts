@@ -1,4 +1,6 @@
-import type { ObjectCategory, OrbitalRegime } from '@orbitwatch/contracts';
+import type { HistoryCoverage, ObjectCategory, OrbitalRegime } from '@orbitwatch/contracts';
+
+export type { HistoryCoverage };
 
 // ============================================================
 // History namespace — shared row/coverage types
@@ -82,10 +84,6 @@ export interface HistoryServingRow {
   ingested_at: Date;
 }
 
-/** Time span the history DB currently covers — drives the frontend scrubber. */
-export interface HistoryCoverage {
-  from: string | null;        // earliest utc_day 'YYYY-MM-DD' (null if empty)
-  to: string | null;          // latest utc_day 'YYYY-MM-DD'
-  objectCount: number;        // distinct objects in object_dim
-  lastIngestAt: string | null; // ISO of the most recent ingest
-}
+// HistoryCoverage — the time span the history DB currently covers (drives the
+// frontend scrubber) — moved to @orbitwatch/contracts as of C3; re-exported
+// above for existing importers of this module.

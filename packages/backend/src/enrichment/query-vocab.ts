@@ -16,21 +16,12 @@
 // Pure — unit-tests without snapshot files. Named to avoid gcat/vocab.ts.
 // ============================================================
 
-import type { ObjectMetadata } from '@orbitwatch/contracts';
-import type { OrgRecord } from './gcat/orgs.js';
-import type { LaunchRecord } from './gcat/launches.js';
+import type { LaunchRecord, ObjectMetadata, OrgRecord, QueryVocab } from '@orbitwatch/contracts';
 import { primaryOwnerCode } from './gcat/inherit.js';
 
-export interface QueryVocabArtifact {
-  /** tag → [lvFamily, siteName, agencyCodes] (nulls/[] preserved — positional). */
-  launches: Record<string, [string | null, string | null, string[]]>;
-  /** Operator/agency name vocabulary. `a` = alias variants; `p` = parent org code. */
-  orgs: Record<string, { n: string; a?: string[]; p?: string }>;
-  /** The org codes that actually own ≥1 in-orbit object (a subset of `orgs`).
-   *  Lets the client tell an owner name (→ family filter) from an agency-only
-   *  name (→ launch filter) — see query/vocab.ts installQueryVocab. */
-  owners: string[];
-}
+// The artifact shape (formerly this module's own `QueryVocabArtifact`) moved
+// to @orbitwatch/contracts as `QueryVocab` (C3), merged with frontend
+// data/query-vocab-client.ts's identical copy — zero field diffs.
 
 /** Walk the parent chain of `code`, adding each ancestor to `out` (cycle/depth-safe). */
 function collectAncestors(code: string, orgs: Map<string, OrgRecord>, out: Set<string>): void {
@@ -46,8 +37,8 @@ export function buildQueryVocab(
   records: Iterable<ObjectMetadata>,
   orgs: Map<string, OrgRecord>,
   referencedLaunches: Record<string, LaunchRecord>,
-): QueryVocabArtifact {
-  const launches: QueryVocabArtifact['launches'] = {};
+): QueryVocab {
+  const launches: QueryVocab['launches'] = {};
   for (const [tag, l] of Object.entries(referencedLaunches)) {
     launches[tag] = [l.lvFamily, l.siteName, l.agencies];
   }
@@ -69,7 +60,7 @@ export function buildQueryVocab(
   }
   for (const code of [...emit]) collectAncestors(code, orgs, emit);
 
-  const vocabOrgs: QueryVocabArtifact['orgs'] = {};
+  const vocabOrgs: QueryVocab['orgs'] = {};
   for (const code of [...emit].sort()) {
     const o = orgs.get(code);
     if (!o) continue;
@@ -79,5 +70,5 @@ export function buildQueryVocab(
       ...(o.parent ? { p: o.parent } : {}),
     };
   }
-  return { launches, orgs: vocabOrgs, owners: [...owners].sort() };
+  return { launches, orgs: vocabOrgs, owners: [...owners].sort() } satisfies QueryVocab;
 }

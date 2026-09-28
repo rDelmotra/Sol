@@ -30,7 +30,16 @@ let cached: TlePayload | null = null;
  * string. Pure (no disk/state) so it can be unit-tested directly.
  *
  * `rawArray` is the verbatim contents of tle-cache.json (a JSON array). The
- * emitted JSON is shape-identical to the old `res.json({version,count,data})`.
+ * emitted JSON is shape-identical to the old `res.json({version,count,data})`
+ * — i.e. @orbitwatch/contracts' `CatalogResponse`. Deliberately NOT built via
+ * an object literal + JSON.stringify (which would let us `satisfies
+ * CatalogResponse` it): `rawArray` is spliced in as a raw string precisely to
+ * avoid parsing/re-serializing the ~13.8 MB payload on every version change
+ * (see the module comment above) — constructing an object here to satisfy the
+ * type would reintroduce that cost. C3 note: this envelope was intentionally
+ * left un-typed for that reason; the non-gzip fallback in routes/tle.ts and
+ * history/serving/snapshot-cache.ts's per-day build (both cheap, object-based)
+ * carry the `satisfies CatalogResponse` check instead.
  */
 export function buildTlePayload(
   rawArray: string,

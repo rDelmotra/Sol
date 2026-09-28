@@ -1,4 +1,5 @@
 import zlib from 'node:zlib';
+import type { CatalogResponse } from '@orbitwatch/contracts';
 import { getPool } from '../db/pool.js';
 import { getAsOfCatalog } from '../db/queries.js';
 import { logger } from '../../utils/logger.js';
@@ -39,9 +40,12 @@ async function buildDaySnapshot(day: string): Promise<DaySnapshot | null> {
 
   const { objects, maxIngestedAt } = await getAsOfCatalog(pool, day);
 
-  // Same envelope as /api/tle/all. Built per-day and cached, so the JSON.stringify
-  // here (unlike the live hot path) is paid at most once per day.
-  const envelope = JSON.stringify({ version: day, count: objects.length, data: objects });
+  // Same envelope as /api/tle/all (@orbitwatch/contracts CatalogResponse). Built
+  // per-day and cached, so the JSON.stringify here (unlike the live hot path)
+  // is paid at most once per day.
+  const envelope = JSON.stringify(
+    { version: day, count: objects.length, data: objects } satisfies CatalogResponse,
+  );
   const gzip = zlib.gzipSync(Buffer.from(envelope, 'utf8'), { level: 9 });
 
   return {

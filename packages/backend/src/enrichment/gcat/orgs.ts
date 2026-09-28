@@ -8,24 +8,11 @@
 // Docs: https://planet4589.org/space/gcat/web/orgs/
 // ============================================================
 
-import type { Sector } from '@orbitwatch/contracts';
+// OrgRecord moved to @orbitwatch/contracts as of C3 (also the wire shape
+// served verbatim by GET /api/org/:code) — import it from there.
+import type { OrgRecord } from '@orbitwatch/contracts';
 import { parseGcatTsv } from './tsv.js';
 import { clasToSectors } from './vocab.js';
-
-export interface OrgRecord {
-  code: string;
-  name: string;               // display pick: EName || ShortEName || ShortName || Name
-  aliases?: string[];         // remaining name variants (search vocab, G3)
-  stateCode: string | null;   // GCAT state code (canonicalize at use sites)
-  cls: string | null;         // raw Class (B/D/C/A)
-  sectors: Sector[];          // Class folded like psatcat Clas (A→civil)
-  type: string | null;        // raw Type flags ("O/PL", "LA", …)
-  parent: string | null;      // org hierarchy (another org code)
-  lat: number | null;
-  lon: number | null;
-  tstart: string | null;
-  tstop: string | null;
-}
 
 function num(cell: string): number | null {
   if (!cell) return null;

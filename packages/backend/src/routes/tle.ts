@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import type { CatalogResponse } from '@orbitwatch/contracts';
 import {
   isVisualCacheFresh,
   readCache,
@@ -106,7 +107,7 @@ router.get('/all', (req: Request, res: Response) => {
     res.status(503).json({ error: 'Cache read error. Try again shortly.' });
     return;
   }
-  res.json({ version: payload.version, count: payload.count, data });
+  res.json({ version: payload.version, count: payload.count, data } satisfies CatalogResponse);
 });
 
 // ============================================================

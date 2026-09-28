@@ -1,6 +1,8 @@
-import type { EnrichedTLEObject } from '@orbitwatch/contracts';
+import type { CatalogResponse, HistoryCoverage } from '@orbitwatch/contracts';
 import { buildCatalogResult, type TleCatalogResult } from './tle-client';
 import { readHistoryDayCache, writeHistoryDayCache } from './history-cache';
+
+export type { HistoryCoverage };
 
 // ============================================================
 // Historical catalog client — the "review" data source.
@@ -15,13 +17,6 @@ import { readHistoryDayCache, writeHistoryDayCache } from './history-cache';
 // history is unavailable (backend 503 when DATABASE_URL is unset), the day is out
 // of coverage, or the network fails with no cached copy.
 // ============================================================
-
-export interface HistoryCoverage {
-  from: string | null;          // earliest UTC day 'YYYY-MM-DD'
-  to: string | null;            // latest UTC day 'YYYY-MM-DD'
-  objectCount: number;
-  lastIngestAt: string | null;  // ISO of the most recent ingest
-}
 
 /** "Today" snapshots can still change as new elsets ingest → short refetch TTL. */
 const TODAY_TTL_MS = 5 * 60 * 1000;
@@ -47,19 +42,13 @@ export async function fetchHistoryCoverage(apiUrl: string): Promise<HistoryCover
   }
 }
 
-interface HistoryAtResponse {
-  version: string;
-  count: number;
-  data: EnrichedTLEObject[];
-}
-
 async function fetchHistoryDayFromNetwork(
   apiUrl: string,
   day: string,
-): Promise<HistoryAtResponse | null> {
+): Promise<CatalogResponse | null> {
   const res = await fetch(`${apiUrl}/api/history/at?t=${encodeURIComponent(day)}`);
   if (!res.ok) return null; // 422 out-of-coverage / 503 disabled / etc.
-  const body = (await res.json()) as HistoryAtResponse;
+  const body = (await res.json()) as CatalogResponse;
   if (!body || !Array.isArray(body.data)) return null;
   return body;
 }

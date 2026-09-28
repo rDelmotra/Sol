@@ -18,11 +18,11 @@ import { dirname, resolve } from 'node:path';
 import type {
   DecayedCatalogRow,
   InlineMetadataFacets,
+  LaunchRecord,
   ObjectMetadata,
+  OrgRecord,
 } from '@orbitwatch/contracts';
 import type { EnrichmentArtifactMeta } from './types.js';
-import type { OrgRecord } from './gcat/orgs.js';
-import type { LaunchRecord } from './gcat/launches.js';
 import { matchProgram } from './programs.js';
 import { primaryOwnerCode } from './gcat/inherit.js';
 import { logger } from '../utils/logger.js';

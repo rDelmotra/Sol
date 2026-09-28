@@ -1,6 +1,6 @@
 import type { TLEInput, FacetCounts } from './types';
 import { emptyFacetCounts } from './types';
-import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime, Sector, Purpose, OrbitalStatus } from '@orbitwatch/contracts';
+import type { CatalogResponse, EnrichedTLEObject, ObjectCategory, OrbitalRegime, Sector, Purpose, OrbitalStatus } from '@orbitwatch/contracts';
 import { readCatalogCache, writeCatalogCache } from './catalog-cache';
 import {
   fetchVisualList,
@@ -97,7 +97,7 @@ interface NetworkCatalog {
 async function fetchCatalogFromNetwork(apiUrl: string): Promise<NetworkCatalog> {
   const res = await fetch(`${apiUrl}/api/tle/all`);
   if (!res.ok) throw new Error(`TLE fetch failed: ${res.status}`);
-  const response = await res.json();
+  const response = (await res.json()) as CatalogResponse;
   return { version: response.version, catalogData: response.data };
 }
 

@@ -20,8 +20,7 @@
 // explicit "this unknown demands its own plan" contract (expected: single digits).
 // ============================================================
 
-import type { AnalyticObjectType, FacetProvenance, ObjectMetadata, Purpose } from '@orbitwatch/contracts';
-import type { OrgRecord } from './orgs.js';
+import type { AnalyticObjectType, FacetProvenance, ObjectMetadata, OrgRecord, Purpose } from '@orbitwatch/contracts';
 import { canonicalFromSatcatState } from '../country-codes.js';
 
 export interface UnresolvedObject {
