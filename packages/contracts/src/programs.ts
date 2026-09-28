@@ -92,3 +92,10 @@ export const PROGRAM_LABELS = {
 export type ProgramId = keyof typeof PROGRAM_LABELS;
 
 export const PROGRAM_IDS = Object.keys(PROGRAM_LABELS) as ProgramId[];
+
+/** Display label for a program slug. The wire field is a plain string, so ids
+ *  outside the table fall back to the slug itself (the ONE place that lookup
+ *  and its fallback live). */
+export function programLabel(id: string): string {
+  return (PROGRAM_LABELS as Record<string, string>)[id] ?? id;
+}

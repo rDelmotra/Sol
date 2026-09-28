@@ -33,9 +33,8 @@
 // ============================================================
 
 import * as satellite from 'satellite.js';
-import type { EnrichedTLEObject } from '../../data/types';
 import type { QueryVocab } from '../../data/query-vocab-client';
-import { PROGRAM_LABELS } from '../../data/metadata-types';
+import { programLabel, type EnrichedTLEObject } from '@orbitwatch/contracts';
 import {
   createLivePlane,
   stateFromKm,
@@ -212,7 +211,7 @@ export function createLiveAnalyticSource(deps: LiveSourceDeps): AnalyticDataSour
       case 'owner.name':
         return (obj.owner && deps.getVocab()?.orgs[obj.owner]?.n) || null;
       case 'program.label':
-        return obj.program ? PROGRAM_LABELS[obj.program] ?? obj.program : null;
+        return obj.program ? programLabel(obj.program) : null;
       case 'launch.date': case 'launch.lvType': case 'launch.pad': case 'launch.success':
       case 'owner.stateCode': case 'owner.cls':
         return null; // vocab doesn't carry these (adapter gap)

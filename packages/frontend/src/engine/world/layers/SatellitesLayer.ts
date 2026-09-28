@@ -5,7 +5,7 @@ import { Sgp4WorkerClient, type Sgp4PositionResult } from '../../tle/Sgp4WorkerC
 import { getSunDirection, getObserverSceneAnchor } from '../../scene/sky';
 import { simClock } from '../../SimClock';
 import { useStore, isObserverMode, type VisibilityMode } from '../../../store/useStore';
-import type { EnrichedTLEObject } from '../../../data/types';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 import { validateProgram, execute, type AnalyticProgram, type ExecuteOutcome } from '@orbitwatch/analytic';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';

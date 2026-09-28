@@ -3,7 +3,7 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js
 import type { SatelliteRenderer } from '../SatelliteRenderer';
 import type { DsoRenderer } from '../DsoRenderer';
 import type { GPUPicker } from '../GPUPicker';
-import type { EnrichedTLEObject } from '../../data/types';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { useStore } from '../../store/useStore';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
 

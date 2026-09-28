@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as satellite from 'satellite.js';
 import type { OMMJsonObject } from 'satellite.js';
-import type { EnrichedTLEObject } from '../../data/types';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import type { QueryVocab } from '../../data/query-vocab-client';
 import { sunDirection, observerTeme } from '@orbitwatch/orbital-core';
 import { createLiveAnalyticSource, type LiveBuffers } from './live-source';

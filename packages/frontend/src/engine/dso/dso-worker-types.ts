@@ -1,4 +1,4 @@
-import type { DsoSnapshot } from '../../data/dso-types';
+import type { DsoSnapshot } from '@orbitwatch/contracts';
 
 export type DsoWorkerInMessage =
   | {

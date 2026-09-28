@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
-import type { ObjectCategory } from '../data/types';
-import { PROGRAM_LABELS, type ObjectMetadataResponse } from '../data/metadata-types';
+import { programLabel, type ObjectCategory } from '@orbitwatch/contracts';
+import type { ObjectMetadataResponse } from '../data/metadata-types';
 import { fetchObjectMetadata } from '../data/metadata-client';
 
 const CATEGORY_LABELS: Record<ObjectCategory, string> = {
@@ -384,8 +384,8 @@ export function InfoCard() {
       <Row label="Perigee" value={`${Math.round(s.perigee).toLocaleString()} km`} />
       <ClickableRow
         label="Program"
-        value={s.program ? (PROGRAM_LABELS[s.program] ?? s.program) : null}
-        pivot={s.program ? (PROGRAM_LABELS[s.program] ?? s.program) : null}
+        value={s.program ? programLabel(s.program) : null}
+        pivot={s.program ? programLabel(s.program) : null}
         onPivot={injectSearchQuery}
       />
       <Row label="Country" value={s.countryCode} />

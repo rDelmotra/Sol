@@ -9,7 +9,7 @@
 // ============================================================
 
 import type { FieldValue } from '@orbitwatch/analytic';
-import { PROGRAM_LABELS } from '@orbitwatch/contracts';
+import { programLabel } from '@orbitwatch/contracts';
 import {
   loadEnrichment,
   loadOrgs,
@@ -112,7 +112,7 @@ export function createEnrichmentProvider(): FieldProvider {
       case 'program.label': {
         const slug = deriveInlineFacets(m).program;
         if (!slug) return null;
-        return (PROGRAM_LABELS as Record<string, string>)[slug] ?? slug;
+        return programLabel(slug);
       }
 
       // ── Ownership ────────────────────────────────────────────────────────

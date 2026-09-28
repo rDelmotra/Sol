@@ -1,4 +1,5 @@
-import type { EnrichedTLEObject, TLEInput } from './types';
+import type { TLEInput } from './types';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { fetchTleCatalog } from './tle-client';
 import { useStore } from '../store/useStore';
 

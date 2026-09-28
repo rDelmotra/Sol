@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { OMMJsonObject } from 'satellite.js';
 import { buildCatalogResult } from './tle-client';
-import type { EnrichedTLEObject } from './types';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 
 function makeTestOmm(noradId: number): OMMJsonObject {
   return {

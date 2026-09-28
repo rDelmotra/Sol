@@ -15,8 +15,9 @@
 // word, produces {} here → zero recomputes. Covered by apply.test.ts.
 // ============================================================
 
-import type { CatalogType, OrbitalRegime } from '../data/types';
-import type { Purpose, SectorFilterKey, OrbitalStatus } from '../data/metadata-types';
+import type { CatalogType } from '../data/types';
+import type { OrbitalRegime, Purpose, OrbitalStatus } from '@orbitwatch/contracts';
+import type { SectorFilterKey } from '../data/metadata-types';
 import {
   TYPE_KEYS,
   STATUS_KEYS,

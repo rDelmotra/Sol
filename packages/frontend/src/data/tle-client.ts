@@ -1,6 +1,6 @@
-import type { TLEInput, EnrichedTLEObject, ObjectCategory, OrbitalRegime, FacetCounts } from './types';
+import type { TLEInput, FacetCounts } from './types';
 import { emptyFacetCounts } from './types';
-import type { Sector, Purpose, OrbitalStatus } from './metadata-types';
+import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime, Sector, Purpose, OrbitalStatus } from '@orbitwatch/contracts';
 import { readCatalogCache, writeCatalogCache } from './catalog-cache';
 import {
   fetchVisualList,

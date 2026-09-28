@@ -1,16 +1,22 @@
+// ============================================================
+// TLE catalog wire types.
+//
+// ObjectType, ObjectCategory, OrbitalRegime and EnrichedTLEObject (the shape
+// served by GET /api/tle/all) moved to @orbitwatch/contracts in C2b — import
+// them from there. What's left here is package-local: TLEInput (the client's
+// satellite.js input shape), CatalogType (the UI type-filter key space —
+// extends the wire ObjectType with 'deep_space' for DSO objects), FacetCounts
+// + its factory helpers, and WorkerOutMessage (the SGP4 worker protocol).
+// ============================================================
+
 import type { OMMJsonObject } from 'satellite.js';
-import type { Sector, Purpose, OrbitalStatus, SectorFilterKey } from './metadata-types';
+import type { ObjectType, OrbitalStatus, Purpose } from '@orbitwatch/contracts';
+import type { SectorFilterKey } from './metadata-types';
 
 export interface TLEInput {
     noradId: number
     omm: OMMJsonObject
 }
-
-export type ObjectCategory = 'active_satellite' | 'inactive_satellite' | 'rocket_body' | 'debris' | 'unknown' | 'deep_space';
-export type OrbitalRegime = 'LEO' | 'MEO' | 'GEO' | 'HEO' | 'OTHER';
-
-/** Live object type (from Space-Track/CelesTrak GP OBJECT_TYPE). 'satellite' is a payload. */
-export type ObjectType = 'satellite' | 'rocket_body' | 'debris' | 'unknown';
 
 /** Type-filter key space: the live ObjectType plus 'deep_space' for DSO objects. */
 export type CatalogType = ObjectType | 'deep_space';
@@ -51,38 +57,6 @@ export function cloneFacetCounts(src: FacetCounts): FacetCounts {
     purpose: { ...src.purpose },
     country: { ...src.country },
   };
-}
-
-export interface EnrichedTLEObject {
-  noradId: number;
-  name: string;
-  omm: OMMJsonObject;
-  objectType: ObjectType;
-  category: ObjectCategory;
-  regime: OrbitalRegime;
-  countryCode: string;
-  launchDate: string | null;
-  period: number;
-  apogee: number;
-  perigee: number;
-  inclination: number;
-  rcsSize: string | null;
-  epoch: string;
-  // ── Inline metadata facets (joined on the backend; mirror of EnrichedTLEObject) ──
-  // status = orbital status from satcat.csv; sectors/purpose from the UCS join
-  // (program-registry inference fills the gaps for unmatched payloads).
-  sectors: Sector[];
-  purpose: Purpose;
-  status: OrbitalStatus;
-  // Program membership slug (e.g. 'starlink'); omitted when unmatched.
-  program?: string;
-  // GCAT launch tag ("2019-074") — the launch/vehicle/site query facets' join
-  // key (G3). Inlined by the backend; the frontend fills it from omm.OBJECT_ID
-  // for stale-cache / post-snapshot objects (see data/tle-client.ts).
-  launchTag?: string;
-  // Primary owner org code ("SPXS") — the operator query facet (G3). Backend-only
-  // (no client-side derivation); absent on catalogs cached before G3.
-  owner?: string;
 }
 
 export type WorkerOutMessage =

@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import type { EnrichedTLEObject } from '../data/types';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import type { ValidationReport } from '../store/devStore';
 import { useDevStore } from '../store/devStore';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';

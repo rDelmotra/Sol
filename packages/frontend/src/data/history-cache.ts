@@ -1,4 +1,4 @@
-import type { EnrichedTLEObject } from './types';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 
 // ============================================================
 // Per-day historical catalog cache (IndexedDB)

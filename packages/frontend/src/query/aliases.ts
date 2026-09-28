@@ -14,13 +14,11 @@
 //   • 'unknown' → status unknown (status precedes country's TBD name)
 // ============================================================
 
-import { COUNTRY_DISPLAY, displayCountry } from '../data/country-codes';
+import { COUNTRY_DISPLAY, displayCountry, PROGRAM_LABELS, programLabel, type Purpose } from '@orbitwatch/contracts';
 import {
   SECTOR_LABELS,
   PURPOSE_LABELS,
   ORBITAL_STATUS_LABELS,
-  PROGRAM_LABELS,
-  type Purpose,
 } from '../data/metadata-types';
 import { tokenize } from './tokenize';
 import type { FacetGroup } from './types';
@@ -148,7 +146,7 @@ function buildTable(): Map<string, AliasEntry> {
 
   // ── 6. Programs — slugs + display names + hand extras ──────────────────────
   const program = (slug: string, ...keys: string[]) => {
-    const label = PROGRAM_LABELS[slug] ?? slug;
+    const label = programLabel(slug);
     for (const k of keys) put(t, k, { group: 'program', value: slug, label });
   };
   for (const [slug, display] of Object.entries(PROGRAM_LABELS)) {

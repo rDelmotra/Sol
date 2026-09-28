@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime, CatalogType, FacetCounts } from '../data/types';
+import type { CatalogType, FacetCounts } from '../data/types';
 import { emptyFacetCounts, cloneFacetCounts } from '../data/types';
-import type { Purpose, SectorFilterKey, OrbitalStatus } from '../data/metadata-types';
-import type { DsoObject, DsoSnapshot } from '../data/dso-types';
+import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime, Purpose, OrbitalStatus, DsoSnapshot } from '@orbitwatch/contracts';
+import type { SectorFilterKey } from '../data/metadata-types';
+import type { DsoObject } from '../data/dso-types';
 import type { VisualListSource, VisualListStatus } from '../data/visualList';
 import type { HistoryCoverage } from '../data/history-client';
 import type { DsoLabelPosition } from '../engine/DsoRenderer';

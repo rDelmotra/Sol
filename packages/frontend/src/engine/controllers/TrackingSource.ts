@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import type { EnrichedTLEObject } from '../../data/types';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 
 /**
  * The window NavigationController has into the rest of the engine's per-frame data.

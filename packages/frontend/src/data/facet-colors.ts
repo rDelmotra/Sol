@@ -8,7 +8,8 @@
 // ============================================================
 
 import type { CatalogType } from './types';
-import type { Sector, OrbitalStatus, SectorFilterKey } from './metadata-types';
+import type { Sector, OrbitalStatus } from '@orbitwatch/contracts';
+import type { SectorFilterKey } from './metadata-types';
 
 export type RGB = [number, number, number];
 

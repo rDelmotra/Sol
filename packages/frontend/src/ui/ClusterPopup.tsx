@@ -1,5 +1,5 @@
 import { useStore } from '../store/useStore';
-import type { ObjectCategory } from '../data/types';
+import type { ObjectCategory } from '@orbitwatch/contracts';
 
 const CATEGORY_DOT: Record<ObjectCategory, string> = {
   active_satellite: '#4CAF50',

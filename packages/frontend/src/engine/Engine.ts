@@ -6,7 +6,7 @@ import type { VisualListResolvedResult } from '../data/visualList';
 import { VisualListPoller, buildCatalogResult, type TleCatalogResult } from '../data/tle-client';
 import { bootstrapCatalog } from '../data/bootstrapCatalog';
 import { fetchHistoryCoverage, fetchHistoryDay, utcDay } from '../data/history-client';
-import type { EnrichedTLEObject } from '../data/types';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { useStore } from '../store/useStore';
 import { GPUPicker } from './GPUPicker';
 import { initDsoClient, stopDsoClient } from '../data/dso-client';

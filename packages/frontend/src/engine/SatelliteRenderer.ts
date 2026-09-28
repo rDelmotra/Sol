@@ -1,12 +1,8 @@
 import * as THREE from 'three';
 import vertexShader from '../shaders/catalog.vert.glsl?raw';
 import fragmentShader from '../shaders/catalog.frag.glsl?raw';
-import type {
-  EnrichedTLEObject,
-  ObjectCategory,
-  OrbitalRegime,
-  FacetCounts,
-} from '../data/types';
+import type { FacetCounts } from '../data/types';
+import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime } from '@orbitwatch/contracts';
 import {
   TYPE_COLORS,
   STATUS_COLORS,

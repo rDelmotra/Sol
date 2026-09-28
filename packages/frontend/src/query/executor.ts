@@ -8,8 +8,9 @@
 // multi-sector object tagged [military, government].
 // ============================================================
 
-import { emptyFacetCounts, type CatalogType, type OrbitalRegime } from '../data/types';
-import type { Purpose, SectorFilterKey, OrbitalStatus } from '../data/metadata-types';
+import { emptyFacetCounts, type CatalogType } from '../data/types';
+import type { OrbitalRegime, Purpose, OrbitalStatus } from '@orbitwatch/contracts';
+import type { SectorFilterKey } from '../data/metadata-types';
 import { getVocabIndexes } from './vocab';
 import type { QueryIR, QueryFilterPatch, FacetGroup } from './types';
 

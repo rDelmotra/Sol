@@ -1,4 +1,4 @@
-import type { EnrichedTLEObject } from './types';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { buildCatalogResult, type TleCatalogResult } from './tle-client';
 import { readHistoryDayCache, writeHistoryDayCache } from './history-cache';
 

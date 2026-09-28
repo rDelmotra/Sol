@@ -1,5 +1,5 @@
 import { interpolateDsoPosition } from '../data/dso-interpolator';
-import type { DsoSnapshot } from '../data/dso-types';
+import type { DsoSnapshot } from '@orbitwatch/contracts';
 import type { DsoWorkerInMessage as WorkerInMessage, DsoWorkerOutMessage as WorkerOutMessage } from '../engine/dso/dso-worker-types';
 
 const DEFAULT_VALID_TO_GRACE_SEC = 600;

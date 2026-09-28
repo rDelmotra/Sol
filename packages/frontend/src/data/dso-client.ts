@@ -1,11 +1,6 @@
 import { useStore } from '../store/useStore';
-import type {
-  DsoCatalog,
-  DsoCatalogEntry,
-  DsoManifest,
-  DsoObject,
-  DsoSnapshot,
-} from './dso-types';
+import type { DsoCatalog, DsoCatalogEntry, DsoManifest, DsoSnapshot } from '@orbitwatch/contracts';
+import type { DsoObject } from './dso-types';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 const MANIFEST_POLL_MS = 60 * 1000;

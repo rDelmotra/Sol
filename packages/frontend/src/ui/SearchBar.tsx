@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Fuse, { type FuseResult } from 'fuse.js';
 import { useStore } from '../store/useStore';
-import type { EnrichedTLEObject, ObjectCategory } from '../data/types';
+import type { EnrichedTLEObject, ObjectCategory } from '@orbitwatch/contracts';
 import { parseQuery } from '../query/parser';
 import { irToFilterPatch } from '../query/executor';
 import { ensureQueryVocab } from '../query/vocab';

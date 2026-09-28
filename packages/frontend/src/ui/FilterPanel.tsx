@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useStore, type ColorBy } from '../store/useStore';
-import type { CatalogType, OrbitalRegime } from '../data/types';
-import type { OrbitalStatus, Purpose, SectorFilterKey } from '../data/metadata-types';
+import type { CatalogType } from '../data/types';
+import type { OrbitalRegime, OrbitalStatus, Purpose } from '@orbitwatch/contracts';
+import { displayCountry, countryFlag } from '@orbitwatch/contracts';
+import type { SectorFilterKey } from '../data/metadata-types';
 import { ORBITAL_STATUS_LABELS, PURPOSE_LABELS, SECTOR_LABELS } from '../data/metadata-types';
 import {
   TYPE_COLORS,
@@ -11,7 +13,6 @@ import {
   FALLBACK_GREY,
   rgbToCss,
 } from '../data/facet-colors';
-import { displayCountry, countryFlag } from '../data/country-codes';
 
 // ── Facet group definitions ───────────────────────────────────────────────────
 

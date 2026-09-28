@@ -1,4 +1,4 @@
-import type { DsoSnapshot, CanonicalStateVector } from './dso-types';
+import type { DsoSnapshot, CanonicalStateVector } from '@orbitwatch/contracts';
 
 export interface DsoPosition {
   x: number;

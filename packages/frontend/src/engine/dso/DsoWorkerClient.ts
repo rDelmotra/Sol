@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { DsoSnapshot } from '../../data/dso-types';
+import type { DsoSnapshot } from '@orbitwatch/contracts';
 import { useStore } from '../../store/useStore';
 import { sourceToSceneInto } from '../scene/frames';
 import type { DsoWorkerInMessage, DsoWorkerOutMessage } from './dso-worker-types';
