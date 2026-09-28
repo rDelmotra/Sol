@@ -164,10 +164,7 @@ export function createQueryRouter(deps: QueryRouterDeps = {}): Router {
       }
 
       const execStart = nowMs();
-      // execute() only dereferences `live` when program.universe is 'live' — the
-      // `source` null-check above already covers that case, so this is safe even
-      // when program.universe is 'all' and `live` itself is null.
-      const execOutcome = execute(program, { live: live!, all: all ?? undefined }, { nowMs: tMs, observer });
+      const execOutcome = execute(program, { live: live ?? undefined, all: all ?? undefined }, { nowMs: tMs, observer });
       const execMs = nowMs() - execStart;
 
       const qHash = createHash('sha256').update(check.question).digest('hex').slice(0, 16);

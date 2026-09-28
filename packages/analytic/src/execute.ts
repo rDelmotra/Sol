@@ -167,9 +167,16 @@ function detectElevationGate(e: Expr): ElevationGate | null {
 
 // ── Executor ──────────────────────────────────────────────────────────────────
 
+/** The data source per universe. Only the one the program's universe needs is
+ *  required at runtime; a missing one yields a typed E-UNIVERSE error. */
+export interface ExecuteSources {
+  live?: AnalyticDataSource;
+  all?: AnalyticDataSource;
+}
+
 export function execute(
   program: AnalyticProgram,
-  sources: { live: AnalyticDataSource; all?: AnalyticDataSource },
+  sources: ExecuteSources,
   opts?: ExecuteOptions,
 ): ExecuteOutcome {
   try {
@@ -195,7 +202,7 @@ class Runner {
 
   constructor(
     private readonly program: AnalyticProgram,
-    sources: { live: AnalyticDataSource; all?: AnalyticDataSource },
+    sources: ExecuteSources,
     opts?: ExecuteOptions,
   ) {
     this.universe = program.universe;

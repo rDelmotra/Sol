@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { execute, validateProgram } from '@orbitwatch/analytic';
+import { execute, validateProgram, type AnalyticProgram } from '@orbitwatch/analytic';
 import { parseDgdLine, parseDsdLine, type SwpcDailyIndex } from '../../src/services/swpc.js';
 import { createSpaceWeatherProvider } from '../../src/analytic/providers/space-weather.js';
 import { createCatalogProvider } from '../../src/analytic/providers/catalog.js';
@@ -266,7 +266,7 @@ describe('space-weather provider registered into the real registry', () => {
     reg.register('live', spaceWeather);
 
     const source = reg.buildSource('live')!;
-    const program = {
+    const program: AnalyticProgram = {
       v: 1 as const,
       universe: 'live' as const,
       timeBinding: { mode: 'at' as const, t: '2026-09-06T12:00:00Z' },

@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { execute, validateProgram } from '@orbitwatch/analytic';
+import { execute, validateProgram, type AnalyticProgram } from '@orbitwatch/analytic';
 import { createEnrichmentProvider } from '../../src/analytic/providers/enrichment.js';
 import { parseGcatDate } from '../../src/analytic/providers/gcat-date.js';
 import { DataSourceRegistry } from '../../src/analytic/registry.js';
@@ -102,7 +102,7 @@ describe('EnrichmentProvider — operationalStatus honesty', () => {
     reg.registerSpine('live', { id: 'fixture:tiny', spine: () => [33393, 5, 25544] });
     reg.register('live', provider);
 
-    const program = {
+    const program: AnalyticProgram = {
       v: 1 as const,
       universe: 'live' as const,
       timeBinding: { mode: 'now' as const },

@@ -1,0 +1,11 @@
+{
+  "//": "Type-checks the repo-level tests (tests/architecture.test.ts). Run by the root `npm run typecheck`.",
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts"]
+}

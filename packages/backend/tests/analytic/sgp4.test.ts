@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { execute, validateProgram } from '@orbitwatch/analytic';
+import { execute, validateProgram, type AnalyticProgram } from '@orbitwatch/analytic';
 import { createSgp4Provider } from '../../src/analytic/providers/sgp4.js';
 import { createCatalogProvider } from '../../src/analytic/providers/catalog.js';
 import { createEnrichmentProvider } from '../../src/analytic/providers/enrichment.js';
@@ -260,7 +260,7 @@ describe('sgp4 in the real chain — [catalog, enrichment, sgp4] via execute()',
     reg.register('live', enrichment);
     reg.register('live', sgp4);
 
-    const program = {
+    const program: AnalyticProgram = {
       v: 1 as const,
       universe: 'live' as const,
       timeBinding: { mode: 'now' as const },

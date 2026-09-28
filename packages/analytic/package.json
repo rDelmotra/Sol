@@ -13,10 +13,11 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "tsx --test 'src/**/*.test.ts'"
   },
   "devDependencies": {
+    "@types/node": "^20.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.4.0"
   }
