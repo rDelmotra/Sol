@@ -1,11 +1,11 @@
-import type { OMMJsonObject } from 'satellite.js';
-import type { Sector, Purpose, OrbitalStatus } from '../enrichment/types.js';
-
-/** Re-export so both packages share one source of truth for the OMM shape. */
-export type { OMMJsonObject };
-
 // ============================================================
 // Shared type definitions for the backend
+//
+// Wire/domain types shared with the frontend (EnrichedTLEObject, ObjectType,
+// ObjectCategory, OrbitalRegime, OMMJsonObject) live in @orbitwatch/contracts
+// as of C2a — import them from there. What's left here is backend-local:
+// raw provider shapes, the classifier's input contract, and the version
+// cache metadata.
 // ============================================================
 
 // ── Space-Track GP element ────────────────────────────────────────────────────
@@ -93,60 +93,9 @@ export interface ClassifiableObject {
   opsStatusCode?: string; // only available when SATCAT was fetched (Space-Track primary)
 }
 
-export type ObjectType = 'satellite' | 'rocket_body' | 'debris' | 'unknown';
-
-export type ObjectCategory =
-  | 'active_satellite'
-  | 'inactive_satellite'
-  | 'rocket_body'
-  | 'debris'
-  | 'unknown'
-  | 'deep_space';
-
-export type OrbitalRegime = 'LEO' | 'MEO' | 'GEO' | 'HEO' | 'OTHER';
-
-// Fully enriched object — this is what gets cached and served to clients
-export interface EnrichedTLEObject {
-  noradId: number;
-  name: string;
-  omm: OMMJsonObject;            // OMM mean elements (for SGP4 propagation on client)
-  objectType: ObjectType;
-  category: ObjectCategory;
-  regime: OrbitalRegime;
-  countryCode: string;
-  launchDate: string | null;
-  period: number;                // minutes
-  apogee: number;                // km
-  perigee: number;               // km
-  inclination: number;           // degrees
-  rcsSize: string | null;
-  epoch: string;                 // ISO timestamp of the TLE epoch
-  // ── Inline metadata facets (joined in the cron from the enrichment store) ──
-  // status = orbital status from the McDowell satcat.csv (in_orbit/decayed/...);
-  // sectors/purpose come from the UCS join ([] / 'other' when unmatched).
-  sectors: Sector[];
-  purpose: Purpose;
-  status: OrbitalStatus;
-  // Program membership (programs.ts registry slug, e.g. 'starlink'). Omitted
-  // when the object matches no program, keeping the hot payload lean.
-  program?: string;
-  // GCAT launch tag ("2019-074") — the launch/vehicle/site query facets' join
-  // key (G3). Omitted when the enrichment record has none.
-  launchTag?: string;
-  // Primary owner org code ("SPXS") — the operator query facet (G3).
-  owner?: string;
-}
-
 // Written to data/version.json
 export interface VersionInfo {
   version: string;               // ISO timestamp of when this cache was built
   count: number;
   byteSize: number;              // byte size of tle-cache.json
-}
-
-// HTTP response shape for GET /api/tle/all
-export interface TLEApiResponse {
-  version: string;
-  count: number;
-  data: EnrichedTLEObject[];
 }

@@ -1,9 +1,5 @@
-import {
-  ClassifiableObject,
-  ObjectType,
-  ObjectCategory,
-  OrbitalRegime,
-} from '../types/index.js';
+import type { ObjectCategory, ObjectType, OrbitalRegime } from '@orbitwatch/contracts';
+import { ClassifiableObject } from '../types/index.js';
 
 // ============================================================
 // Orbital regime boundaries

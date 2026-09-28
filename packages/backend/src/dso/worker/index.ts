@@ -15,6 +15,7 @@
  * - a later phase that adds the DSO worker entrypoint and reconcile logic
  */
 import { setTimeout } from 'node:timers/promises';
+import type { DsoManifest } from '@orbitwatch/contracts';
 import { convertProviderFetchToDsoSnapshot, validateDsoSnapshot } from '../normalize/index.js';
 import {
   getEnabledDsoRegistryEntries,
@@ -30,7 +31,6 @@ import {
   publishDsoSnapshot,
   publishDsoWorkerHeartbeat,
   readDsoManifest,
-  type DsoManifest,
 } from '../snapshot/index.js';
 import { logger } from '../../utils/logger.js';
 

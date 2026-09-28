@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { OMMJsonObject } from 'satellite.js';
 import { mapEnriched, objectTypeFromCategory } from '../../src/history/ingest/map.js';
-import type { EnrichedTLEObject } from '../../src/types/index.js';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 
 // Pure mapping test — no DB. Runs under `npm test` without a database.
 

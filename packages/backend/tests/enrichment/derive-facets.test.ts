@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { deriveInlineFacets } from '../../src/enrichment/store.js';
-import type { ObjectMetadata } from '../../src/enrichment/types.js';
+import type { ObjectMetadata } from '@orbitwatch/contracts';
 
 // Pure precedence tests for the runtime facet derivation — no disk, no module
 // cache. UCS/satcat values must always survive; program defaults fill only

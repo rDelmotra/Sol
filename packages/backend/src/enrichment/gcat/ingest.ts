@@ -17,13 +17,13 @@
 // ============================================================
 
 import {
-  ObjectMetadata,
   DecayedCatalogRow,
-  OrbitalStatus,
   FacetProvenance,
   GcatRawCodes,
-  emptyObjectMetadata,
-} from '../types.js';
+  ObjectMetadata,
+  OrbitalStatus,
+} from '@orbitwatch/contracts';
+import { emptyObjectMetadata } from '../types.js';
 import {
   canonicalFromSatcatState,
   SATCAT_STATE_TO_CANONICAL,

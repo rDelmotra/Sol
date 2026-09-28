@@ -1,4 +1,4 @@
-import type { DsoSnapshot } from '../snapshot/index.js';
+import type { DsoSnapshot } from '@orbitwatch/contracts';
 
 const MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024;
 const CADENCE_TOLERANCE_SEC = 1;

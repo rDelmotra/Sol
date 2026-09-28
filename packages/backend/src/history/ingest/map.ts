@@ -1,4 +1,4 @@
-import type { EnrichedTLEObject, ObjectCategory, ObjectType } from '../../types/index.js';
+import type { EnrichedTLEObject, ObjectCategory, ObjectType } from '@orbitwatch/contracts';
 import type { HistoryDimRow, HistoryFactRow } from '../types.js';
 
 // ============================================================

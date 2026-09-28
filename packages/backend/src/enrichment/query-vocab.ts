@@ -16,7 +16,7 @@
 // Pure — unit-tests without snapshot files. Named to avoid gcat/vocab.ts.
 // ============================================================
 
-import type { ObjectMetadata } from './types.js';
+import type { ObjectMetadata } from '@orbitwatch/contracts';
 import type { OrgRecord } from './gcat/orgs.js';
 import type { LaunchRecord } from './gcat/launches.js';
 import { primaryOwnerCode } from './gcat/inherit.js';

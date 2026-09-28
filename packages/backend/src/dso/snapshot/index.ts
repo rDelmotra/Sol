@@ -13,6 +13,9 @@
  *
  * Filled in by:
  * - a later phase that adds manifest, catalog, and snapshot publish helpers
+ *
+ * DsoFreshnessState/DsoSourceFrame/DsoSnapshot/DsoCatalogEntry/DsoObjectStatus/
+ * DsoManifest/DsoCatalog (formerly this dir's ./types.js) moved to
+ * @orbitwatch/contracts in C2a — import them from there.
  */
-export * from './types.js';
 export * from './store.js';

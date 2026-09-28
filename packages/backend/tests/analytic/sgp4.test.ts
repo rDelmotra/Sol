@@ -13,7 +13,8 @@ import { createSgp4Provider } from '../../src/analytic/providers/sgp4.js';
 import { createCatalogProvider } from '../../src/analytic/providers/catalog.js';
 import { createEnrichmentProvider } from '../../src/analytic/providers/enrichment.js';
 import { DataSourceRegistry } from '../../src/analytic/registry.js';
-import type { EnrichedTLEObject, VersionInfo } from '../../src/types/index.js';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
+import type { VersionInfo } from '../../src/types/index.js';
 
 const ISS_OMM = {
   OBJECT_NAME: 'ISS (ZARYA)', OBJECT_ID: '1998-067A', EPOCH: '2026-07-18T20:42:49.520160Z',

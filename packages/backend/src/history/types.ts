@@ -1,4 +1,4 @@
-import type { ObjectCategory, OrbitalRegime } from '../types/index.js';
+import type { ObjectCategory, OrbitalRegime } from '@orbitwatch/contracts';
 
 // ============================================================
 // History namespace — shared row/coverage types

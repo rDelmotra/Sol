@@ -26,11 +26,8 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { DecayedCatalogRow, ObjectMetadata, PROGRAM_LABELS, Purpose, Sector } from '@orbitwatch/contracts';
 import {
-  ObjectMetadata,
-  DecayedCatalogRow,
-  Sector,
-  Purpose,
   EnrichmentArtifactMeta,
   UCS_USER_TO_SECTOR,
   emptyObjectMetadata,
@@ -346,7 +343,7 @@ function main(): void {
   // Tiny, diff-reviewable registry roll-up (future GET /api/programs backing).
   const programsSummary = PROGRAMS.map((p) => ({
     id: p.id,
-    displayName: p.displayName,
+    displayName: PROGRAM_LABELS[p.id],
     matchCount: programCounts.get(p.id) ?? 0,
   }));
 

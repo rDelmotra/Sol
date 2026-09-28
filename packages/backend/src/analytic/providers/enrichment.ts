@@ -9,7 +9,7 @@
 // ============================================================
 
 import type { FieldValue } from '@orbitwatch/analytic';
-import { PROGRAMS } from '../../enrichment/programs.js';
+import { PROGRAM_LABELS } from '@orbitwatch/contracts';
 import {
   loadEnrichment,
   loadOrgs,
@@ -20,9 +20,6 @@ import { primaryOwnerCode } from '../../enrichment/store.js';
 import { logger } from '../../utils/logger.js';
 import { parseGcatDate } from './gcat-date.js';
 import type { FieldProvider } from '../types.js';
-
-// ── Program label map (slug → displayName, built once) ───────────────────────
-const PROGRAM_LABELS = new Map(PROGRAMS.map((e) => [e.id, e.displayName]));
 
 // ── Claimed fields ────────────────────────────────────────────────────────────
 // Exactly the field keys from the S1 spec table. Catalog-plane fields
@@ -115,7 +112,7 @@ export function createEnrichmentProvider(): FieldProvider {
       case 'program.label': {
         const slug = deriveInlineFacets(m).program;
         if (!slug) return null;
-        return PROGRAM_LABELS.get(slug) ?? slug;
+        return (PROGRAM_LABELS as Record<string, string>)[slug] ?? slug;
       }
 
       // ── Ownership ────────────────────────────────────────────────────────

@@ -29,7 +29,8 @@ import {
   type StateEr,
 } from '@orbitwatch/orbital-core';
 import { readCache, readVersion, readVisualCache } from '../../cache/file-cache.js';
-import type { EnrichedTLEObject, VersionInfo } from '../../types/index.js';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
+import type { VersionInfo } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import type { FieldProvider } from '../types.js';
 import { createVersionGuard } from './version-guard.js';

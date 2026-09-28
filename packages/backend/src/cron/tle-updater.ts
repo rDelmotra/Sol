@@ -6,8 +6,8 @@ import { getInlineFacets } from '../enrichment/store.js';
 import { buildOmm } from '../utils/omm.js';
 import { writeCache, readCache, isCacheFresh } from '../cache/file-cache.js';
 import { primeTlePayload } from '../cache/tle-payload-cache.js';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import {
-  EnrichedTLEObject,
   SpaceTrackGPElement,
   CelesTrakGPElement,
   ClassifiableObject,

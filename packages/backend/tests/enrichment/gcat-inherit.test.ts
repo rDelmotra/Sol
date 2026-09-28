@@ -5,7 +5,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyGraphInheritance } from '../../src/enrichment/gcat/inherit.js';
 import type { OrgRecord } from '../../src/enrichment/gcat/orgs.js';
-import { ObjectMetadata, emptyObjectMetadata } from '../../src/enrichment/types.js';
+import type { ObjectMetadata } from '@orbitwatch/contracts';
+import { emptyObjectMetadata } from '../../src/enrichment/types.js';
 
 function org(code: string, over: Partial<OrgRecord> = {}): [string, OrgRecord] {
   return [code, {

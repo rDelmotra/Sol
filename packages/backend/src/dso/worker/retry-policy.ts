@@ -1,5 +1,5 @@
+import type { DsoObjectStatus } from '@orbitwatch/contracts';
 import type { DsoRegistryEntry } from '../registry/types.js';
-import type { DsoObjectStatus } from '../snapshot/types.js';
 
 const UNAVAILABLE_BACKOFF_BASE_MS = 60_000;
 const UNAVAILABLE_BACKOFF_MAX_MS = 30 * 60_000;

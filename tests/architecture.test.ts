@@ -259,7 +259,6 @@ const KNOWN_VIOLATIONS: KnownViolation[] = [
   // backend dependency-direction debt
   { rule: 'be-low-tiers-stay-low', from: `${BE}/cache/swpc-cache.ts`, to: `${BE}/services/swpc`, fix: '2.5 move record types down a tier' },
   { rule: 'be-low-tiers-stay-low', from: `${BE}/cache/gazetteer-cache.ts`, to: `${BE}/services/gazetteer`, fix: '2.5 move record types down a tier' },
-  { rule: 'be-low-tiers-stay-low', from: `${BE}/types/index.ts`, to: `${BE}/enrichment/types`, fix: '2.2 contracts package' },
   { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/index`, fix: '2.5 inject the registry snapshot' },
   { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/types`, fix: '2.5 inject the registry snapshot' },
 ];

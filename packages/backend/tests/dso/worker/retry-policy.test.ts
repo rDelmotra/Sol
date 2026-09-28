@@ -6,7 +6,7 @@ import {
   shouldRefreshDsoEntry,
 } from '../../../src/dso/worker/retry-policy.ts';
 import type { DsoRegistryEntry } from '../../../src/dso/registry/types.ts';
-import type { DsoObjectStatus } from '../../../src/dso/snapshot/types.ts';
+import type { DsoObjectStatus } from '@orbitwatch/contracts';
 
 const entry: DsoRegistryEntry = {
   dsoId: 'artemis-ii',

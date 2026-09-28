@@ -8,7 +8,7 @@
 // Docs: https://planet4589.org/space/gcat/web/orgs/
 // ============================================================
 
-import type { Sector } from '../types.js';
+import type { Sector } from '@orbitwatch/contracts';
 import { parseGcatTsv } from './tsv.js';
 import { clasToSectors } from './vocab.js';
 

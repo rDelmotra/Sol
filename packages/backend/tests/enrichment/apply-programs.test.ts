@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { applyProgramDefaults, matchProgram, PROGRAMS } from '../../src/enrichment/programs.js';
-import type { ObjectMetadata } from '../../src/enrichment/types.js';
+import type { ObjectMetadata } from '@orbitwatch/contracts';
 
 // Build-time provenance semantics: 'inferred' appended to sources exactly once;
 // facetProvenance keys exist only for facets the program actually filled;

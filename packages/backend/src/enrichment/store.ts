@@ -16,11 +16,11 @@ import { gunzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import type {
-  ObjectMetadata,
-  InlineMetadataFacets,
   DecayedCatalogRow,
-  EnrichmentArtifactMeta,
-} from './types.js';
+  InlineMetadataFacets,
+  ObjectMetadata,
+} from '@orbitwatch/contracts';
+import type { EnrichmentArtifactMeta } from './types.js';
 import type { OrgRecord } from './gcat/orgs.js';
 import type { LaunchRecord } from './gcat/launches.js';
 import { matchProgram } from './programs.js';

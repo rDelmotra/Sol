@@ -1,8 +1,7 @@
 import { ER_KM } from '@orbitwatch/orbital-core';
+import type { CanonicalStateVector, DsoSnapshot } from '@orbitwatch/contracts';
 import type { ProviderFetchResult } from '../providers/index.js';
 import type { DsoRegistryEntry } from '../registry/index.js';
-import type { DsoSnapshot } from '../snapshot/index.js';
-import type { CanonicalStateVector } from './types.js';
 
 const J2000_JULIAN_DAY = 2451545.0;
 const JULIAN_DAYS_PER_CENTURY = 36525.0;

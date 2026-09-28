@@ -2,7 +2,6 @@
  * DSO registry contracts.
  *
  * Owns:
- * - DSO identity and control-plane definitions
  * - the checked-in shape of future DSO registry entries
  *
  * Does not own:
@@ -10,15 +9,13 @@
  * - manifests
  * - provider fetch results
  * - imports from TLE-specific types or updater logic
+ *
+ * DsoId/DsoProvider/DsoTargetBody/DsoRegime moved to @orbitwatch/contracts in
+ * C2a (shared with the frontend DSO client). DsoRegistryEntry stays here —
+ * it is a backend-only checked-in shape, never serialized to the frontend.
  */
 
-export type DsoId = string;
-
-export type DsoProvider = 'horizons' | 'spice';
-
-export type DsoTargetBody = 'moon' | 'earth' | 'mars' | 'other';
-
-export type DsoRegime = 'LUNAR' | 'CISLUNAR' | 'INTERPLANETARY' | 'OTHER';
+import type { DsoId, DsoProvider, DsoRegime, DsoTargetBody } from '@orbitwatch/contracts';
 
 export interface DsoRegistryEntry {
   dsoId: DsoId;

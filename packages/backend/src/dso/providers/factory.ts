@@ -1,4 +1,4 @@
-import type { DsoProvider } from '../registry/index.js';
+import type { DsoProvider } from '@orbitwatch/contracts';
 import type { DsoProviderAdapter } from './types.js';
 import { HorizonsProvider } from './horizons.js';
 

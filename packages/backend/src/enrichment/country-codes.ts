@@ -4,48 +4,13 @@
 // Three sources, three code systems. The canonical key is the Space-Track
 // COUNTRY_CODE (the live authority). This module maps the snapshot vocabularies
 // (McDowell SATCAT `state` codes, UCS full country names) onto the canonical
-// code, and provides a display name + flag emoji for the UI.
+// code. The display-name/flag table (CountryDisplay/COUNTRY_DISPLAY/
+// displayCountry) moved to @orbitwatch/contracts's countries.ts in C2a — this
+// backend copy had zero importers (grep-verified); only the raw→canonical
+// normalizers below are actually consumed (by enrichment ingest).
 //
-// The starter table seeds the top spacefaring entities; the long tail falls
-// back to the raw code via resolveCountry()/displayCountry(). Finish the tail
-// before the country filter ships. See my_plans/old/metadata_enrichment.md §3.
+// See my_plans/old/metadata_enrichment.md §3.
 // ============================================================
-
-export interface CountryDisplay {
-  name: string;   // human-readable display name
-  flag: string;   // emoji flag (empty for orgs/multinational)
-}
-
-// Canonical Space-Track code → display.
-export const COUNTRY_DISPLAY: Record<string, CountryDisplay> = {
-  US: { name: 'United States', flag: '🇺🇸' },
-  PRC: { name: 'China', flag: '🇨🇳' },
-  CIS: { name: 'Russia / CIS', flag: '🇷🇺' },
-  UK: { name: 'United Kingdom', flag: '🇬🇧' },
-  JPN: { name: 'Japan', flag: '🇯🇵' },
-  IND: { name: 'India', flag: '🇮🇳' },
-  FR: { name: 'France', flag: '🇫🇷' },
-  GER: { name: 'Germany', flag: '🇩🇪' },
-  ITSO: { name: 'Intelsat', flag: '' },
-  ESA: { name: 'ESA', flag: '🇪🇺' },
-  EUTE: { name: 'Eutelsat', flag: '' },
-  SES: { name: 'SES (Luxembourg)', flag: '🇱🇺' },
-  CA: { name: 'Canada', flag: '🇨🇦' },
-  SKOR: { name: 'South Korea', flag: '🇰🇷' },
-  SPN: { name: 'Spain', flag: '🇪🇸' },
-  AUS: { name: 'Australia', flag: '🇦🇺' },
-  ISRA: { name: 'Israel', flag: '🇮🇱' },
-  TURK: { name: 'Turkey', flag: '🇹🇷' },
-  BRAZ: { name: 'Brazil', flag: '🇧🇷' },
-  ARGN: { name: 'Argentina', flag: '🇦🇷' },
-  NETH: { name: 'Netherlands', flag: '🇳🇱' },
-  LUXE: { name: 'Luxembourg', flag: '🇱🇺' },
-  IT: { name: 'Italy', flag: '🇮🇹' },
-  UAE: { name: 'United Arab Emirates', flag: '🇦🇪' },
-  GLOB: { name: 'Multinational', flag: '🌐' },
-  NZ: { name: 'New Zealand', flag: '🇳🇿' },
-  TBD: { name: 'Unknown', flag: '' },
-};
 
 // McDowell GCAT `state` code → canonical Space-Track code.
 // (GCAT uses ISO-ish 1–2 letter codes for countries and I-prefixed codes for
@@ -116,10 +81,4 @@ export function canonicalFromSatcatState(state: string): string {
 /** Resolve a UCS country name to canonical; pass through unknowns. */
 export function canonicalFromUcsCountry(name: string): string {
   return UCS_COUNTRY_TO_CANONICAL[name.trim()] ?? name.trim();
-}
-
-/** Display name for a canonical code; falls back to the raw code. */
-export function displayCountry(code: string | null): string {
-  if (!code) return 'Unknown';
-  return COUNTRY_DISPLAY[code]?.name ?? code;
 }

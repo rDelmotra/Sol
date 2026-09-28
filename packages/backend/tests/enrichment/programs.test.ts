@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { PROGRAM_IDS } from '@orbitwatch/contracts';
 import { PROGRAMS, matchProgram } from '../../src/enrichment/programs.js';
 import { UCS_USER_TO_SECTOR } from '../../src/enrichment/types.js';
 
@@ -35,6 +36,16 @@ describe('program registry sanity', () => {
       for (const s of p.sectors ?? []) assert.ok(VALID_SECTORS.has(s), `${p.id}: ${s}`);
       if (p.purpose) assert.ok(VALID_PURPOSES.has(p.purpose), `${p.id}: ${p.purpose}`);
     }
+  });
+
+  // C2a: the registry no longer carries its own displayName — labels are
+  // looked up from @orbitwatch/contracts's PROGRAM_LABELS by id. This test
+  // guards against the two ever drifting apart (a new PROGRAMS entry with no
+  // matching contracts label, or vice versa).
+  it('ids equal contracts PROGRAM_IDS as sets', () => {
+    const registryIds = new Set(PROGRAMS.map((p) => p.id));
+    const contractIds = new Set(PROGRAM_IDS);
+    assert.deepEqual(registryIds, contractIds);
   });
 });
 

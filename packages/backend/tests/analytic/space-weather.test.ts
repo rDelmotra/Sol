@@ -14,7 +14,8 @@ import { parseDgdLine, parseDsdLine, type SwpcDailyIndex } from '../../src/servi
 import { createSpaceWeatherProvider } from '../../src/analytic/providers/space-weather.js';
 import { createCatalogProvider } from '../../src/analytic/providers/catalog.js';
 import { DataSourceRegistry } from '../../src/analytic/registry.js';
-import type { EnrichedTLEObject, VersionInfo } from '../../src/types/index.js';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
+import type { VersionInfo } from '../../src/types/index.js';
 
 // ── Real excerpts (trimmed) ────────────────────────────────────────────────
 

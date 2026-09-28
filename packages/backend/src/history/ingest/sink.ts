@@ -1,6 +1,6 @@
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import type {
   CelesTrakGPElement,
-  EnrichedTLEObject,
   SpaceTrackGPElement,
 } from '../../types/index.js';
 import type { HistoryDimRow, HistoryFactRow } from '../types.js';

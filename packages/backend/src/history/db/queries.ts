@@ -1,7 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
-import type {
-  EnrichedTLEObject,
-} from '../../types/index.js';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import type {
   HistoryCoverage,
   HistoryDimRow,

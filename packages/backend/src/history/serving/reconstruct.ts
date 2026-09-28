@@ -1,4 +1,4 @@
-import type { EnrichedTLEObject, OMMJsonObject } from '../../types/index.js';
+import type { EnrichedTLEObject, OMMJsonObject } from '@orbitwatch/contracts';
 import type { HistoryServingRow } from '../types.js';
 import { objectTypeFromCategory } from '../ingest/map.js';
 

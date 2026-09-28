@@ -6,8 +6,8 @@ import { describe, it } from 'node:test';
 import { execute, validateProgram } from '@orbitwatch/analytic';
 import { createCatalogProvider, createAllSpineProvider } from '../../src/analytic/providers/catalog.js';
 import { DataSourceRegistry } from '../../src/analytic/registry.js';
-import type { EnrichedTLEObject, VersionInfo } from '../../src/types/index.js';
-import type { DecayedCatalogRow } from '../../src/enrichment/types.js';
+import type { DecayedCatalogRow, EnrichedTLEObject } from '@orbitwatch/contracts';
+import type { VersionInfo } from '../../src/types/index.js';
 
 // omm is cast loosely — the fixture only needs the OMM numeric keys the provider reads.
 function omm(fields: Record<string, unknown>) {

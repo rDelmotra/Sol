@@ -17,7 +17,7 @@
 //   Clas 'A' (amateur/academic, ~963)        → 'civil'
 // ============================================================
 
-import type { OrbitalStatus, CatalogObjectType, Sector, Purpose } from '../types.js';
+import type { AnalyticObjectType, OrbitalStatus, Purpose, Sector } from '@orbitwatch/contracts';
 
 // ── satcat Status → OrbitalStatus ─────────────────────────────────────────────
 // Doc-verified; grouped by outcome family. Attached-variant codes (A-prefixed)
@@ -82,11 +82,11 @@ export function lookupGcatStatus(code: string | null): OrbitalStatus | undefined
   return GCAT_STATUS_TO_ORBITAL[key];
 }
 
-// ── satcat Type (first char) → CatalogObjectType ─────────────────────────────
+// ── satcat Type (first char) → AnalyticObjectType ─────────────────────────────
 // Later chars are attribute flags (docked/human-related/…) — the whole cell is
 // preserved raw in ObjectMetadata.gcat.type. 'Z' = spurious entry (26 rows in
 // this snapshot): kept as 'unknown' + reported.
-const TYPE_FIRST_CHAR: Record<string, CatalogObjectType> = {
+const TYPE_FIRST_CHAR: Record<string, AnalyticObjectType> = {
   P: 'payload',
   R: 'rocket_body',
   C: 'component',
@@ -95,7 +95,7 @@ const TYPE_FIRST_CHAR: Record<string, CatalogObjectType> = {
 };
 
 /** Type lookup on the first character. undefined = unmapped first char. */
-export function lookupGcatType(type: string | null): CatalogObjectType | undefined {
+export function lookupGcatType(type: string | null): AnalyticObjectType | undefined {
   if (!type) return undefined;
   return TYPE_FIRST_CHAR[type[0]];
 }

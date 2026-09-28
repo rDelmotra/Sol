@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
-import { EnrichedTLEObject, VersionInfo } from '../types/index.js';
+import type { EnrichedTLEObject } from '@orbitwatch/contracts';
+import { VersionInfo } from '../types/index.js';
 import { logger } from '../utils/logger.js';
 
 // ============================================================

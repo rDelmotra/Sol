@@ -12,7 +12,8 @@
  * - imports from TLE-specific types or updater logic
  */
 
-import type { DsoProvider, DsoRegistryEntry } from '../registry/index.js';
+import type { DsoProvider } from '@orbitwatch/contracts';
+import type { DsoRegistryEntry } from '../registry/index.js';
 
 export interface ProviderSample {
   julianDayTdb: number;

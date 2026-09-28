@@ -3,17 +3,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DSO_REGISTRY,
-  type DsoId,
   type DsoRegistryEntry,
 } from '../registry/index.js';
 import type {
   DsoCatalog,
   DsoCatalogEntry,
   DsoFreshnessState,
+  DsoId,
   DsoManifest,
   DsoObjectStatus,
   DsoSnapshot,
-} from './types.js';
+} from '@orbitwatch/contracts';
 import { atomicWriteJson } from '../../utils/atomic-write.js';
 
 const SNAPSHOT_RETENTION_COUNT = 3;

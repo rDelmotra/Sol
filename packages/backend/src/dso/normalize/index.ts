@@ -13,7 +13,9 @@
  *
  * Filled in by:
  * - a later phase that adds canonical DSO normalization contracts and helpers
+ *
+ * CanonicalStateVector (formerly this dir's ./types.js) moved to
+ * @orbitwatch/contracts in C2a — import it from there.
  */
-export * from './types.js';
 export * from './convert.js';
 export * from './validate.js';

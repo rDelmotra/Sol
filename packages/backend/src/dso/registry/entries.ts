@@ -13,7 +13,8 @@
  * - imports from TLE-specific types or updater logic
  */
 
-import type { DsoId, DsoRegistryEntry } from './types.js';
+import type { DsoId } from '@orbitwatch/contracts';
+import type { DsoRegistryEntry } from './types.js';
 
 const DEFAULT_SAMPLE_STEP_SEC = 600;
 const DEFAULT_REFRESH_INTERVAL_SEC = 21_600;
