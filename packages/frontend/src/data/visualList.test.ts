@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import {
   fetchVisualList,
   parseVisualListResponse,
-} from '../../../frontend/src/data/visualList.ts';
+} from './visualList';
 
 const STORAGE_KEY = 'orbitwatch:visualNoradIds:v3';
 
@@ -128,5 +128,3 @@ describe('fetchVisualList', () => {
     }
   });
 });
-
-
