@@ -2,11 +2,14 @@
 // P3 S3 Part C — SGP4 provider: the LIVE plane, server-side.
 // Spec: my_plans/marvin/p3/S3_sgp4_provider_astro.md
 //
-// Structure mirrors packages/frontend/src/query/analytic/live-source.ts's
-// state machinery, minus the worker-buffer fast path — the server has no
-// worker buffers, so every resolve is on-demand SGP4 (satellite.js), guarded
-// by the propagation-window cap (astro.ts MAX_TSINCE_MIN) against the SDP4
-// deep-space resonance wedge.
+// This file resolves state ONLY: catalog/version guard, lazy satrec cache,
+// per-object state memo, and the propagation-window guard (against the SDP4
+// deep-space resonance wedge). Every derived physics quantity — speed,
+// altitude, sub-point, eclipse, elevation/range/observer-darkness/visual-
+// visibility/distance — is delegated to a single createLivePlane() instance
+// from @orbitwatch/orbital-core, the same live-plane math the frontend's
+// query/analytic/live-source.ts drives from worker buffers instead of
+// on-demand SGP4.
 //
 // PERF: a full-catalog scan touching a live field = ~32k on-demand
 // propagations ≈ 0.5–1.5 s Node single-thread, memoized per (object, instant).
@@ -17,25 +20,19 @@
 
 import * as satellite from 'satellite.js';
 import type { FieldValue, ResolvedObserver } from '@orbitwatch/analytic';
+import {
+  createLivePlane,
+  stateFromKm,
+  LIVE_PLANE_FIELDS,
+  withinPropagationWindow,
+  julianDate,
+  type StateEr,
+} from '@orbitwatch/orbital-core';
 import { readCache, readVersion, readVisualCache } from '../../cache/file-cache.js';
 import type { EnrichedTLEObject, VersionInfo } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 import type { FieldProvider } from '../types.js';
 import { createVersionGuard } from './version-guard.js';
-import {
-  getGAST,
-  sunDirTeme,
-  observerTeme as astroObserverTeme,
-  isEclipsedFromComponents,
-  isObserverInDarkFromComponents,
-  evaluateVisualVisibility,
-  toJulianDate,
-  MAX_TSINCE_MIN,
-} from '../astro.js';
-
-const EARTH_RADIUS_KM = 6371;
-const DEG = 180 / Math.PI;
-const MINUTES_PER_DAY = 1440;
 
 export interface Sgp4ProviderDeps {
   readCatalog?: () => EnrichedTLEObject[] | null;
@@ -45,13 +42,6 @@ export interface Sgp4ProviderDeps {
   /** Test seam: how long the curated visual list is cached before re-reading. */
   visualIdsTtlMs?: number;
 }
-
-interface StateVec {
-  px: number; py: number; pz: number; // TEME, earth-radii
-  vx: number; vy: number; vz: number; // TEME, earth-radii / s
-}
-
-const SGP4_FIELDS: readonly string[] = ['speedKmS', 'altitudeKm', 'latDeg', 'lonDeg', 'eclipsed'];
 
 function defaultGetVisualNoradIds(): Set<number> | null {
   const cache = readVisualCache();
@@ -71,10 +61,7 @@ export function createSgp4Provider(deps: Sgp4ProviderDeps = {}): FieldProvider {
   let satrecs = new Map<number, satellite.SatRec | null>();
   // Per-object single-entry memo — a filter reading altitudeKm + speedKmS at
   // one instant propagates once; timeScan steps stay linear.
-  let stateMemo = new Map<number, { t: number; s: StateVec | null }>();
-  // Per-instant caches shared across a whole catalog scan.
-  let sunCache: { t: number; x: number; y: number; z: number } | null = null;
-  let obsCache: { t: number; key: string; x: number; y: number; z: number } | null = null;
+  let stateMemo = new Map<number, { t: number; s: StateEr | null }>();
   // Curated visual-list cache — time-bounded, NOT a one-shot memo: the file is
   // cron-refreshed (8h TTL) and may not exist yet at first call (boot race), so
   // a forever-memo would serve stale membership or pin the feature off until
@@ -105,7 +92,7 @@ export function createSgp4Provider(deps: Sgp4ProviderDeps = {}): FieldProvider {
     logger.info(`SGP4 provider (analytic): ${catalog.length} objects loaded, version=${guard.currentVersion() ?? 'unknown'}`);
   }
 
-  function resolveState(noradId: number, tMs: number): StateVec | null {
+  function resolveState(noradId: number, tMs: number): StateEr | null {
     const memo = stateMemo.get(noradId);
     if (memo && memo.t === tMs) return memo.s;
 
@@ -125,22 +112,19 @@ export function createSgp4Provider(deps: Sgp4ProviderDeps = {}): FieldProvider {
       }
     }
 
-    let s: StateVec | null = null;
+    let s: StateEr | null = null;
     if (rec) {
       // Propagation-window guard: defense-in-depth behind the validator's time
       // caps (timeScan can step past them) — the SDP4 deep-space wedge protection.
-      const jdNow = toJulianDate(tMs);
-      const tsinceMin = (jdNow - rec.jdsatepoch) * MINUTES_PER_DAY;
-      if (Number.isFinite(tsinceMin) && Math.abs(tsinceMin) <= MAX_TSINCE_MIN) {
+      // withinPropagationWindow rejects non-finite (e.g. NaN epoch) too.
+      const jdNow = julianDate(tMs);
+      if (withinPropagationWindow(jdNow, rec.jdsatepoch)) {
         try {
           const r = satellite.propagate(rec, new Date(tMs));
           const p = r?.position;
           const v = r?.velocity;
           if (p && v && typeof p !== 'boolean' && typeof v !== 'boolean' && Number.isFinite(p.x)) {
-            s = {
-              px: p.x / EARTH_RADIUS_KM, py: p.y / EARTH_RADIUS_KM, pz: p.z / EARTH_RADIUS_KM,
-              vx: v.x / EARTH_RADIUS_KM, vy: v.y / EARTH_RADIUS_KM, vz: v.z / EARTH_RADIUS_KM,
-            };
+            s = stateFromKm({ x: p.x, y: p.y, z: p.z }, { x: v.x, y: v.y, z: v.z });
           }
         } catch {
           s = null;
@@ -151,127 +135,43 @@ export function createSgp4Provider(deps: Sgp4ProviderDeps = {}): FieldProvider {
     return s;
   }
 
-  function sunTemeCached(tMs: number): { x: number; y: number; z: number } {
-    if (!sunCache || sunCache.t !== tMs) {
-      const s = sunDirTeme(tMs);
-      sunCache = { t: tMs, x: s.x, y: s.y, z: s.z };
-    }
-    return sunCache;
-  }
-
-  function observerTemeCached(obs: ResolvedObserver, tMs: number): { x: number; y: number; z: number } {
-    const key = `${obs.latDeg},${obs.lonDeg},${obs.altKm ?? 0}`;
-    if (!obsCache || obsCache.t !== tMs || obsCache.key !== key) {
-      const p = astroObserverTeme(obs.latDeg, obs.lonDeg, obs.altKm ?? 0, tMs);
-      obsCache = { t: tMs, key, x: p.x, y: p.y, z: p.z };
-    }
-    return obsCache;
-  }
-
-  function elevationSinAndRange(
-    noradId: number,
-    obs: ResolvedObserver,
-    tMs: number,
-  ): { sinE: number; rangeKm: number } | null {
-    const s = resolveState(noradId, tMs);
-    if (!s) return null;
-    const o = observerTemeCached(obs, tMs);
-    const vx = s.px - o.x;
-    const vy = s.py - o.y;
-    const vz = s.pz - o.z;
-    const dist = Math.sqrt(vx * vx + vy * vy + vz * vz);
-    if (dist === 0) return null;
-    const oLen = Math.sqrt(o.x * o.x + o.y * o.y + o.z * o.z);
-    if (oLen === 0) return null;
-    const sinE = (vx * o.x + vy * o.y + vz * o.z) / (dist * oLen);
-    return { sinE, rangeKm: dist * EARTH_RADIUS_KM };
-  }
-
-  function eclipsed(noradId: number, tMs: number): boolean | null {
-    const s = resolveState(noradId, tMs);
-    if (!s) return null;
-    const sun = sunTemeCached(tMs);
-    return isEclipsedFromComponents(s.px, s.py, s.pz, sun.x, sun.y, sun.z);
-  }
+  const plane = createLivePlane<number>(resolveState);
 
   function getField(noradId: number, field: string, tMs: number): FieldValue {
     ensureFresh();
-    switch (field) {
-      case 'speedKmS': {
-        const s = resolveState(noradId, tMs);
-        return s ? Math.sqrt(s.vx * s.vx + s.vy * s.vy + s.vz * s.vz) * EARTH_RADIUS_KM : null;
-      }
-      case 'altitudeKm': {
-        const s = resolveState(noradId, tMs);
-        return s ? (Math.sqrt(s.px * s.px + s.py * s.py + s.pz * s.pz) - 1) * EARTH_RADIUS_KM : null;
-      }
-      case 'latDeg': case 'lonDeg': {
-        const s = resolveState(noradId, tMs);
-        if (!s) return null;
-        const theta = getGAST(tMs);
-        // TEME -> ECEF: rotate by -GAST about the pole.
-        const ex = Math.cos(theta) * s.px + Math.sin(theta) * s.py;
-        const ey = -Math.sin(theta) * s.px + Math.cos(theta) * s.py;
-        if (field === 'lonDeg') return Math.atan2(ey, ex) * DEG;
-        const r = Math.sqrt(s.px * s.px + s.py * s.py + s.pz * s.pz);
-        return r === 0 ? null : Math.asin(s.pz / r) * DEG; // geocentric latitude
-      }
-      case 'eclipsed': return eclipsed(noradId, tMs);
-      default: return null;
-    }
+    return plane.field(noradId, field, tMs);
   }
 
   function elevationDeg(noradId: number, obs: ResolvedObserver, tMs: number): number | null {
     ensureFresh();
-    const er = elevationSinAndRange(noradId, obs, tMs);
-    return er ? Math.asin(Math.max(-1, Math.min(1, er.sinE))) * DEG : null;
+    return plane.elevationDeg(noradId, obs, tMs);
   }
 
   function rangeKm(noradId: number, obs: ResolvedObserver, tMs: number): number | null {
     ensureFresh();
-    return elevationSinAndRange(noradId, obs, tMs)?.rangeKm ?? null;
+    return plane.rangeKm(noradId, obs, tMs);
   }
 
   function observerDark(obs: ResolvedObserver, tMs: number): boolean | null {
     ensureFresh();
-    const o = observerTemeCached(obs, tMs);
-    const sun = sunTemeCached(tMs);
-    return isObserverInDarkFromComponents(o.x, o.y, o.z, sun.x, sun.y, sun.z);
+    return plane.observerDark(obs, tMs);
   }
 
   function visuallyVisible(noradId: number, obs: ResolvedObserver, tMs: number): boolean | null {
     ensureFresh();
     const curated = currentVisualIds();
     if (!curated) return null;
-
-    const er = elevationSinAndRange(noradId, obs, tMs);
-    const ecl = eclipsed(noradId, tMs);
-    if (!er || ecl === null) return null;
-    const o = observerTemeCached(obs, tMs);
-    const sun = sunTemeCached(tMs);
-    return evaluateVisualVisibility({
-      isCurated: curated.has(noradId),
-      elevationSin: er.sinE,
-      rangeKm: er.rangeKm,
-      observerDark: isObserverInDarkFromComponents(o.x, o.y, o.z, sun.x, sun.y, sun.z),
-      satelliteEclipsed: ecl,
-    }).visible;
+    return plane.visuallyVisible(noradId, obs, tMs, curated.has(noradId));
   }
 
   function distToKm(noradId: number, targetNoradId: number, tMs: number): number | null {
     ensureFresh();
-    const a = resolveState(noradId, tMs);
-    const b = resolveState(targetNoradId, tMs);
-    if (!a || !b) return null;
-    const dx = a.px - b.px;
-    const dy = a.py - b.py;
-    const dz = a.pz - b.pz;
-    return Math.sqrt(dx * dx + dy * dy + dz * dz) * EARTH_RADIUS_KM;
+    return plane.distanceKm(noradId, targetNoradId, tMs);
   }
 
   return {
     id: 'sgp4',
-    fields: SGP4_FIELDS,
+    fields: LIVE_PLANE_FIELDS,
     fns: ['elevationDeg', 'rangeKm', 'observerDark', 'visuallyVisible', 'distToKm'],
     getField,
     elevationDeg,

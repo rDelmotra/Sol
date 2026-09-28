@@ -1,9 +1,9 @@
+import { ER_KM } from '@orbitwatch/orbital-core';
 import type { ProviderFetchResult } from '../providers/index.js';
 import type { DsoRegistryEntry } from '../registry/index.js';
 import type { DsoSnapshot } from '../snapshot/index.js';
 import type { CanonicalStateVector } from './types.js';
 
-const EARTH_RADIUS_KM = 6371;
 const J2000_JULIAN_DAY = 2451545.0;
 const JULIAN_DAYS_PER_CENTURY = 36525.0;
 const SECONDS_PER_DAY = 86400;
@@ -371,12 +371,12 @@ function convertSampleToTemeState(sample: ProviderFetchResult['samples'][number]
 
   return [
     approxJulianDayTdbToIsoUtc(sample.julianDayTdb),
-    positionTemeKm[0] / EARTH_RADIUS_KM,
-    positionTemeKm[1] / EARTH_RADIUS_KM,
-    positionTemeKm[2] / EARTH_RADIUS_KM,
-    velocityTemeKmPerSec[0] / EARTH_RADIUS_KM,
-    velocityTemeKmPerSec[1] / EARTH_RADIUS_KM,
-    velocityTemeKmPerSec[2] / EARTH_RADIUS_KM,
+    positionTemeKm[0] / ER_KM,
+    positionTemeKm[1] / ER_KM,
+    positionTemeKm[2] / ER_KM,
+    velocityTemeKmPerSec[0] / ER_KM,
+    velocityTemeKmPerSec[1] / ER_KM,
+    velocityTemeKmPerSec[2] / ER_KM,
   ];
 }
 
@@ -459,6 +459,6 @@ export const __testing__ = {
   convertProviderFetchToDsoSnapshot,
   multiplyMatrixVector,
   approxJulianDayTdbToIsoUtc,
-  EARTH_RADIUS_KM,
+  EARTH_RADIUS_KM: ER_KM,
   J2000_JULIAN_DAY,
 } as const;

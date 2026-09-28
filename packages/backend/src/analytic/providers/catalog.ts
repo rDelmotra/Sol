@@ -9,6 +9,7 @@
 // ============================================================
 
 import type { FieldValue } from '@orbitwatch/analytic';
+import { semiMajorAxisKmFromMeanMotion } from '@orbitwatch/orbital-core';
 import { readCache, readVersion } from '../../cache/file-cache.js';
 import { loadEnrichment, getDecayedCatalog } from '../../enrichment/store.js';
 import type { EnrichedTLEObject, VersionInfo } from '../../types/index.js';
@@ -17,7 +18,6 @@ import { logger } from '../../utils/logger.js';
 import type { FieldProvider, SpineProvider } from '../types.js';
 import { createVersionGuard } from './version-guard.js';
 
-const MU_KM3_S2 = 398600.4418;
 const MS_PER_YEAR = 365.25 * 86400_000;
 
 /** Shared loader seam for both factories — same injected-deps pattern as analytic-compiler.ts. */
@@ -102,12 +102,8 @@ export function createCatalogProvider(deps: CatalogSourceDeps = {}): FieldProvid
       case 'launchTag': return o.launchTag ?? null;
       case 'owner': return o.owner ?? null;
       case 'meanAltitudeKm': return (o.apogee + o.perigee) / 2;
-      case 'semiMajorAxisKm': {
-        const n = ommNum(o, 'MEAN_MOTION');
-        if (!n || n <= 0) return null;
-        const radPerSec = (n * 2 * Math.PI) / 86400;
-        return Math.cbrt(MU_KM3_S2 / (radPerSec * radPerSec));
-      }
+      case 'semiMajorAxisKm':
+        return semiMajorAxisKmFromMeanMotion(ommNum(o, 'MEAN_MOTION'));
       case 'ageYears':
         return o.launchDate ? (tMs - Date.parse(o.launchDate)) / MS_PER_YEAR : null;
       case 'launchYear': {
