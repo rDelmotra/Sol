@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PACKAGES = ['analytic', 'backend', 'frontend'] as const;
+const PACKAGES = ['orbital-core', 'analytic', 'backend', 'frontend'] as const;
 type Pkg = (typeof PACKAGES)[number];
 
 // ── Zones ─────────────────────────────────────────────────────────────────────
@@ -110,10 +110,16 @@ const RULES: Rule[] = [
     forbidden: (e) => e.toZone === 'outside',
   },
   {
-    id: 'analytic-is-pure',
-    why: 'packages/analytic is the pure IR core: no runtime dependencies, no I/O.',
-    applies: (e) => e.pkg === 'analytic',
+    id: 'orbital-core-is-pure',
+    why: 'packages/orbital-core is the one home for physics: zero imports (no three.js, no satellite.js, no node:*, no other @orbitwatch package) — a leaf every runtime can load.',
+    applies: (e) => e.pkg === 'orbital-core',
     forbidden: (e) => e.toZone.startsWith('pkg:'),
+  },
+  {
+    id: 'analytic-is-pure',
+    why: 'packages/analytic is the pure IR core: no I/O and no runtime dependencies beyond the shared leaf packages.',
+    applies: (e) => e.pkg === 'analytic',
+    forbidden: (e) => e.toZone.startsWith('pkg:') && e.toZone !== 'pkg:@orbitwatch/orbital-core',
   },
 
   // ── frontend tiers: core ← render ← data ← layers ← world ← controllers ← Engine ──

@@ -10,6 +10,7 @@
 // Date.now() unless the caller omits opts.nowMs (tests pass a fixed clock).
 // ============================================================
 
+import { FUTURE_HORIZON_DAYS, MAX_PROPAGATION_DAYS } from '@orbitwatch/orbital-core';
 import type { AnalyticProgram, Universe } from './types.js';
 import { FIELD_REGISTRY, FN_SPECS, SORTABLE_KINDS, type FieldKind } from './schema.js';
 
@@ -43,8 +44,10 @@ export const SWEEP_MAX_OBJECT_STEPS = 500_000;
 export const SWEEP_MAX_INTERVALS_PER_OBJECT = 64;
 /** 30 s coarse step → ~30 ms edge precision (stepMs / 2^10). */
 export const SWEEP_BISECT_ITERATIONS = 10;
-export const PAST_CAP_DAYS = 60;
-export const FUTURE_CAP_DAYS = 14;
+/** timeBinding caps = the shared propagation-window policy (@orbitwatch/orbital-core):
+ *  past = the hard ±60 d tsince cap, future = the 14 d render horizon. */
+export const PAST_CAP_DAYS = MAX_PROPAGATION_DAYS;
+export const FUTURE_CAP_DAYS = FUTURE_HORIZON_DAYS;
 /** Upper bound on timeScan.stepMinutes, so a full scan (stepMinutes ×
  *  MAX_TIMESCAN_STEPS) spans at most the 60-day propagation window:
  *  360 min (6 h) × 240 steps = 60 d. Beyond that every step would land outside

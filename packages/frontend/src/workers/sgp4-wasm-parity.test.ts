@@ -22,13 +22,11 @@ import { dirname, join } from 'node:path';
 import * as satellite from 'satellite.js';
 import type { OMMJsonObject } from 'satellite.js';
 import { initSync, Simulator } from 'wasm-sgp4';
-import { MAX_TSINCE_MIN } from '../orbital/propagation-limits';
+import { ER_KM, MAX_TSINCE_MIN } from '@orbitwatch/orbital-core';
 
 const require = createRequire(import.meta.url);
 const wasmPath = join(dirname(require.resolve('wasm-sgp4')), 'wasm_sgp4_bg.wasm');
 const wasm = initSync({ module: readFileSync(wasmPath) });
-
-const EARTH_RADIUS_KM = 6371;
 
 const ISS: OMMJsonObject = { OBJECT_NAME: 'ISS (ZARYA)', OBJECT_ID: '1998-067A', EPOCH: '2026-07-18T20:42:49.520160Z', MEAN_MOTION: 15.49045026, ECCENTRICITY: 0.00068076, INCLINATION: 51.6317, RA_OF_ASC_NODE: 143.3357, ARG_OF_PERICENTER: 311.9483, MEAN_ANOMALY: 48.0925, EPHEMERIS_TYPE: 0, CLASSIFICATION_TYPE: 'U', NORAD_CAT_ID: 25544, ELEMENT_SET_NO: 999, REV_AT_EPOCH: 57666, BSTAR: 8.19388e-5, MEAN_MOTION_DOT: 4.074e-5, MEAN_MOTION_DDOT: 0 } as unknown as OMMJsonObject;
 const SYNCOM2: OMMJsonObject = { OBJECT_NAME: 'SYNCOM 2 (A 26)', OBJECT_ID: '1963-031A', EPOCH: '2026-07-17T18:55:38.750880Z', MEAN_MOTION: 1.00266476, ECCENTRICITY: 0.00073267, INCLINATION: 29.9172, RA_OF_ASC_NODE: 300.0136, ARG_OF_PERICENTER: 203.5635, MEAN_ANOMALY: 141.6747, EPHEMERIS_TYPE: 0, CLASSIFICATION_TYPE: 'U', NORAD_CAT_ID: 634, ELEMENT_SET_NO: 999, REV_AT_EPOCH: 23066, BSTAR: 0, MEAN_MOTION_DOT: -2.2e-7, MEAN_MOTION_DDOT: 0 } as unknown as OMMJsonObject;
@@ -78,8 +76,8 @@ test('wasm positions/velocities match satellite.js across propagator regimes', (
       assert.equal(validFlags[i], 1, `wasm valid ${omm.OBJECT_NAME} @${offsetMin}min`);
 
       const i3 = i * 3;
-      const exp = [p.x, p.y, p.z].map((k) => k / EARTH_RADIUS_KM);
-      const expV = [v.x, v.y, v.z].map((k) => k / EARTH_RADIUS_KM);
+      const exp = [p.x, p.y, p.z].map((k) => k / ER_KM);
+      const expV = [v.x, v.y, v.z].map((k) => k / ER_KM);
       for (let a = 0; a < 3; a++) {
         assert.ok(Math.abs(positions[i3 + a] - exp[a]) < POS_TOL_ER,
           `${omm.OBJECT_NAME} pos[${a}] @${offsetMin}min: wasm=${positions[i3 + a]} js=${exp[a]}`);

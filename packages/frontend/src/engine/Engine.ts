@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { getSunDirection, getGAST } from '../orbital/time';
-import { FUTURE_HORIZON_DAYS, MS_PER_DAY } from '../orbital/propagation-limits';
+import { FUTURE_HORIZON_DAYS, MS_PER_DAY } from '@orbitwatch/orbital-core';
 import type { VisualListResolvedResult } from '../data/visualList';
 import { VisualListPoller, buildCatalogResult, type TleCatalogResult } from '../data/tle-client';
 import { bootstrapCatalog } from '../data/bootstrapCatalog';
@@ -535,7 +535,7 @@ export class Engine {
     const today = utcDay(Date.now());
     // Live TLEs are only meaningful (and cheap to propagate) near their epoch. Beyond a
     // forward horizon, satellites go planetarium (sky only) — symmetric with the past,
-    // and keeps far-future times out of the SGP4 worker. See orbital/propagation-limits.ts.
+    // and keeps far-future times out of the SGP4 worker. See @orbitwatch/orbital-core propagation-window.ts.
     const horizon = utcDay(Date.now() + FUTURE_HORIZON_DAYS * MS_PER_DAY);
     const t = utcDay(simClock.now());
     if (t > horizon) return { kind: 'hidden' };                   // beyond forward horizon → planetarium

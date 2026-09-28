@@ -13,7 +13,7 @@
 // on-demand SGP4 via a lazy per-object satrec cache (json2satrec), memoized
 // per (object, t) so a timeScan predicate reading several fields at one step
 // propagates once. On-demand propagation is gated by the ±60-day window in
-// orbital/propagation-limits.ts (outside it → null state).
+// @orbitwatch/orbital-core (outside it → null state).
 //
 // Frame: all internal math is TEME in earth-radii (buffer-native; the eclipse
 // umbra test expects ER). Scene-frame helpers (sun direction, observer
@@ -38,7 +38,7 @@ import { getGAST, getSunDirection } from '../../orbital/time';
 import { getObserverScenePosition } from '../../orbital/coordinates';
 import { isEclipsedFromComponents, isObserverInDarkFromComponents } from '../../orbital/lighting';
 import { evaluateVisualVisibility } from '../../orbital/visual-visibility';
-import { withinPropagationWindow } from '../../orbital/propagation-limits';
+import { withinPropagationWindow } from '@orbitwatch/orbital-core';
 import type { AnalyticDataSource, FieldValue, ResolvedObserver } from '@orbitwatch/analytic';
 
 const EARTH_RADIUS_KM = 6371;

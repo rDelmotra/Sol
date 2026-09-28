@@ -4,17 +4,20 @@
   "private": true,
   "type": "module",
   "workspaces": [
+    "packages/orbital-core",
     "packages/analytic",
     "packages/backend",
     "packages/frontend"
   ],
   "scripts": {
-    "predev": "npm run build -w @orbitwatch/analytic",
+    "predev": "npm run build:libs",
     "dev": "npm run dev --workspaces --if-present",
-    "build": "npm run build -w @orbitwatch/analytic && npm run build -w @orbitwatch/backend && npm run build -w @orbitwatch/frontend",
+    "build:libs": "npm run build -w @orbitwatch/orbital-core && npm run build -w @orbitwatch/analytic",
+    "build": "npm run build:libs && npm run build -w @orbitwatch/backend && npm run build -w @orbitwatch/frontend",
     "build:wasm": "cd packages/wasm-sgp4 && wasm-pack build --target web --release && rm -f pkg/.gitignore",
     "start": "node packages/backend/dist/index.js",
-    "typecheck": "npm run build -w @orbitwatch/analytic && npm run typecheck --workspaces --if-present && tsc -p tests/tsconfig.json",
+    "typecheck": "npm run build:libs && npm run typecheck --workspaces --if-present && tsc -p tests/tsconfig.json",
+    "pretest": "npm run build:libs",
     "test": "npm run test --workspaces --if-present && npm run test:arch",
     "test:arch": "tsx --test 'tests/**/*.test.ts'"
   },

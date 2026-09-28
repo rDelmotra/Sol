@@ -7,14 +7,14 @@ import {
   FUTURE_HORIZON_DAYS,
   tsinceMinutes,
   withinPropagationWindow,
-} from './propagation-limits';
+} from './index.js';
 
 // These bounds are the ONLY thing standing between a far time-scrub and a wedged SGP4
 // worker (deep-space resonance integration cost ∝ |tsince|). Pin them down hard.
 
 const EPOCH_JD = 2461000; // ~a recent element-set epoch; only the day-delta matters here
 
-describe('propagation-limits: tsinceMinutes', () => {
+describe('propagation-window: tsinceMinutes', () => {
   it('converts a whole-day Julian delta to minutes', () => {
     assert.equal(tsinceMinutes(EPOCH_JD + 1, EPOCH_JD), MINUTES_PER_DAY);
     assert.equal(tsinceMinutes(EPOCH_JD - 2, EPOCH_JD), -2 * MINUTES_PER_DAY);
@@ -22,7 +22,7 @@ describe('propagation-limits: tsinceMinutes', () => {
   });
 });
 
-describe('propagation-limits: withinPropagationWindow', () => {
+describe('propagation-window: withinPropagationWindow', () => {
   it('accepts times inside the cap (both directions)', () => {
     assert.equal(withinPropagationWindow(EPOCH_JD + 5, EPOCH_JD), true);
     assert.equal(withinPropagationWindow(EPOCH_JD - 5, EPOCH_JD), true);
@@ -53,7 +53,7 @@ describe('propagation-limits: withinPropagationWindow', () => {
   });
 });
 
-describe('propagation-limits: invariants', () => {
+describe('propagation-window: invariants', () => {
   it('the render horizon is strictly inside the worker cap', () => {
     // Satellites shown inside the horizon must never be clipped by the hard cap.
     assert.ok(FUTURE_HORIZON_DAYS < MAX_PROPAGATION_DAYS);

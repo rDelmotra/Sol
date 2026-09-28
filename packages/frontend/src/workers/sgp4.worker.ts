@@ -17,7 +17,7 @@
 
 import * as satellite from 'satellite.js';
 import type { OMMJsonObject } from 'satellite.js';
-import { MAX_TSINCE_MIN, withinPropagationWindow } from '../orbital/propagation-limits';
+import { ER_KM, MAX_TSINCE_MIN, withinPropagationWindow } from '@orbitwatch/orbital-core';
 import init, { Simulator } from 'wasm-sgp4';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -44,8 +44,6 @@ type WorkerOutMessage =
     };
 
 // ── State ────────────────────────────────────────────────────────────────────
-
-const EARTH_RADIUS_KM = 6371;
 
 /** 'wasm' after a successful WASM init; 'js' = satellite.js fallback. */
 let engine: 'wasm' | 'js' = 'js';
@@ -204,7 +202,7 @@ function handlePropagate(timestamp: number, seq: number): void {
 
     if (engine === 'wasm' && sim && wasmMemory) {
         // Batch-propagate in WASM. MAX_TSINCE_MIN is passed in so the
-        // propagation-window policy keeps its ONE home in propagation-limits.ts
+        // propagation-window policy keeps its ONE home in @orbitwatch/orbital-core
         // (NaN timestamps are rejected by the same in-WASM check).
         sim.propagate(timestamp, MAX_TSINCE_MIN);
 
@@ -279,7 +277,7 @@ function propagateJs(
         // satellite.js's deep-space resonance integrator (dspace) steps from epoch in
         // fixed 720-min increments — cost ∝ |tsince| — so an unbounded scrub would wedge
         // this worker in a synchronous loop. Symmetric (far future AND far past). See
-        // orbital/propagation-limits.ts.
+        // @orbitwatch/orbital-core (propagation-window.ts).
         if (!withinPropagationWindow(jdNow, rec.jdsatepoch)) {
             markInvalid(i);
             continue;
@@ -305,12 +303,12 @@ function propagateJs(
 
         // Scale ECI (TEME) from km to Earth radii (6371 km = 1.0)
         const i3 = i * 3;
-        positions[i3] = posEci.x / EARTH_RADIUS_KM;
-        positions[i3 + 1] = posEci.y / EARTH_RADIUS_KM;
-        positions[i3 + 2] = posEci.z / EARTH_RADIUS_KM;
-        velocities[i3] = velEci.x / EARTH_RADIUS_KM;
-        velocities[i3 + 1] = velEci.y / EARTH_RADIUS_KM;
-        velocities[i3 + 2] = velEci.z / EARTH_RADIUS_KM;
+        positions[i3] = posEci.x / ER_KM;
+        positions[i3 + 1] = posEci.y / ER_KM;
+        positions[i3 + 2] = posEci.z / ER_KM;
+        velocities[i3] = velEci.x / ER_KM;
+        velocities[i3 + 1] = velEci.y / ER_KM;
+        velocities[i3 + 2] = velEci.z / ER_KM;
         validFlags[i] = 1;
     }
 }

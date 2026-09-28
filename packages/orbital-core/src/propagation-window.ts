@@ -12,23 +12,23 @@
  *
  * Two distinct knobs:
  *  - FUTURE_HORIZON_DAYS — RENDER-side: how far forward satellites still draw (live
- *    elements); beyond it the view goes planetarium (sky only). UX boundary.
- *  - MAX_PROPAGATION_DAYS — WORKER-side HARD cap, SYMMETRIC (past + future): an object
- *    further than this from its epoch is skipped (marked invalid) before propagation,
- *    so the unbounded dspace integration can never run regardless of how a far time
- *    arrived (setInterval-while-hidden, scrub-preview, glide, snap, or a future bug).
+ *    elements); beyond it the view goes planetarium (sky only). UX boundary. The
+ *    analytic validator's FUTURE_CAP_DAYS is the same policy.
+ *  - MAX_PROPAGATION_DAYS — HARD cap, SYMMETRIC (past + future): an object further
+ *    than this from its epoch is skipped before propagation (SGP4 worker, WASM, the
+ *    browser query source and the server provider all apply it), so the unbounded
+ *    dspace integration can never run regardless of how a far time arrived.
  *
  * INVARIANT: FUTURE_HORIZON_DAYS < MAX_PROPAGATION_DAYS — satellites shown inside the
  * horizon are never clipped by the cap.
  */
 
-export const MINUTES_PER_DAY = 1440;
-export const MS_PER_DAY = 86_400_000;
+import { MINUTES_PER_DAY } from './units.js';
 
 /** Render-side: satellites draw this far forward (live elements); beyond → planetarium. */
 export const FUTURE_HORIZON_DAYS = 14;
 
-/** Worker-side hard cap (symmetric) on |time since epoch|. Comfortably > the horizon. */
+/** Hard cap (symmetric) on |time since epoch|. Comfortably > the horizon. */
 export const MAX_PROPAGATION_DAYS = 60;
 export const MAX_TSINCE_MIN = MAX_PROPAGATION_DAYS * MINUTES_PER_DAY;
 

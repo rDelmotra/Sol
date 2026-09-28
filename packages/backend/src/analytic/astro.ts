@@ -137,9 +137,8 @@ export function evaluateVisualVisibility(input: VisualVisibilityInput): VisualVi
   return { visible: true, reason: null };
 }
 
-// ── Propagation window — canonical: orbital/propagation-limits.ts. Guards the
-// SDP4 deep-space resonance wedge (see [[sgp4-propagation-window]] memory). ──
+// ── Propagation window — the ONE home is @orbitwatch/orbital-core. Guards the
+// SDP4 deep-space resonance wedge. Re-exported until providers/sgp4.ts
+// imports orbital-core directly (Phase 2.3 step O3). ──
 
-const MINUTES_PER_DAY = 1440;
-export const MAX_PROPAGATION_DAYS = 60;
-export const MAX_TSINCE_MIN = MAX_PROPAGATION_DAYS * MINUTES_PER_DAY;
+export { MAX_PROPAGATION_DAYS, MAX_TSINCE_MIN } from '@orbitwatch/orbital-core';
