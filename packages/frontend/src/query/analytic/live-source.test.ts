@@ -14,8 +14,7 @@ import * as satellite from 'satellite.js';
 import type { OMMJsonObject } from 'satellite.js';
 import type { EnrichedTLEObject } from '../../data/types';
 import type { QueryVocab } from '../../data/query-vocab-client';
-import { getSunDirection } from '../../orbital/time';
-import { getObserverScenePosition } from '../../orbital/coordinates';
+import { sunDirection, observerTeme } from '@orbitwatch/orbital-core';
 import { createLiveAnalyticSource, type LiveBuffers } from './live-source';
 import { validateProgram } from '@orbitwatch/analytic';
 import { execute } from '@orbitwatch/analytic';
@@ -78,10 +77,6 @@ const VOCAB: QueryVocab = {
   },
   owners: ['NASAH'],
 };
-
-function teme(v: { x: number; y: number; z: number }): [number, number, number] {
-  return [v.x, -v.z, v.y]; // scene → TEME (inverse of frames.ts sourceToScene)
-}
 
 describe('live source — on-demand SGP4 path (no buffers)', () => {
   const src = createLiveAnalyticSource({
@@ -160,7 +155,7 @@ describe('live source — propagation-window guard (far-time wedge)', () => {
 describe('live source — buffer fast-path + physics geometry', () => {
   // Object 0: on the anti-solar axis at 2 ER (inside the umbra cylinder).
   // Object 1: sunward at 2 ER (fully lit). Object 2: invalid flag.
-  const [sx, sy, sz] = teme(getSunDirection(new Date(NOW)));
+  const { x: sx, y: sy, z: sz } = sunDirection(NOW);
   const buffers: LiveBuffers = {
     positions: new Float32Array([-2 * sx, -2 * sy, -2 * sz, 2 * sx, 2 * sy, 2 * sz, 0, 0, 0]),
     velocities: new Float32Array([0, 0, 0.0012, 0, 0.0012, 0, 0, 0, 0]),
@@ -193,11 +188,11 @@ describe('live source — buffer fast-path + physics geometry', () => {
 
   it('elevation is ~90° for a satellite straight above the observer', () => {
     const obs = { latDeg: 10, lonDeg: 20 };
-    const o = teme(getObserverScenePosition(10, 20, 0, new Date(NOW)));
-    const oLen = Math.hypot(o[0], o[1], o[2]);
+    const o = observerTeme(obs, NOW).position;
+    const oLen = Math.hypot(o.x, o.y, o.z);
     const up = 1 + 400 / 6371;
     const zenithBuffers: LiveBuffers = {
-      positions: new Float32Array([o[0] / oLen * up, o[1] / oLen * up, o[2] / oLen * up]),
+      positions: new Float32Array([o.x / oLen * up, o.y / oLen * up, o.z / oLen * up]),
       velocities: new Float32Array(3),
       validFlags: new Uint8Array([1]),
       timestamp: NOW,
