@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import dsoVertexShader from '../shaders/dso.vert.glsl?raw';
 import dsoFragmentShader from '../shaders/dso.frag.glsl?raw';
 import type { DsoObject } from '../data/dso-types';
-import { writeSourceToScene } from '../orbital/frames';
+import { writeSourceToScene } from './scene/frames';
 
 const INITIAL_DSO_CAPACITY = 64;
 // Base point size passed into the shader (pixels before pixel-ratio scaling)

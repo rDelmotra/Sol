@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { getSunDirection, getGAST } from '../orbital/time';
-import { FUTURE_HORIZON_DAYS, MS_PER_DAY } from '@orbitwatch/orbital-core';
+import { getSunDirection } from './scene/sky';
+import { FUTURE_HORIZON_DAYS, MS_PER_DAY, gmst } from '@orbitwatch/orbital-core';
 import type { VisualListResolvedResult } from '../data/visualList';
 import { VisualListPoller, buildCatalogResult, type TleCatalogResult } from '../data/tle-client';
 import { bootstrapCatalog } from '../data/bootstrapCatalog';
@@ -838,7 +838,7 @@ export class Engine {
     const now = simClock.date();
 
     const sunDir = getSunDirection(now);
-    const gast = getGAST(now);
+    const gast = gmst(now.getTime());
 
     // GPU-side interpolation factor for TLE positions (owned by SatellitesLayer).
     const uT = this.satellitesLayer.getInterpolationFactor();

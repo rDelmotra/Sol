@@ -2,8 +2,8 @@ import type * as THREE from 'three';
 import type { EnrichedTLEObject } from '../data/types';
 import type { ValidationReport } from '../store/devStore';
 import { useDevStore } from '../store/devStore';
+import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
 
-const EARTH_RADIUS_KM = 6371;
 const FRAME_SAMPLES = 60;
 
 export class DevValidation {
@@ -69,8 +69,7 @@ export class DevValidation {
     if (this.issIndex >= 0 && validFlags[this.issIndex] === 1) {
       const i3 = this.issIndex * 3;
       const x = positions[i3], y = positions[i3 + 1], z = positions[i3 + 2];
-      const mag = Math.sqrt(x * x + y * y + z * z);
-      issAltitudeKm = (mag * EARTH_RADIUS_KM) - EARTH_RADIUS_KM;
+      issAltitudeKm = altitudeKmFromEr({ x, y, z });
       issAltitudeOk = issAltitudeKm >= 350 && issAltitudeKm <= 450;
     }
 

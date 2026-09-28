@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { StarfieldRenderer } from '../../StarfieldRenderer';
-import { getObserverSceneAnchor } from '../../../orbital/coordinates';
+import { getObserverSceneAnchor } from '../../scene/sky';
 import { useStore, isDomeView } from '../../../store/useStore';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 

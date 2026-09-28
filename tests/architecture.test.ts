@@ -232,10 +232,6 @@ const FE = 'packages/frontend/src';
 const BE = 'packages/backend/src';
 
 const KNOWN_VIOLATIONS: KnownViolation[] = [
-  // orbital/ still returns three.js vectors for the render side (2.3 moves them out)
-  { rule: 'fe-orbital-is-core', from: `${FE}/orbital/frames.ts`, to: 'pkg:three', fix: '2.3 orbital-core: frames.ts becomes the render adapter' },
-  { rule: 'fe-orbital-is-core', from: `${FE}/orbital/time.ts`, to: 'pkg:three', fix: '2.3 orbital-core: sun direction as plain {x,y,z}' },
-  { rule: 'fe-orbital-is-core', from: `${FE}/orbital/coordinates.ts`, to: 'pkg:three', fix: '2.3 orbital-core: observer as plain {position, up}' },
   // data clients write the store directly
   { rule: 'fe-data-no-app', from: `${FE}/data/dso-client.ts`, to: `${FE}/store/useStore`, fix: '2.7 data clients return data' },
   { rule: 'fe-data-no-app', from: `${FE}/data/bootstrapCatalog.ts`, to: `${FE}/store/useStore`, fix: '2.7 data clients return data' },

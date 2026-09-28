@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getObserverECEFPosition } from '../../../orbital/coordinates';
+import { getObserverEarthAnchor } from '../../scene/sky';
 import { useStore, isDomeView } from '../../../store/useStore';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 
@@ -41,10 +41,9 @@ export class ObserverMarkerLayer implements Layer {
         this.marker = this.buildMarker();
         this.parent.add(this.marker);
       }
-      const pos = getObserverECEFPosition(loc.lat, loc.lon, loc.alt);
+      const { position: pos, up: normal } = getObserverEarthAnchor(loc.lat, loc.lon, loc.alt);
       this.marker.position.copy(pos);
       // Orient the cone's +Y axis to the local surface normal.
-      const normal = pos.clone().normalize();
       this.marker.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
     } else if (this.marker) {
       this.removeMarker();

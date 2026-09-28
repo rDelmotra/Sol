@@ -2,17 +2,15 @@ import type * as THREE from 'three';
 import { SatelliteRenderer } from '../../SatelliteRenderer';
 import { DevValidation } from '../../DevValidation';
 import { Sgp4WorkerClient, type Sgp4PositionResult } from '../../tle/Sgp4WorkerClient';
-import { getSunDirection } from '../../../orbital/time';
-import { getObserverScenePosition } from '../../../orbital/coordinates';
+import { getSunDirection, getObserverSceneAnchor } from '../../scene/sky';
 import { simClock } from '../../SimClock';
 import { useStore, isObserverMode, type VisibilityMode } from '../../../store/useStore';
 import type { EnrichedTLEObject } from '../../../data/types';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 import { validateProgram, execute, type AnalyticProgram, type ExecuteOutcome } from '@orbitwatch/analytic';
+import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
 import { createLiveAnalyticSource, type LiveBuffers } from '../../../query/analytic/live-source';
 import { getRawQueryVocab } from '../../../query/vocab';
-
-const EARTH_RADIUS_KM = 6371;
 
 /**
  * Satellites: THE product layer. Owns the {@link SatelliteRenderer}, the
@@ -283,7 +281,7 @@ export class SatellitesLayer implements Layer {
 
       const state = useStore.getState();
       const propagationDate = new Date(result.timestamp);
-      const observerPos = this.getObserverScenePositionForState(state, propagationDate);
+      const observerAnchor = this.getObserverSceneAnchorForState(state, propagationDate);
       const sunDir = getSunDirection(propagationDate);
       const visualNoradIds = callbacks.getVisualNoradIds();
 
@@ -292,7 +290,7 @@ export class SatellitesLayer implements Layer {
             result.positions,
             result.validFlags,
             result.objectCount,
-            observerPos,
+            observerAnchor,
             sunDir,
             state.visibilityMode,
             this.catalog,
@@ -303,7 +301,7 @@ export class SatellitesLayer implements Layer {
             result.positions,
             result.validFlags,
             result.objectCount,
-            observerPos,
+            observerAnchor,
             sunDir,
             state.visibilityMode,
             this.catalog,
@@ -344,13 +342,13 @@ export class SatellitesLayer implements Layer {
     }
 
     const simDate = simClock.date();
-    const observerPos = this.getObserverScenePositionForState(state, simDate);
+    const observerAnchor = this.getObserverSceneAnchorForState(state, simDate);
     const sunDir = getSunDirection(simDate);
 
     const counts = this._renderer.applyFilters(
       this.catalog,
       state,
-      observerPos,
+      observerAnchor,
       sunDir,
       state.visibilityMode,
       this.callbacks.getVisualNoradIds(),
@@ -368,14 +366,14 @@ export class SatellitesLayer implements Layer {
     }
   }
 
-  private getObserverScenePositionForState(
+  private getObserverSceneAnchorForState(
     state: ReturnType<typeof useStore.getState>,
     date: Date,
-  ): THREE.Vector3 | null {
+  ): { position: THREE.Vector3; up: THREE.Vector3 } | null {
     if (state.visibilityMode === 'all' || !state.observerLocation) {
       return null;
     }
-    return getObserverScenePosition(
+    return getObserverSceneAnchor(
       state.observerLocation.lat,
       state.observerLocation.lon,
       state.observerLocation.alt,
@@ -431,8 +429,7 @@ export class SatellitesLayer implements Layer {
     const x = posArr.getX(index);
     const y = posArr.getY(index);
     const z = posArr.getZ(index);
-    const magnitude = Math.sqrt(x * x + y * y + z * z);
-    return magnitude * EARTH_RADIUS_KM - EARTH_RADIUS_KM;
+    return altitudeKmFromEr({ x, y, z });
   }
 
   // ── Engine-driven commands ───────────────────────────────────────────────────

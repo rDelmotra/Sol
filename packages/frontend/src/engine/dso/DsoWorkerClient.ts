@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { DsoSnapshot } from '../../data/dso-types';
 import { useStore } from '../../store/useStore';
-import { sourceToSceneInto } from '../../orbital/frames';
+import { sourceToSceneInto } from '../scene/frames';
 import type { DsoWorkerInMessage, DsoWorkerOutMessage } from './dso-worker-types';
 
 // ── Constants ────────────────────────────────────────────────────────────────

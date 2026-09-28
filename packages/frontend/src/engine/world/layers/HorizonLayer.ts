@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getObserverECEFPosition } from '../../../orbital/coordinates';
+import { getObserverEarthAnchor } from '../../scene/sky';
 import { useStore, isDomeView } from '../../../store/useStore';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 
@@ -85,8 +85,7 @@ export class HorizonLayer implements Layer {
     }
 
     // surfaceOffset = 0: sit at the surface, level with the dome camera's eye.
-    const p = getObserverECEFPosition(loc.lat, loc.lon, loc.alt, 0);
-    const up = p.clone().normalize();
+    const { position: p, up } = getObserverEarthAnchor(loc.lat, loc.lon, loc.alt, 0);
 
     // Local East-North-Up basis (Earth-group frame). East ⟂ {spin axis, up}.
     const east = new THREE.Vector3().crossVectors(SPIN_AXIS, up);

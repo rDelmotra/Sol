@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { TLEInput, WorkerOutMessage } from '../../data/types';
 import { simClock } from '../SimClock';
-import { sourceToSceneInto } from '../../orbital/frames';
+import { sourceToSceneInto } from '../scene/frames';
 
 // ── Public types ────────────────────────────────────────────────────────────
 

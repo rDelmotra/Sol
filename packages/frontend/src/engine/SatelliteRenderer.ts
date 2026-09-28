@@ -18,18 +18,23 @@ import {
 import {
   getPhaseMultiplierFromComponents,
   isEclipsedFromComponents,
-  isObserverInDarkFromComponents,
-} from '../orbital/lighting';
-import {
+  isObserverDarkFromUp,
   evaluateDomeBrightness,
   VISUAL_ELEVATION_THRESHOLD_SIN,
   VISUAL_FADING_START_SIN,
   VISUAL_RANGE_MAX_KM,
-} from '../orbital/visual-visibility';
-import { writeSourceToScene } from '../orbital/frames';
+  ER_KM,
+} from '@orbitwatch/orbital-core';
+import { writeSourceToScene } from './scene/frames';
 import type { VisibilityMode, ColorBy, SatelliteFilterState } from '../store/useStore';
 
 const MAX_OBJECTS = 100_000;
+
+/** Observer position + local "up" (zenith), scene frame — see engine/scene/sky.ts. */
+export interface ObserverSceneAnchor {
+  position: THREE.Vector3;
+  up: THREE.Vector3;
+}
 
 // Color palettes live in data/facet-colors (shared with the FilterPanel legend).
 // recolorBy() writes ONLY the color attribute from them — never pickId — so GPU
@@ -144,7 +149,7 @@ export class SatelliteRenderer {
     eciPositions: Float32Array,
     validFlags: Uint8Array,
     count: number,
-    observerPos: THREE.Vector3 | null,
+    observer: ObserverSceneAnchor | null,
     sunDir: THREE.Vector3,
     visibilityMode: VisibilityMode,
     catalogData: EnrichedTLEObject[],
@@ -167,7 +172,7 @@ export class SatelliteRenderer {
     this.prevPosAttr.needsUpdate = true;
     this.currPosAttr.needsUpdate = true;
 
-    return this.applyVisibilityAndFilters(count, observerPos, sunDir, visibilityMode, catalogData, filters, visualNoradIds, false);
+    return this.applyVisibilityAndFilters(count, observer, sunDir, visibilityMode, catalogData, filters, visualNoradIds, false);
   }
 
   /** Write positions into both previous and current buffers (no interpolation tween). */
@@ -175,7 +180,7 @@ export class SatelliteRenderer {
     eciPositions: Float32Array,
     validFlags: Uint8Array,
     count: number,
-    observerPos: THREE.Vector3 | null,
+    observer: ObserverSceneAnchor | null,
     sunDir: THREE.Vector3,
     visibilityMode: VisibilityMode,
     catalogData: EnrichedTLEObject[],
@@ -199,7 +204,7 @@ export class SatelliteRenderer {
     this.prevPosAttr.needsUpdate = true;
     this.currPosAttr.needsUpdate = true;
 
-    return this.applyVisibilityAndFilters(count, observerPos, sunDir, visibilityMode, catalogData, filters, visualNoradIds, true);
+    return this.applyVisibilityAndFilters(count, observer, sunDir, visibilityMode, catalogData, filters, visualNoradIds, true);
   }
 
   setSatelliteSize(index: number, multiplier: number): void {
@@ -310,7 +315,7 @@ export class SatelliteRenderer {
 
   private applyVisibilityAndFilters(
     count: number,
-    observerPos: THREE.Vector3 | null,
+    observer: ObserverSceneAnchor | null,
     sunDir: THREE.Vector3,
     visibilityMode: VisibilityMode,
     catalogData: EnrichedTLEObject[],
@@ -348,21 +353,21 @@ export class SatelliteRenderer {
     const analyticAll = analyticFilter.mode === 'all';
     const analyticIds = analyticFilter.mode === 'only' ? analyticFilter.ids : null;
 
-    const observerAvailable = observerPos !== null;
-    const obsX = observerPos?.x ?? 0;
-    const obsY = observerPos?.y ?? 0;
-    const obsZ = observerPos?.z ?? 0;
-    const obsLen = observerAvailable ? Math.sqrt(obsX * obsX + obsY * obsY + obsZ * obsZ) : 0;
-    const hasZenith = obsLen > 0;
-    const invObsLen = hasZenith ? (1 / obsLen) : 0;
-    const zenithX = obsX * invObsLen;
-    const zenithY = obsY * invObsLen;
-    const zenithZ = obsZ * invObsLen;
+    const observerAvailable = observer !== null;
+    const obsX = observer?.position.x ?? 0;
+    const obsY = observer?.position.y ?? 0;
+    const obsZ = observer?.position.z ?? 0;
+    // Local zenith is the observer's already-unit "up" (geodetic normal) — no need to
+    // normalize the position ourselves (see engine/scene/sky.ts / orbital-core observer.ts).
+    const zenithX = observer?.up.x ?? 0;
+    const zenithY = observer?.up.y ?? 0;
+    const zenithZ = observer?.up.z ?? 0;
+    const hasZenith = observerAvailable;
     const sunX = sunDir.x;
     const sunY = sunDir.y;
     const sunZ = sunDir.z;
-    const obsInDark = observerAvailable && hasZenith
-      ? isObserverInDarkFromComponents(obsX, obsY, obsZ, sunX, sunY, sunZ)
+    const obsInDark = observerAvailable
+      ? isObserverDarkFromUp(zenithX, zenithY, zenithZ, sunX, sunY, sunZ)
       : false;
 
     for (let i = 0; i < count; i++) {
@@ -435,7 +440,7 @@ export class SatelliteRenderer {
               finalMult = 0.0;
             } else {
               // Radio pass: RCS multiplier already in finalMult; apply range + mode scalar
-              const distKm = vDist * 6371;
+              const distKm = vDist * ER_KM;
               const rangeScale = Math.max(0.3, Math.min(1.0, VISUAL_RANGE_MAX_KM / distKm));
               finalMult *= rangeScale * 0.6;
 
@@ -467,7 +472,7 @@ export class SatelliteRenderer {
             const elevationSin = ((vx * zenithX) + (vy * zenithY) + (vz * zenithZ)) / vDist;
             const dome = evaluateDomeBrightness({
               elevationSin,
-              rangeKm: vDist * 6371,
+              rangeKm: vDist * ER_KM,
               isCurated: visualNoradIds.has(obj.noradId),
               observerDark: obsInDark,
               satelliteEclipsed: isEclipsedFromComponents(satX, satY, satZ, sunX, sunY, sunZ),
@@ -513,12 +518,12 @@ export class SatelliteRenderer {
   applyFilters(
     catalogData: EnrichedTLEObject[],
     filters: SatelliteFilterState,
-    observerPos: THREE.Vector3 | null,
+    observer: ObserverSceneAnchor | null,
     sunDir: THREE.Vector3,
     visibilityMode: VisibilityMode,
     visualNoradIds: Set<number>
   ): VisibleCounts {
-    return this.applyVisibilityAndFilters(catalogData.length, observerPos, sunDir, visibilityMode, catalogData, filters, visualNoradIds);
+    return this.applyVisibilityAndFilters(catalogData.length, observer, sunDir, visibilityMode, catalogData, filters, visualNoradIds);
   }
 
   dispose(): void {

@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import * as satellite from 'satellite.js';
 import type { OMMJsonObject } from 'satellite.js';
 import { simClock } from './SimClock';
-import { sourceToSceneInto, writeSourceToScene } from '../orbital/frames';
+import { sourceToSceneInto, writeSourceToScene } from './scene/frames';
+import { ER_KM } from '@orbitwatch/orbital-core';
 
-const EARTH_RADIUS_KM = 6371;
 const TRAIL_POINTS = 360;
 
 // Simple internal shaders for the trail glow envelope
@@ -122,7 +122,7 @@ export class OrbitTrailRenderer {
       if (posEci && typeof posEci !== 'boolean') {
         // ECI (TEME) km → scene frame, scaled to Earth radii. Carry the last valid
         // sample forward when a propagation step fails.
-        sourceToSceneInto(lastValid, posEci.x, posEci.y, posEci.z).multiplyScalar(1 / EARTH_RADIUS_KM);
+        sourceToSceneInto(lastValid, posEci.x, posEci.y, posEci.z).multiplyScalar(1 / ER_KM);
       }
 
       positions[i * 3]     = lastValid.x;

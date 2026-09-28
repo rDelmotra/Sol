@@ -5,10 +5,10 @@ import type { DsoRenderer } from '../DsoRenderer';
 import type { GPUPicker } from '../GPUPicker';
 import type { EnrichedTLEObject } from '../../data/types';
 import { useStore } from '../../store/useStore';
+import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const EARTH_RADIUS_KM = 6371;
 const CLUSTER_RADIUS_SQ = 0.0078 * 0.0078; // ~50 km in scene units, squared
 const HOVER_THROTTLE_MS = 100;
 /** Wheel zoom feel: FOV factor = exp(deltaY · k). Scroll up (deltaY<0) zooms in. */
@@ -373,8 +373,7 @@ export class InputManager {
       const px = posArr.getX(i);
       const py = posArr.getY(i);
       const pz = posArr.getZ(i);
-      const mag = Math.sqrt(px * px + py * py + pz * pz);
-      const alt = Math.round((mag * EARTH_RADIUS_KM) - EARTH_RADIUS_KM);
+      const alt = Math.round(altitudeKmFromEr({ x: px, y: py, z: pz }));
       return { index: i, data: this.catalogData[i], altitude: alt };
     });
     store.setCluster(items, e.clientX, e.clientY);
