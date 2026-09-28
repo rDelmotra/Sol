@@ -13,3 +13,7 @@ export * from './sun.js';
 export * from './earth.js';
 export * from './rotation.js';
 export * from './observer.js';
+export * from './illumination.js';
+export * from './visibility.js';
+export * from './elements.js';
+export * from './live-plane.js';
