@@ -35,6 +35,7 @@ import {
   SWEEP_MAX_INTERVALS_PER_OBJECT,
   SWEEP_BISECT_ITERATIONS,
 } from './validate.js';
+import { EARTH_RADIUS_KM } from '@orbitwatch/orbital-core';
 
 // ── Data-source port ──────────────────────────────────────────────────────────
 
@@ -117,7 +118,6 @@ type Relation = ObjRel | GrpRel;
 // because it optimizes the interpreter's own scan loop for ANY predicate shape it
 // can recognize, regardless of which AnalyticDataSource is behind it.
 
-const SWEEP_EARTH_RADIUS_KM = 6371;
 const SWEEP_RAD_PER_DEG = Math.PI / 180;
 const SWEEP_DEG_PER_RAD = 180 / Math.PI;
 const GOLDEN_SECTION_ITERATIONS = 20;
@@ -125,11 +125,12 @@ const GOLDEN_SECTION_ITERATIONS = 20;
 /**
  * Earth-central half-angle (deg) of the visibility footprint at elevation
  * threshold `elevationThresholdDeg` for an object at apogee altitude `apogeeKm`.
- * Re = 6371 km. Sanity-pinned in sweep.test.ts: ε=0°,h=400 → 19.8°; ε=90° → 0°;
- * ε=10°,h=400 → ≈12.1°.
+ * Re = EARTH_RADIUS_KM = 6371 km (the physical figure, not the scene unit —
+ * see @orbitwatch/orbital-core/earth.ts). Sanity-pinned in sweep.test.ts:
+ * ε=0°,h=400 → 19.8°; ε=90° → 0°; ε=10°,h=400 → ≈12.1°.
  */
 export function footprintHalfAngleDeg(apogeeKm: number, elevationThresholdDeg: number): number {
-  const ratio = SWEEP_EARTH_RADIUS_KM / (SWEEP_EARTH_RADIUS_KM + apogeeKm);
+  const ratio = EARTH_RADIUS_KM / (EARTH_RADIUS_KM + apogeeKm);
   const cosEps = Math.cos(elevationThresholdDeg * SWEEP_RAD_PER_DEG);
   const clamped = Math.max(-1, Math.min(1, ratio * cosEps));
   return Math.acos(clamped) * SWEEP_DEG_PER_RAD - elevationThresholdDeg;

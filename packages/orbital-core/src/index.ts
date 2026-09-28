@@ -7,3 +7,9 @@
 
 export * from './units.js';
 export * from './propagation-window.js';
+export * from './vec.js';
+export * from './time.js';
+export * from './sun.js';
+export * from './earth.js';
+export * from './rotation.js';
+export * from './observer.js';

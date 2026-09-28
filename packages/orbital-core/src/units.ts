@@ -13,3 +13,12 @@ export const ER_KM = 6371;
 
 export const MINUTES_PER_DAY = 1440;
 export const MS_PER_DAY = 86_400_000;
+
+/** Degrees per radian (multiply a radian value by this to get degrees). */
+export const DEG = 180 / Math.PI;
+
+/** Radians per degree (multiply a degree value by this to get radians). */
+export const RAD = Math.PI / 180;
+
+/** Earth's standard gravitational parameter, km^3/s^2 (used for semi-major-axis derivation). */
+export const MU_KM3_S2 = 398600.4418;
