@@ -35,7 +35,7 @@ import {
   SWEEP_MAX_INTERVALS_PER_OBJECT,
   SWEEP_BISECT_ITERATIONS,
 } from './validate.js';
-import { EARTH_RADIUS_KM } from '@orbitwatch/orbital-core';
+import { ER_KM, observerEcef, geocentricLatitudeDegFromEr } from '@orbitwatch/orbital-core';
 
 // ── Data-source port ──────────────────────────────────────────────────────────
 
@@ -123,17 +123,74 @@ const SWEEP_DEG_PER_RAD = 180 / Math.PI;
 const GOLDEN_SECTION_ITERATIONS = 20;
 
 /**
- * Earth-central half-angle (deg) of the visibility footprint at elevation
- * threshold `elevationThresholdDeg` for an object at apogee altitude `apogeeKm`.
- * Re = EARTH_RADIUS_KM = 6371 km (the physical figure, not the scene unit —
- * see @orbitwatch/orbital-core/earth.ts). Sanity-pinned in sweep.test.ts:
- * ε=0°,h=400 → 19.8°; ε=90° → 0°; ε=10°,h=400 → ≈12.1°.
+ * Earth-central half-angle (deg) of the visibility footprint of an observer at
+ * geocentric radius `obsRadiusKm` for a satellite at geocentric radius
+ * `satRadiusKm`, at (radial) elevation threshold `epsDeg`:
+ *   acos(clamp(R_o·cos ε / r)) − ε.
+ * Pure formula, no Earth constant. Sanity-pinned in sweep.test.ts:
+ * R=6371, r=6771: ε=0° → 19.8°; ε=90° → 0°; ε=10° → ≈12.1°.
  */
-export function footprintHalfAngleDeg(apogeeKm: number, elevationThresholdDeg: number): number {
-  const ratio = EARTH_RADIUS_KM / (EARTH_RADIUS_KM + apogeeKm);
-  const cosEps = Math.cos(elevationThresholdDeg * SWEEP_RAD_PER_DEG);
+export function footprintHalfAngleDeg(obsRadiusKm: number, satRadiusKm: number, epsDeg: number): number {
+  const ratio = obsRadiusKm / satRadiusKm;
+  const cosEps = Math.cos(epsDeg * SWEEP_RAD_PER_DEG);
   const clamped = Math.max(-1, Math.min(1, ratio * cosEps));
-  return Math.acos(clamped) * SWEEP_DEG_PER_RAD - elevationThresholdDeg;
+  return Math.acos(clamped) * SWEEP_DEG_PER_RAD - epsDeg;
+}
+
+/**
+ * SATCAT apogee/perigee are quoted relative to ~6378.135 km (convention not
+ * verified); we use the WGS84 equatorial radius 6378.137 km, the larger, so the
+ * derived satellite radius is never underestimated by the convention. Local
+ * constant on purpose: this prefilter must stay correct for ANY Earth figure
+ * in orbital-core (sphere or ellipsoid).
+ */
+export const SATCAT_EARTH_RADIUS_KM = 6378.137;
+/** Mean-vs-osculating / SATCAT-rounding slack on the apogee radius, km. */
+export const APOGEE_MARGIN_KM = 50;
+/** Mean-vs-osculating slack on the inclination (max satellite |latitude|), deg. */
+export const INCL_MARGIN_DEG = 0.1;
+
+/**
+ * Conservative geometric exclusion: returns true ONLY IF the object can never
+ * have elevation > epsDeg (w.r.t. the observer's geodetic normal). Pure.
+ *
+ * Proof (all angles geocentric unless stated):
+ *  1. The satellite's geocentric |latitude| never exceeds i_max (inclination,
+ *     folded to ≤ 90°, plus INCL_MARGIN_DEG).
+ *  2. The observer sits at geocentric latitude ψ_o. The Earth-central angle γ
+ *     between observer and satellite is at least the latitude gap, so
+ *     γ ≥ |ψ_o| − i_max.
+ *  3. Elevation is measured against the geodetic normal; the radial direction
+ *     through the observer differs from it by exactly δ = |φ_geodetic − ψ_o|,
+ *     so elevation_geodetic > ε implies radial elevation > ε − δ =: ε′.
+ *  4. For radial elevation ≥ ε′ from radius R_o to a satellite at radius r,
+ *     γ ≤ acos(R_o·cos ε′ / r) − ε′ (the footprint formula), and that bound is
+ *     non-decreasing in r, so r ≤ r_max = apogee + SATCAT radius + margin gives
+ *     γ ≤ footprintHalfAngleDeg(R_o, r_max, ε′).
+ *  Steps 2 and 4 contradict when |ψ_o| − i_max > footprint, so such an object
+ *  can never rise above ε. Any non-finite/out-of-range input does NOT exclude.
+ */
+export function isConservativelyExcluded(
+  obs: { latDeg: number; lonDeg: number; altKm?: number },
+  thresholdDeg: number,
+  inclinationDeg: number,
+  apogeeKm: number,
+): boolean {
+  if (![obs.latDeg, obs.lonDeg, thresholdDeg, inclinationDeg, apogeeKm].every(Number.isFinite)) return false;
+  if (inclinationDeg < 0 || inclinationDeg > 180) return false;
+  const p = observerEcef({ latDeg: obs.latDeg, lonDeg: obs.lonDeg, altKm: obs.altKm }).position;
+  const obsRadiusKm = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z) * ER_KM;
+  const psiDeg = geocentricLatitudeDegFromEr(p);
+  if (psiDeg === null || !(obsRadiusKm > 0)) return false;
+  const delta = Math.abs(obs.latDeg - psiDeg);
+  const epsPrime = thresholdDeg - delta;
+  if (!(epsPrime >= -90 && epsPrime <= 90)) return false;
+  const iMax = Math.min(90, inclinationDeg <= 90 ? inclinationDeg : 180 - inclinationDeg) + INCL_MARGIN_DEG;
+  const rMax = apogeeKm + SATCAT_EARTH_RADIUS_KM + APOGEE_MARGIN_KM;
+  if (!(rMax > obsRadiusKm)) return false; // bound monotonic in r only for r >= R_o
+  const lambda = footprintHalfAngleDeg(obsRadiusKm, rMax, epsPrime);
+  if (!Number.isFinite(lambda)) return false;
+  return Math.abs(psiDeg) - iMax > lambda;
 }
 
 interface ElevationGate {
@@ -431,9 +488,7 @@ class Runner {
     const apogeeKm = this.source.getField(i, 'apogeeKm', this.tMs);
     // Any null input -> fail-safe, do NOT skip (run the full scan for this object).
     if (typeof inclination !== 'number' || typeof apogeeKm !== 'number') return false;
-    const latMax = inclination <= 90 ? inclination : 180 - inclination;
-    const lambda = footprintHalfAngleDeg(apogeeKm, thresholdDeg);
-    return Math.abs(obs.latDeg) > latMax + lambda;
+    return isConservativelyExcluded(obs, thresholdDeg, inclination, apogeeKm);
   }
 
   private tryResolveObserver(ref: ObserverRef): ResolvedObserver | null {

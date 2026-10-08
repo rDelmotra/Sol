@@ -159,18 +159,18 @@ function elevGate(latDeg: number, lonDeg: number, thresholdDeg = 10): Record<str
 
 // ── λ formula sanity (pins the geometry — Re = 6371 km) ────────────────────────
 
-describe('sweep — footprintHalfAngleDeg (λ) formula sanity', () => {
+describe('sweep — footprintHalfAngleDeg (λ) formula sanity (R_o=6371, r=6771)', () => {
   it('ε=0°, h=400 km ⇒ λ ≈ 19.8°', () => {
-    assert.ok(Math.abs(footprintHalfAngleDeg(400, 0) - 19.8) < 0.1, String(footprintHalfAngleDeg(400, 0)));
+    assert.ok(Math.abs(footprintHalfAngleDeg(6371, 6771, 0) - 19.8) < 0.1, String(footprintHalfAngleDeg(6371, 6771, 0)));
   });
 
   it('ε=90° ⇒ λ = 0° regardless of altitude', () => {
-    assert.ok(Math.abs(footprintHalfAngleDeg(400, 90) - 0) < 1e-6);
-    assert.ok(Math.abs(footprintHalfAngleDeg(35786, 90) - 0) < 1e-6); // GEO altitude too
+    assert.ok(Math.abs(footprintHalfAngleDeg(6371, 6771, 90) - 0) < 1e-6);
+    assert.ok(Math.abs(footprintHalfAngleDeg(6371, 6371 + 35786, 90) - 0) < 1e-6); // GEO altitude too
   });
 
   it('ε=10°, h=400 km ⇒ λ ≈ 12.1°', () => {
-    assert.ok(Math.abs(footprintHalfAngleDeg(400, 10) - 12.1) < 0.1, String(footprintHalfAngleDeg(400, 10)));
+    assert.ok(Math.abs(footprintHalfAngleDeg(6371, 6771, 10) - 12.1) < 0.1, String(footprintHalfAngleDeg(6371, 6771, 10)));
   });
 });
 

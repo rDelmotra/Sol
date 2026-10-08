@@ -88,3 +88,17 @@ export function latitudeDegFromEr(r: Vec3): number | null {
   if (mag === 0) return null;
   return Math.asin(r.z / mag) * DEG;
 }
+
+/**
+ * Geocentric latitude, degrees, from a position vector: asin(z/|r|) · DEG.
+ * Always the angle from the equatorial plane as seen from the Earth's CENTRE,
+ * regardless of the Earth figure (unlike latitudeDegFromEr, which becomes
+ * geodetic when the figure becomes an ellipsoid). Used by the analytic sweep
+ * prefilter, whose geometry is purely geocentric. Rotation-about-z invariant
+ * (valid on ECEF or TEME). Null for the zero vector.
+ */
+export function geocentricLatitudeDegFromEr(r: Vec3): number | null {
+  const mag = Math.sqrt(r.x * r.x + r.y * r.y + r.z * r.z);
+  if (mag === 0) return null;
+  return Math.asin(r.z / mag) * DEG;
+}
