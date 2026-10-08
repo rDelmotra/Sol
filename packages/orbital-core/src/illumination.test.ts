@@ -33,9 +33,11 @@ describe('illumination: isEclipsedFromComponents', () => {
     assert.equal(isEclipsedFromComponents(-1, UMBRA_RADIUS_ER + 0.5, 0, 1, 0, 0), false);
   });
 
-  it('matches the literal-1.0 umbra radius today (UMBRA_RADIUS_ER === 1)', () => {
-    assert.equal(UMBRA_RADIUS_ER, 1);
-    assert.equal(UMBRA_RADIUS_ER * UMBRA_RADIUS_ER, 1.0);
+  it('uses the WGS84 equatorial radius as the cylinder radius (UMBRA_RADIUS_ER = 6378.137/6371)', () => {
+    assert.equal(UMBRA_RADIUS_ER, 6378.137 / 6371);
+    // Anti-solar, offset perpendicular to the sun axis: eclipsed just inside a/ER_KM, lit just outside.
+    assert.equal(isEclipsedFromComponents(-1, 1.0011, 0, 1, 0, 0), true);
+    assert.equal(isEclipsedFromComponents(-1, 1.0012, 0, 1, 0, 0), false);
   });
 });
 

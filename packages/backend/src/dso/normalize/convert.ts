@@ -458,6 +458,6 @@ export const __testing__ = {
   convertProviderFetchToDsoSnapshot,
   multiplyMatrixVector,
   approxJulianDayTdbToIsoUtc,
-  EARTH_RADIUS_KM: ER_KM,
+  ER_KM,
   J2000_JULIAN_DAY,
 } as const;

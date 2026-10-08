@@ -2,13 +2,11 @@
 // Illumination — sun-relative lighting: satellite eclipse (cylindrical Earth
 // umbra), observer darkness (civil twilight), and apparent phase brightness.
 //
-// isEclipsedFromComponents / getPhaseMultiplierFromComponents are VERBATIM
-// copies of frontend orbital/lighting.ts, with one intentional numeric
-// change: the umbra test's literal `1.0` (implicitly EARTH_RADIUS_KM/ER_KM)
-// is spelled out as UMBRA_RADIUS_ER * UMBRA_RADIUS_ER (earth.ts) so a phase-3
-// WGS84 change to EARTH_RADIUS_KM only has to touch that one file. The two
-// forms are bit-identical today (6371/6371 == 1.0 exactly in double
-// precision), so this is a zero-behavior-change addition.
+// isEclipsedFromComponents / getPhaseMultiplierFromComponents are copies of
+// frontend orbital/lighting.ts. The eclipse test is the CYLINDRICAL umbra
+// model, with the cylinder radius UMBRA_RADIUS_ER (earth.ts) = WGS84
+// equatorial radius a / ER_KM = 1.0011202... earth-radii (it was a literal
+// 1.0 under the old spherical figure).
 //
 // isObserverInDarkFromComponents is ALSO kept verbatim — current render code
 // (frontend orbital/lighting.ts) calls it directly with a raw position it

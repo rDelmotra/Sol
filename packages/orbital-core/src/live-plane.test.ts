@@ -1,6 +1,6 @@
 // Synthetic-state tests mirroring the exact-value cases in
 // packages/frontend/src/query/analytic/live-source.test.ts (~lines 160-213):
-// speed = 0.0012*ER_KM, |r|=2 ER -> altitude 6371 km, 4 ER apart -> distance,
+// speed = 0.0012*ER_KM, |r|=2 ER on the equatorial axis -> altitude 6363.863 km (WGS84), 4 ER apart -> distance,
 // a satellite straight overhead -> elevation ~90 deg and range ~ altitude.
 
 import assert from 'node:assert/strict';
@@ -17,7 +17,6 @@ import {
   type StateEr,
 } from './live-plane.js';
 import { ER_KM } from './units.js';
-import { EARTH_RADIUS_KM } from './earth.js';
 import { observerTeme } from './observer.js';
 import { sunDirection } from './sun.js';
 
@@ -39,9 +38,9 @@ describe('live-plane: speedKmS', () => {
 });
 
 describe('live-plane: altitudeKm', () => {
-  it('|r| = 2 ER -> altitude = 6371 km', () => {
+  it('(2 ER, 0, 0) -> altitude = 2*6371 - 6378.137 = 6363.863 km (WGS84, on the equator)', () => {
     const s: StateEr = { r: { x: 2, y: 0, z: 0 }, v: { x: 0, y: 0, z: 0 } };
-    assert.ok(Math.abs(altitudeKm(s) - EARTH_RADIUS_KM) < 1e-6, `alt ${altitudeKm(s)}`);
+    assert.ok(Math.abs(altitudeKm(s) - 6363.863) < 1e-6, `alt ${altitudeKm(s)}`);
   });
 });
 
@@ -81,7 +80,10 @@ describe('live-plane: lookAngles + eclipse geometry via createLivePlane', () => 
     const speed = plane.field('anti', 'speedKmS', NOW);
     assert.ok(typeof speed === 'number' && Math.abs(speed - 0.0012 * ER_KM) < 1e-6);
     const alt = plane.field('anti', 'altitudeKm', NOW);
-    assert.ok(typeof alt === 'number' && Math.abs(alt - ER_KM) < 1e-3, `alt ${String(alt)}`); // 2 ER -> 6371 km up
+    assert.ok(typeof alt === 'number' && Math.abs(alt - 6366.917708232548) < 1e-6, `alt ${String(alt)}`);
+    // Independent: geodetic height of 2 ER * (-sunDirection(NOW)) via 200-iteration fixed-point
+    // inverse (/tmp/s4b/ref.py), sun = (-0.31345920296953095, 0.871265232409597, 0.3776774058213667)
+    // taken as INPUT data (pinned in golden.test.ts to Meeus); phi = -22.2572249 deg, h = 6366.9177082 km.
   });
 
   it('umbra geometry: anti-solar eclipsed, sunward lit', () => {
@@ -108,13 +110,9 @@ describe('live-plane: lookAngles + eclipse geometry via createLivePlane', () => 
 describe('live-plane: elevation/range for a satellite straight overhead', () => {
   const g = { latDeg: 10, lonDeg: 20 };
   const obsFrame = observerTeme(g, NOW);
-  const upScaleEr = (EARTH_RADIUS_KM + 400) / ER_KM;
+  // Truly 400 km above the observer along the ellipsoid normal (same lat/lon, +400 km height).
   const overhead: StateEr = {
-    r: {
-      x: obsFrame.up.x * upScaleEr,
-      y: obsFrame.up.y * upScaleEr,
-      z: obsFrame.up.z * upScaleEr,
-    },
+    r: observerTeme({ ...g, altKm: 400 }, NOW).position,
     v: { x: 0, y: 0, z: 0 },
   };
 
@@ -152,10 +150,8 @@ describe('live-plane: observerDark + visuallyVisible', () => {
 
   it('visuallyVisible is null when the state is unresolvable, and honors the isCurated flag', () => {
     const g2 = { latDeg: 10, lonDeg: 20 };
-    const obsFrame = observerTeme(g2, NOW);
-    const upScaleEr = (EARTH_RADIUS_KM + 400) / ER_KM;
     const overhead: StateEr = {
-      r: { x: obsFrame.up.x * upScaleEr, y: obsFrame.up.y * upScaleEr, z: obsFrame.up.z * upScaleEr },
+      r: observerTeme({ ...g2, altKm: 400 }, NOW).position,
       v: { x: 0, y: 0, z: 0 },
     };
     const plane = createLivePlane<'sat' | 'gone'>((k) => (k === 'sat' ? overhead : null));
@@ -174,10 +170,8 @@ describe('live-plane: LIVE_PLANE_FIELDS', () => {
 describe('live-plane: sun/observer caching does not change results across repeated calls', () => {
   it('elevationDeg/observerDark are stable across repeated calls at the same instant', () => {
     const g = { latDeg: -33.8688, lonDeg: 151.2093, altKm: 0.05 };
-    const obsFrame = observerTeme(g, NOW);
-    const upScaleEr = (EARTH_RADIUS_KM + 500) / ER_KM;
     const s: StateEr = {
-      r: { x: obsFrame.up.x * upScaleEr, y: obsFrame.up.y * upScaleEr, z: obsFrame.up.z * upScaleEr },
+      r: observerTeme({ ...g, altKm: 550 }, NOW).position, // 500 km above the 0.05 km observer
       v: { x: 0, y: 0, z: 0 },
     };
     const plane = createLivePlane<'sat'>(() => s);

@@ -100,7 +100,7 @@ describe('sunDirection — Meeus Example 25.a (1992 October 13, 0h TD)', () => {
 // ------------------------------------------------------------------
 // (b) Physical invariants.
 //
-// |observerTeme(g,t).up| = 1 and |position| = (EARTH_RADIUS_KM + alt)/ER_KM
+// |observerTeme(g,t).up| = 1 and WGS84 |position|
 // are already exercised for both observerEcef and observerTeme in
 // observer.test.ts, and for geodeticToEcefEr/geodeticUpEcef in
 // earth.test.ts — not repeated here. Only the sidereal-rotation-period
@@ -131,19 +131,18 @@ describe('gmst — rotation period invariant', () => {
 // These 3 rows are copied VERBATIM (tMs, gast, sun vector, one observer TEME
 // position each) from the retired __fixtures__/astro-golden.json — see
 // DELETE/packages/orbital-core/src/__fixtures__/astro-golden.json for the
-// full original fixture. They pin the CURRENT spherical-Earth implementation
-// as of 2026-09-28.
+// full original fixture. gmst/sun rows are the original pins (independent of
+// the Earth's figure; if one moves, that's a real regression).
 //
-// Phase 3 (WGS84 ellipsoid figure, see earth.ts's header) changes the
-// observer rows ON PURPOSE, because geodeticToEcefEr's math changes. If
-// phase 3 breaks one of these, update the literal to the new correct value
-// deliberately — never edit a pin just to make a failure go away without
-// understanding why it moved. The gmst/sun rows should NOT move under
-// phase 3 (they don't depend on the Earth's figure); if one of those two
-// changes, that's a real regression.
+// WGS84 (S4b, 2026-10-09): the 3 observer rows were RE-PINNED to the ellipsoid.
+// Independent derivation (/tmp/s4b/ref.py, pure python): reduced-latitude
+// parametric forward (tanβ=(1-f)tanφ; ρ=a cosβ+h cosφ; z=b sinβ+h sinφ; a=6378.137,
+// 1/f=298.257223563), / 6371 km per ER, then rotated about z by the pinned gmst of
+// that row (ecef->TEME = +theta). Method sanity-checked by reproducing the old
+// spherical London row to 1e-16.
 // ------------------------------------------------------------------
 
-describe('pre-refactor pin rows (spherical-Earth implementation, pinned 2026-09-28)', () => {
+describe('pre-refactor pin rows (gmst/sun pinned 2026-09-28; observer rows WGS84, re-pinned 2026-10-09)', () => {
   it('2026-01-01T00:00:00Z', () => {
     const tMs = 1767225600000;
     assertCloseRel(gmst(tMs), 1.7568634098762705, 'gmst');
@@ -155,9 +154,9 @@ describe('pre-refactor pin rows (spherical-Earth implementation, pinned 2026-09-
 
     // Observer: London (51.5074, -0.1278, alt 0 km).
     const p = observerTeme({ latDeg: 51.5074, lonDeg: -0.1278, altKm: 0 }, tMs).position;
-    assertCloseRel(p.x, -0.11377894940572371, 'observer.x');
-    assertCloseRel(p.y, 0.6119256352754987, 'observer.y');
-    assertCloseRel(p.z, 0.7826885508072845, 'observer.z');
+    assertCloseRel(p.x, -0.11414069341913727, 'observer.x');
+    assertCloseRel(p.y, 0.6138711659415084, 'observer.y');
+    assertCloseRel(p.z, 0.7799207247319123, 'observer.z');
   });
 
   it('2026-06-21T00:00:00Z (June solstice)', () => {
@@ -171,8 +170,8 @@ describe('pre-refactor pin rows (spherical-Earth implementation, pinned 2026-09-
 
     // Observer: equator (0, 0, alt 0 km).
     const p = observerTeme({ latDeg: 0, lonDeg: 0, altKm: 0 }, tMs).position;
-    assertCloseRel(p.x, -0.013847712545440293, 'observer.x');
-    assertCloseRel(p.y, -0.9999041158317425, 'observer.y');
+    assertCloseRel(p.x, -0.013863225200351107, 'observer.x');
+    assertCloseRel(p.y, -1.001024240721821, 'observer.y');
     assertCloseRel(p.z, 0, 'observer.z');
   });
 
@@ -187,8 +186,8 @@ describe('pre-refactor pin rows (spherical-Earth implementation, pinned 2026-09-
 
     // Observer: Sydney (-33.8688, 151.2093, alt 0.05 km).
     const p = observerTeme({ latDeg: -33.8688, lonDeg: 151.2093, altKm: 0.05 }, tMs).position;
-    assertCloseRel(p.x, -0.40521579406662583, 'observer.x');
-    assertCloseRel(p.y, -0.7247312873989608, 'observer.y');
-    assertCloseRel(p.z, -0.557297422826132, 'observer.z');
+    assertCloseRel(p.x, -0.4060920978863528, 'observer.x');
+    assertCloseRel(p.y, -0.7262985629215899, 'observer.y');
+    assertCloseRel(p.z, -0.5547638129910494, 'observer.z');
   });
 });

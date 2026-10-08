@@ -1,27 +1,23 @@
 // ============================================================
 // Earth figure — THE ONE home for "how big / what shape is the Earth".
-// Phase 3 (WGS84 migration) edits ONLY this file.
 //
-// EARTH_RADIUS_KM is the PHYSICAL figure (spherical today). ER_KM (units.ts)
-// is the scene/wire LENGTH UNIT — "1 ER" in worker buffers, the WASM output,
-// DSO CanonicalStateVector and the render scene. They are separate constants
-// that happen to share the value 6371 today: ER_KM stays 6371 forever (it's
-// a unit), while EARTH_RADIUS_KM becomes a WGS84 ellipsoid in phase 3.
-// Keeping two names now means phase 3 only has to touch this file.
+// The figure is WGS84 (a = 6378.137 km, 1/f = 298.257223563). ER_KM (units.ts)
+// is a different thing: the scene/wire LENGTH UNIT ("1 ER" in worker buffers,
+// the WASM output, DSO CanonicalStateVector, the render scene). ER_KM stays
+// 6371 forever; it is NOT the Earth's radius and no longer equals it.
+//
+// altitudeKmFromEr / latitudeDegFromEr / geodeticLatAltFromEr are geodetic and
+// are valid on TEME or ECEF vectors ONLY (they depend on rho = sqrt(x²+y²) and
+// z, which are invariant under rotation about z). They are NOT valid on render
+// scene (Y-up) vectors — convert with the frontend's engine/scene/frames.ts
+// sceneToSource* first.
 // ============================================================
 
 import type { Vec3 } from './vec.js';
 import { ER_KM, RAD, DEG } from './units.js';
 
-/** Physical Earth radius, km (spherical figure — see header re: ER_KM vs this). */
-export const EARTH_RADIUS_KM = 6371;
-
-/** Cylindrical shadow (umbra) radius, in earth-radii (scene unit). */
-export const UMBRA_RADIUS_ER = EARTH_RADIUS_KM / ER_KM;
-
 // ------------------------------------------------------------
-// WGS84 ellipsoid (S4a: added, NOT yet used by the functions above).
-// Source: NIMA TR8350.2 / EPSG:7030 defining constants (a, 1/f).
+// WGS84 ellipsoid. Source: NIMA TR8350.2 / EPSG:7030 defining constants (a, 1/f).
 // ------------------------------------------------------------
 
 /** WGS84 semi-major (equatorial) axis a, km. Defining constant. */
@@ -42,88 +38,17 @@ export const WGS84_E2 = WGS84_F * (2 - WGS84_F);
 /** Second eccentricity squared e′² = e²/(1 - e²), dimensionless. Internal. */
 const WGS84_EP2 = WGS84_E2 / (1 - WGS84_E2);
 
+/**
+ * Cylindrical shadow (umbra) radius, in earth-radii (scene unit): the WGS84
+ * equatorial radius a / ER_KM (1.0011202...). The eclipse test is the
+ * cylindrical-umbra model using this radius.
+ */
+export const UMBRA_RADIUS_ER = WGS84_A_KM / ER_KM;
+
 export interface GeodeticInput {
   latDeg: number;
   lonDeg: number;
   altKm?: number;
-}
-
-/**
- * Geodetic (lat/lon/alt) → ECEF position, in earth-radii (scene unit).
- * Spherical Earth model — same math as astro.ts observerTeme's pre-rotation
- * x/y/z: r = (EARTH_RADIUS_KM + alt) / ER_KM.
- */
-export function geodeticToEcefEr(g: GeodeticInput): Vec3 {
-  const lat = g.latDeg * RAD;
-  const lon = g.lonDeg * RAD;
-  const r = (EARTH_RADIUS_KM + (g.altKm ?? 0)) / ER_KM;
-
-  return {
-    x: r * Math.cos(lat) * Math.cos(lon),
-    y: r * Math.cos(lat) * Math.sin(lon),
-    z: r * Math.sin(lat),
-  };
-}
-
-/**
- * Local "up" (outward surface normal) at a geodetic point, ECEF frame, unit
- * vector: (cosφ·cosλ, cosφ·sinλ, sinφ). For a spherical Earth this is exactly
- * the normalized position; it is also the correct WGS84 normal when φ is
- * geodetic latitude, which is why phase 3 (ellipsoid figure) does not need
- * to change this function's shape, only geodeticToEcefEr's.
- */
-export function geodeticUpEcef(g: GeodeticInput): Vec3 {
-  const lat = g.latDeg * RAD;
-  const lon = g.lonDeg * RAD;
-  return {
-    x: Math.cos(lat) * Math.cos(lon),
-    y: Math.cos(lat) * Math.sin(lon),
-    z: Math.sin(lat),
-  };
-}
-
-/**
- * Altitude, km, from a position vector in earth-radii.
- *
- * The current call sites (live-source.ts:245, providers/sgp4.ts:206) compute
- * this as `(|r| − 1) * EARTH_RADIUS_KM`, relying on the fact that ER_KM and
- * EARTH_RADIUS_KM are both 6371 today (so "1.0" implicitly means
- * EARTH_RADIUS_KM/ER_KM). Written explicitly here as
- * `(|r| − EARTH_RADIUS_KM/ER_KM) * ER_KM` so the two constants are spelled
- * out and stay numerically equivalent even after phase 3 changes
- * EARTH_RADIUS_KM. With today's values the two forms are bit-identical
- * (6371/6371 == 1.0 exactly in double precision).
- */
-export function altitudeKmFromEr(r: Vec3): number {
-  const mag = Math.sqrt(r.x * r.x + r.y * r.y + r.z * r.z);
-  return (mag - EARTH_RADIUS_KM / ER_KM) * ER_KM;
-}
-
-/**
- * Geocentric latitude, degrees, from a position vector: asin(z/|r|) · DEG.
- * This is invariant under rotation about the z-axis, so it is valid on
- * either an ECEF or a TEME position — the two frames differ only by a
- * z-axis (sidereal) rotation, which never changes z or |r|.
- * Returns null for the zero vector (undefined direction).
- */
-export function latitudeDegFromEr(r: Vec3): number | null {
-  const mag = Math.sqrt(r.x * r.x + r.y * r.y + r.z * r.z);
-  if (mag === 0) return null;
-  return Math.asin(r.z / mag) * DEG;
-}
-
-/**
- * Geocentric latitude, degrees, from a position vector: asin(z/|r|) · DEG.
- * Always the angle from the equatorial plane as seen from the Earth's CENTRE,
- * regardless of the Earth figure (unlike latitudeDegFromEr, which becomes
- * geodetic when the figure becomes an ellipsoid). Used by the analytic sweep
- * prefilter, whose geometry is purely geocentric. Rotation-about-z invariant
- * (valid on ECEF or TEME). Null for the zero vector.
- */
-export function geocentricLatitudeDegFromEr(r: Vec3): number | null {
-  const mag = Math.sqrt(r.x * r.x + r.y * r.y + r.z * r.z);
-  if (mag === 0) return null;
-  return Math.asin(r.z / mag) * DEG;
 }
 
 /**
@@ -132,7 +57,7 @@ export function geocentricLatitudeDegFromEr(r: Vec3): number | null {
  * x,y = (N + h)cosφ(cosλ, sinλ); z = (N(1 − e²) + h)sinφ; all / ER_KM.
  * Output is ECEF (x toward lon 0, z toward north pole), NOT scene Y-up.
  */
-export function wgs84GeodeticToEcefEr(g: GeodeticInput): Vec3 {
+export function geodeticToEcefEr(g: GeodeticInput): Vec3 {
   const lat = g.latDeg * RAD;
   const lon = g.lonDeg * RAD;
   const h = g.altKm ?? 0;
@@ -144,6 +69,23 @@ export function wgs84GeodeticToEcefEr(g: GeodeticInput): Vec3 {
     x: (rhoKm * Math.cos(lon)) / ER_KM,
     y: (rhoKm * Math.sin(lon)) / ER_KM,
     z: ((n * (1 - WGS84_E2) + h) * sinLat) / ER_KM,
+  };
+}
+
+/**
+ * Local "up" (outward ellipsoid surface normal) at a geodetic point, ECEF
+ * frame, unit vector: (cosφ·cosλ, cosφ·sinλ, sinφ) with φ geodetic latitude.
+ * This is the exact WGS84 normal. It is NOT parallel to the position vector:
+ * the angle between them is φ − ψ (geodetic minus geocentric latitude, up to
+ * 0.1924° at the surface).
+ */
+export function geodeticUpEcef(g: GeodeticInput): Vec3 {
+  const lat = g.latDeg * RAD;
+  const lon = g.lonDeg * RAD;
+  return {
+    x: Math.cos(lat) * Math.cos(lon),
+    y: Math.cos(lat) * Math.sin(lon),
+    z: Math.sin(lat),
   };
 }
 
@@ -160,7 +102,7 @@ export function wgs84GeodeticToEcefEr(g: GeodeticInput): Vec3 {
  * Target accuracy: latitude < 1e-9°, height < 1 mm for φ ∈ [-90°, 90°],
  * h ∈ [-50 km, 384400 km]. Origin → { latDeg: null, altKm: −WGS84_A_KM }.
  */
-export function wgs84LatAltFromEr(r: Vec3): { latDeg: number | null; altKm: number } {
+export function geodeticLatAltFromEr(r: Vec3): { latDeg: number | null; altKm: number } {
   const xKm = r.x * ER_KM;
   const yKm = r.y * ER_KM;
   const zKm = r.z * ER_KM;
@@ -182,4 +124,33 @@ export function wgs84LatAltFromEr(r: Vec3): { latDeg: number | null; altKm: numb
   const altKm =
     rho * Math.cos(phi) + zKm * sinPhi - WGS84_A_KM * Math.sqrt(1 - WGS84_E2 * sinPhi * sinPhi);
   return { latDeg: phi * DEG, altKm };
+}
+
+/**
+ * Altitude above the WGS84 ellipsoid, km, from a TEME or ECEF position vector
+ * in earth-radii. NOT valid on scene Y-up vectors (see geodeticLatAltFromEr).
+ */
+export function altitudeKmFromEr(r: Vec3): number {
+  return geodeticLatAltFromEr(r).altKm;
+}
+
+/**
+ * WGS84 geodetic latitude, degrees, from a TEME or ECEF position vector in
+ * earth-radii. Null for the zero vector. NOT valid on scene Y-up vectors.
+ */
+export function latitudeDegFromEr(r: Vec3): number | null {
+  return geodeticLatAltFromEr(r).latDeg;
+}
+
+/**
+ * Geocentric latitude, degrees, from a position vector: asin(z/|r|) · DEG.
+ * Always the angle from the equatorial plane as seen from the Earth's CENTRE
+ * (unlike latitudeDegFromEr, which is geodetic). Used by the analytic sweep
+ * prefilter, whose geometry is purely geocentric. Rotation-about-z invariant
+ * (valid on ECEF or TEME). Null for the zero vector.
+ */
+export function geocentricLatitudeDegFromEr(r: Vec3): number | null {
+  const mag = Math.sqrt(r.x * r.x + r.y * r.y + r.z * r.z);
+  if (mag === 0) return null;
+  return Math.asin(r.z / mag) * DEG;
 }

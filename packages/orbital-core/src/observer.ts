@@ -1,9 +1,9 @@
 // ============================================================
 // Observer frame — geodetic (lat/lon/alt) → position + local "up", in ER.
 //
-// observerTeme(g, tMs).position is bit-identical to the pre-orbital-core
-// astro.ts observerTeme / orbital/coordinates.ts getObserverScenePosition
-// (pre-scene-swap) math.
+// Positions are WGS84 (earth.ts geodeticToEcefEr): the observer sits on/above
+// the ellipsoid, and `up` is the ellipsoid normal (NOT parallel to position;
+// the angle between them is the geodetic-minus-geocentric latitude difference).
 // ============================================================
 
 import type { Vec3 } from './vec.js';

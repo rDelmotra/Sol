@@ -38,7 +38,7 @@ const {
   convertSampleToTemeState,
   convertProviderFetchToDsoSnapshot,
   multiplyMatrixVector,
-  EARTH_RADIUS_KM,
+  ER_KM,
   J2000_JULIAN_DAY,
 } = __testing__;
 
@@ -203,18 +203,18 @@ describe('J2000 → TEME frame conversion', () => {
 
       const r_teme_er: Vec3 = [result[1] as number, result[2] as number, result[3] as number];
       const r_teme_km: Vec3 = [
-        r_teme_er[0] * EARTH_RADIUS_KM,
-        r_teme_er[1] * EARTH_RADIUS_KM,
-        r_teme_er[2] * EARTH_RADIUS_KM,
+        r_teme_er[0] * ER_KM,
+        r_teme_er[1] * ER_KM,
+        r_teme_er[2] * ER_KM,
       ];
 
       assertVectorClose(r_teme_km, VALLADO_R_TEME_GOLDEN, 0.001, 'end-to-end position (km)');
 
       const v_teme_er: Vec3 = [result[4] as number, result[5] as number, result[6] as number];
       const v_teme_kms: Vec3 = [
-        v_teme_er[0] * EARTH_RADIUS_KM,
-        v_teme_er[1] * EARTH_RADIUS_KM,
-        v_teme_er[2] * EARTH_RADIUS_KM,
+        v_teme_er[0] * ER_KM,
+        v_teme_er[1] * ER_KM,
+        v_teme_er[2] * ER_KM,
       ];
 
       assertVectorClose(v_teme_kms, VALLADO_V_TEME_GOLDEN, 0.000001, 'end-to-end velocity (km/s)');

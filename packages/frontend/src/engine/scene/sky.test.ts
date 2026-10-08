@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { getSunDirection, getObserverSceneAnchor, getObserverEarthAnchor } from './sky';
-import { gmst, EARTH_RADIUS_KM } from '@orbitwatch/orbital-core';
+import { gmst } from '@orbitwatch/orbital-core';
 
 // ============================================================
 // Pre-refactor pins — PROJECT_MAP/15_ORBITAL_CORE_AND_CONTRACTS.md O5.
@@ -14,17 +14,22 @@ import { gmst, EARTH_RADIUS_KM } from '@orbitwatch/orbital-core';
 // visible, same Earth rotation, same sun/terminator, same dome sky/compass
 // anchoring.
 //
-// Tolerances: ≤1e-12 ABSOLUTE for unit-vector components (sun direction,
-// `up`) and ≤1e-12 RELATIVE for everything else (gast, `position`, which is
-// not unit length once altitude > 0). The ONE deliberate divergence is
-// `anchorUp` / `ecefUp`: the old code normalized the position
-// (`position.clone().normalize()`); the new code takes orbital-core's `up`
-// straight from `geodeticUpEcef` (an independent cos/sin formula). The two
-// are the same direction, differing only at the ~1e-15 floating-point level
-// — see §6.5 risk 5 ("up = direct normal vs normalize(position)"). Phase 3
-// (WGS84 ellipsoid) will deliberately change `up`'s formula in earth.ts —
-// these pins are NOT invariants of physics, just a snapshot to change on
-// purpose, not by accident.
+// Tolerances: <=1e-12 ABSOLUTE for unit-vector components (sun direction,
+// `up`) and <=1e-12 RELATIVE for everything else (gast, `position`).
+//
+// WGS84 (S4b, 2026-10-09): the sun, gast and `anchorUp` pins are unchanged
+// (they do not depend on the Earth's figure; `up` is the ellipsoid normal
+// (cosφcosλ, cosφsinλ, sinφ) of the GEODETIC latitude, same as before). The
+// `anchorPosition`, `ecefPositionDefaultOffset` and `ecefPositionZeroOffset`
+// pins were RE-PINNED to the WGS84 ellipsoid. Their independent derivation
+// (/tmp/s4b/ref.py, pure python, not the code under test): reduced-latitude
+// parametric forward, tanβ = (1-f)tanφ, ρ = a cosβ + h cosφ,
+// z = b sinβ + h sinφ (NOT the N-based formula the code uses), / 6371 km per
+// ER; TEME = rotate by the pinned gast about z; scene = (x, z, -y); the
+// default-offset pin adds 0.006 ER along the scene-frame ellipsoid normal.
+// The method was first checked by reproducing the OLD spherical London
+// anchorPosition pin to 1e-16. `ecefUp` (normalize(position)) is gone: on an
+// ellipsoid position is no longer parallel to up.
 // ============================================================
 
 interface Vec3Pin { x: number; y: number; z: number }
@@ -42,8 +47,6 @@ interface ObserverPin {
   ecefPositionDefaultOffset: Vec3Pin;
   /** getObserverECEFPosition(lat, lon, alt, 0) — surfaceOffsetEr = 0 (HorizonLayer's call). */
   ecefPositionZeroOffset: Vec3Pin;
-  /** getObserverECEFPosition(lat, lon, alt, 0).clone().normalize() — the old "up" derivation. */
-  ecefUp: Vec3Pin;
 }
 
 interface InstantPin {
@@ -63,19 +66,17 @@ const PINS: InstantPin[] = [
     observers: [
       {
         name: 'Mumbai', latDeg: 19.076, lonDeg: 72.8777, altKm: 0,
-        anchorPosition: { x: -0.9390825321027938, y: 0.3268220510091861, z: -0.10635480653714821 },
+        anchorPosition: { x: -0.9404708220563848, y: 0.3251141020145442, z: -0.10651203585872979 },
         anchorUp: { x: -0.9390825321027938, y: 0.3268220510091861, z: -0.10635480653714821 },
-        ecefPositionDefaultOffset: { x: 0.27991438657671264, y: 0.3287829833152412, z: -0.9086174585983435 },
-        ecefPositionZeroOffset: { x: 0.278244917074267, y: 0.3268220510091861, z: -0.9031982689844369 },
-        ecefUp: { x: 0.278244917074267, y: 0.3268220510091861, z: -0.9031982689844369 },
+        ecefPositionDefaultOffset: { x: 0.2803257291475802, y: 0.3270750343205993, z: -0.9099526991550219 },
+        ecefPositionZeroOffset: { x: 0.2786562596451346, y: 0.3251141020145442, z: -0.9045335095411152 },
       },
       {
         name: 'London', latDeg: 51.5074, lonDeg: -0.1278, altKm: 0.05,
-        anchorPosition: { x: -0.11377984234991935, y: 0.7826946933951892, z: -0.6119304377055355 },
+        anchorPosition: { x: -0.11414158636333287, y: 0.779926867319817, z: -0.613875968371545 },
         anchorUp: { x: -0.11377894940572372, y: 0.7826885508072845, z: -0.6119256352754987 },
-        ecefPositionDefaultOffset: { x: 0.6261513626130711, y: 0.7873908247000329, z: 0.0013966522060227765 },
-        ecefPositionZeroOffset: { x: 0.6224168905779697, y: 0.7826946933951892, z: 0.001388322337371867 },
-        ecefUp: { x: 0.6224120058502515, y: 0.7826885508072845, z: 0.0013883114418182503 },
+        ecefPositionDefaultOffset: { x: 0.6281302332052943, y: 0.7846229986246607, z: 0.0014010661451165577 },
+        ecefPositionZeroOffset: { x: 0.6243957611701928, y: 0.779926867319817, z: 0.0013927362764656482 },
       },
     ],
   },
@@ -87,19 +88,17 @@ const PINS: InstantPin[] = [
     observers: [
       {
         name: 'Mumbai', latDeg: 19.076, lonDeg: 72.8777, altKm: 0,
-        anchorPosition: { x: -0.9017259597931586, y: 0.3268220510091861, z: -0.28297992933997257 },
+        anchorPosition: { x: -0.9030590237657893, y: 0.3251141020145442, z: -0.2833982719025702 },
         anchorUp: { x: -0.9017259597931586, y: 0.3268220510091861, z: -0.28297992933997257 },
-        ecefPositionDefaultOffset: { x: 0.27991438657671264, y: 0.3287829833152412, z: -0.9086174585983435 },
-        ecefPositionZeroOffset: { x: 0.278244917074267, y: 0.3268220510091861, z: -0.9031982689844369 },
-        ecefUp: { x: 0.278244917074267, y: 0.3268220510091861, z: -0.9031982689844369 },
+        ecefPositionDefaultOffset: { x: 0.2803257291475802, y: 0.3270750343205993, z: -0.9099526991550219 },
+        ecefPositionZeroOffset: { x: 0.2786562596451346, y: 0.3251141020145442, z: -0.9045335095411152 },
       },
       {
         name: 'London', latDeg: 51.5074, lonDeg: -0.1278, altKm: 0.05,
-        anchorPosition: { x: 0.004653959793373439, y: 0.7826946933951892, z: -0.6224010393419201 },
+        anchorPosition: { x: 0.004668756281566335, y: 0.779926867319817, z: -0.6243798595377846 },
         anchorUp: { x: 0.004653923269097273, y: 0.7826885508072845, z: -0.6223961547386024 },
-        ecefPositionDefaultOffset: { x: 0.6261513626130711, y: 0.7873908247000329, z: 0.0013966522060227765 },
-        ecefPositionZeroOffset: { x: 0.6224168905779697, y: 0.7826946933951892, z: 0.001388322337371867 },
-        ecefUp: { x: 0.6224120058502515, y: 0.7826885508072845, z: 0.0013883114418182503 },
+        ecefPositionDefaultOffset: { x: 0.6281302332052943, y: 0.7846229986246607, z: 0.0014010661451165577 },
+        ecefPositionZeroOffset: { x: 0.6243957611701928, y: 0.779926867319817, z: 0.0013927362764656482 },
       },
     ],
   },
@@ -111,19 +110,17 @@ const PINS: InstantPin[] = [
     observers: [
       {
         name: 'Mumbai', latDeg: 19.076, lonDeg: 72.8777, altKm: 0,
-        anchorPosition: { x: 0.9444650653280655, y: 0.3268220510091861, z: 0.034250362757228925 },
+        anchorPosition: { x: 0.9458613125341302, y: 0.3251141020145442, z: 0.034300996682253865 },
         anchorUp: { x: 0.9444650653280657, y: 0.32682205100918615, z: 0.03425036275722893 },
-        ecefPositionDefaultOffset: { x: 0.27991438657671264, y: 0.3287829833152412, z: -0.9086174585983435 },
-        ecefPositionZeroOffset: { x: 0.278244917074267, y: 0.3268220510091861, z: -0.9031982689844369 },
-        ecefUp: { x: 0.278244917074267, y: 0.3268220510091861, z: -0.9031982689844369 },
+        ecefPositionDefaultOffset: { x: 0.2803257291475802, y: 0.3270750343205993, z: -0.9099526991550219 },
+        ecefPositionZeroOffset: { x: 0.2786562596451346, y: 0.3251141020145442, z: -0.9045335095411152 },
       },
       {
         name: 'London', latDeg: 51.5074, lonDeg: -0.1278, altKm: 0.05,
-        anchorPosition: { x: 0.160229146926493, y: 0.7826946933951892, z: 0.6014410474775305 },
+        anchorPosition: { x: 0.1607385687491807, y: 0.779926867319817, z: 0.6033532288784946 },
         anchorUp: { x: 0.160227889448158, y: 0.7826885508072845, z: 0.6014363273682276 },
-        ecefPositionDefaultOffset: { x: 0.6261513626130711, y: 0.7873908247000329, z: 0.0013966522060227765 },
-        ecefPositionZeroOffset: { x: 0.6224168905779697, y: 0.7826946933951892, z: 0.001388322337371867 },
-        ecefUp: { x: 0.6224120058502515, y: 0.7826885508072845, z: 0.0013883114418182503 },
+        ecefPositionDefaultOffset: { x: 0.6281302332052943, y: 0.7846229986246607, z: 0.0014010661451165577 },
+        ecefPositionZeroOffset: { x: 0.6243957611701928, y: 0.779926867319817, z: 0.0013927362764656482 },
       },
     ],
   },
@@ -173,11 +170,8 @@ describe('scene/sky — pre-refactor pins (orbital-core reproduces the deleted f
             assertVecRel(anchor.position, obs.anchorPosition, 'anchor.position');
           });
 
-          it('getObserverSceneAnchor(...).up matches normalize(position) to 1e-12 (direct normal vs normalize(position))', () => {
+          it('getObserverSceneAnchor(...).up matches the geodetic ellipsoid normal to 1e-12', () => {
             const anchor = getObserverSceneAnchor(obs.latDeg, obs.lonDeg, obs.altKm, date);
-            // Deliberately looser than the other pins: orbital-core's `up` comes from an
-            // independent cos/sin formula (geodeticUpEcef), not position.clone().normalize().
-            // Same direction, different code path — differs at the float-precision level.
             assertVecAbs(anchor.up, obs.anchorUp, 'anchor.up', 1e-12);
           });
 
@@ -189,11 +183,6 @@ describe('scene/sky — pre-refactor pins (orbital-core reproduces the deleted f
           it('getObserverEarthAnchor(lat,lon,alt,0) matches getObserverECEFPosition(...,0) (rel tol)', () => {
             const anchor = getObserverEarthAnchor(obs.latDeg, obs.lonDeg, obs.altKm, 0);
             assertVecRel(anchor.position, obs.ecefPositionZeroOffset, 'earthAnchor.position (zero offset)');
-          });
-
-          it('getObserverEarthAnchor(...).up matches normalize(ECEF position) to 1e-12 (direct normal vs normalize(position))', () => {
-            const anchor = getObserverEarthAnchor(obs.latDeg, obs.lonDeg, obs.altKm, 0);
-            assertVecAbs(anchor.up, obs.ecefUp, 'earthAnchor.up', 1e-12);
           });
         });
       }
@@ -210,15 +199,19 @@ describe('scene/sky — pre-refactor pins (orbital-core reproduces the deleted f
 // ============================================================
 
 describe('getObserverSceneAnchor — invariants (ported from backend tests/frontend/observer-anchor.test.ts)', () => {
-  it('returns unit up vector aligned with observer position', () => {
+  it('returns unit up vector; position is on the WGS84 ellipsoid and tilted from up by (geodetic - geocentric) latitude', () => {
     const anchor = getObserverSceneAnchor(28.6139, 77.2090, 0.25, new Date('2026-04-10T22:45:00.000Z'));
     const positionLen = anchor.position.length();
     const upLen = anchor.up.length();
-    const alignment = anchor.position.clone().normalize().dot(anchor.up);
+    const angleDeg = Math.acos(anchor.position.clone().normalize().dot(anchor.up)) * (180 / Math.PI);
 
-    assert.ok(Math.abs(positionLen - ((EARTH_RADIUS_KM + 0.25) / EARTH_RADIUS_KM)) < 1e-12);
+    // Independent reference (/tmp/s4b/ref.py): reduced-latitude parametric forward for
+    // (28.6139N, 77.2090E, 0.25 km): |p| = 6373.514084403635 km = 1.0003946137817665 ER;
+    // phi - psi = 28.6139 - asin(z/|p|) = 0.161495333949226 deg
+    // (also = acos(p.up/|p|) = 0.16149533394985505 deg, computed separately).
+    assert.ok(Math.abs(positionLen - 1.0003946137817665) < 1e-12);
     assert.ok(Math.abs(upLen - 1) < 1e-12);
-    assert.ok(alignment > 0.999999999999);
+    assert.ok(Math.abs(angleDeg - 0.161495333949226) < 1e-9, `angle ${angleDeg}`);
   });
 
   it('moves observer radius according to altitude', () => {

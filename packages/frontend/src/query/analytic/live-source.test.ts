@@ -172,7 +172,9 @@ describe('live source — buffer fast-path + physics geometry', () => {
     const speed = src.getField(0, 'speedKmS', NOW + 2000); // within 8 s tolerance
     assert.ok(typeof speed === 'number' && Math.abs(speed - 0.0012 * 6371) < 1e-6);
     const alt = src.getField(0, 'altitudeKm', NOW);
-    assert.ok(typeof alt === 'number' && Math.abs(alt - 6371) < 0.5, `alt ${String(alt)}`); // 2 ER → 6371 km up
+    assert.ok(typeof alt === 'number' && Math.abs(alt - 6366.917792362153) < 1e-3, `alt ${String(alt)}`);
+    // Independent (/tmp/s4b/ref.py): geodetic height of the float32-rounded 2 ER * (-sun) point,
+    // 200-iteration fixed-point inverse = 6366.917792 km (6366.917708 km before float32 rounding).
   });
 
   it('umbra geometry: anti-solar eclipsed, sunward lit, invalid null', () => {
@@ -188,11 +190,10 @@ describe('live source — buffer fast-path + physics geometry', () => {
 
   it('elevation is ~90° for a satellite straight above the observer', () => {
     const obs = { latDeg: 10, lonDeg: 20 };
-    const o = observerTeme(obs, NOW).position;
-    const oLen = Math.hypot(o.x, o.y, o.z);
-    const up = 1 + 400 / 6371;
+    // Truly 400 km above the observer along the WGS84 normal (same lat/lon, +400 km height).
+    const o = observerTeme({ ...obs, altKm: 400 }, NOW).position;
     const zenithBuffers: LiveBuffers = {
-      positions: new Float32Array([o.x / oLen * up, o.y / oLen * up, o.z / oLen * up]),
+      positions: new Float32Array([o.x, o.y, o.z]),
       velocities: new Float32Array(3),
       validFlags: new Uint8Array([1]),
       timestamp: NOW,
