@@ -210,5 +210,3 @@ export function createQueryRouter(deps: QueryRouterDeps = {}): Router {
 
   return router;
 }
-
-export default createQueryRouter();
