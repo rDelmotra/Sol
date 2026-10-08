@@ -2,14 +2,12 @@
 // wasm-sgp4 ↔ satellite.js parity — the "copied engine, same physics" proof.
 //
 // Loads the committed WASM binary via initSync (no browser needed) and runs
-// the SAME OMM records + instants through both engines. They do NOT use the
-// same gravity constants: satellite.js is hard-coded WGS72, while the Rust
-// crate's Constants::from_elements uses WGS84 (measured 2026-10-09: LEO median
-// ~37 m now, ~250 m at +7 d; worst LEO 1.3 km now, ~15 km at +7 d). Within the
-// ±2 d this test covers they agree to well under the tolerance below
-// (1e-4 ER ≈ 640 m), which is deliberately loose so that known gravity-model
-// difference never flakes the suite, while a frame / epoch bug (km-scale)
-// still fails loudly. See PROJECT_MAP/16_WGS84_PLAN.md.
+// the SAME OMM records + instants through both engines. NOTE the engines do
+// NOT share a gravity model: the Rust crate's `Constants::from_elements` uses
+// WGS84 constants while satellite.js is hard-coded WGS72 (measured 2026-10-09:
+// LEO median ~37 m now, ~250 m at +7 d; worst LEO ~1.3 km now). The tolerance
+// below (1e-4 ER ≈ 640 m, ±2 d) is deliberately loose for that reason, while a
+// wrong frame / epoch bug (km-scale) still fails loudly. See PROJECT_MAP/16.
 //
 // Fixtures are real catalog records chosen to cover the three propagator
 // regimes: ISS (near-earth + drag), SYNCOM 2 (GEO — 24 h resonant SDP4),
