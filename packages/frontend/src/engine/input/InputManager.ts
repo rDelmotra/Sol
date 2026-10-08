@@ -5,6 +5,7 @@ import type { DsoRenderer } from '../DsoRenderer';
 import type { GPUPicker } from '../GPUPicker';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { useStore } from '../../store/useStore';
+import { dsoIndexOf } from '../../data/dso-index';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -240,7 +241,7 @@ export class InputManager {
           } else {
             const dso = state.selectedDso;
             if (dso) {
-              const dsoIndex = state.dsoObjects.findIndex((d) => d.dsoId === dso.dsoId);
+              const dsoIndex = dsoIndexOf(state.dsoObjects, dso.dsoId);
               if (dsoIndex >= 0 && this.dsoRenderer) {
                 this.controls.target.copy(this.dsoRenderer.getPositionAt(dsoIndex));
               }

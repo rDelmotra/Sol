@@ -3,6 +3,7 @@ import { DsoRenderer } from '../../DsoRenderer';
 import { DsoWorkerClient } from '../../dso/DsoWorkerClient';
 import { useStore } from '../../../store/useStore';
 import type { DsoObject } from '../../../data/dso-types';
+import { dsoIndexOf } from '../../../data/dso-index';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 
 /**
@@ -129,7 +130,7 @@ export class DsoLayer implements Layer {
 
     const selectedDso = useStore.getState().selectedDso;
     if (selectedDso !== null) {
-      const idx = useStore.getState().dsoObjects.findIndex((d) => d.dsoId === selectedDso.dsoId);
+      const idx = dsoIndexOf(useStore.getState().dsoObjects, selectedDso.dsoId);
       this._renderer.setSelectedDsoIndex(idx);
     } else {
       this._renderer.setSelectedDsoIndex(-1);

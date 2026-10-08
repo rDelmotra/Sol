@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CameraAnimator, HOME_POSITION, HOME_TARGET } from './CameraAnimator';
 import { ObserverSkyController } from './ObserverSkyController';
 import { useStore, isObserverMode, type TrackingStyle, type VisibilityMode } from '../../store/useStore';
+import { dsoIndexOf } from '../../data/dso-index';
 import type { TrackingSource } from './TrackingSource';
 
 interface NavigationCallbacks {
@@ -185,7 +186,7 @@ export class NavigationController {
 
     } else if (cameraMode === 'flying' && selectedDso !== null) {
       // DSO fly-to
-      const dsoIndex = store.dsoObjects.findIndex((d) => d.dsoId === selectedDso.dsoId);
+      const dsoIndex = dsoIndexOf(store.dsoObjects, selectedDso.dsoId);
       if (this.source.getDsoKinematics(dsoIndex, this.trackingPos, this.trackingVelocity)) {
         let endCamPos: THREE.Vector3;
         let endTarget: THREE.Vector3;
@@ -224,7 +225,7 @@ export class NavigationController {
 
     } else if (cameraMode === 'following' && selectedDso !== null) {
       // DSO follow
-      const dsoIndex = store.dsoObjects.findIndex((d) => d.dsoId === selectedDso.dsoId);
+      const dsoIndex = dsoIndexOf(store.dsoObjects, selectedDso.dsoId);
       if (this.source.getDsoKinematics(dsoIndex, this.trackingPos, this.trackingVelocity)) {
         if (trackingStyle === 'joyride') {
           this.cameraController.updateJoyride(this.trackingPos, this.trackingVelocity, this.controls.target);
@@ -318,7 +319,7 @@ export class NavigationController {
 
   flyToDso(dsoId: string, style: TrackingStyle = 'follow'): void {
     let store = useStore.getState();
-    const dsoIndex = store.dsoObjects.findIndex((d) => d.dsoId === dsoId);
+    const dsoIndex = dsoIndexOf(store.dsoObjects, dsoId);
     if (!this.source.getDsoKinematics(dsoIndex, this.trackingPos, this.trackingVelocity)) return;
 
     if ((store.cameraMode === 'flying' || store.cameraMode === 'following')
