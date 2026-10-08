@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
 import { logger } from '../utils/logger.js';
-import type { SwpcDailyIndex } from '../services/swpc.js';
+import type { SwpcDailyIndex } from '../types/index.js';
 
 // ============================================================
 // File-based cache for NOAA SWPC daily space-weather indices.

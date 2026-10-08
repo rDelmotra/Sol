@@ -257,8 +257,6 @@ const KNOWN_VIOLATIONS: KnownViolation[] = [
   // DsoWorkerClient reads the store below the layer tier
   { rule: 'fe-worker-clients-no-store', from: `${FE}/engine/dso/DsoWorkerClient.ts`, to: `${FE}/store/useStore`, fix: '2.6 R3-D thread via DsoLayer getter' },
   // backend dependency-direction debt
-  { rule: 'be-low-tiers-stay-low', from: `${BE}/cache/swpc-cache.ts`, to: `${BE}/services/swpc`, fix: '2.5 move record types down a tier' },
-  { rule: 'be-low-tiers-stay-low', from: `${BE}/cache/gazetteer-cache.ts`, to: `${BE}/services/gazetteer`, fix: '2.5 move record types down a tier' },
   { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/index`, fix: '2.5 inject the registry snapshot' },
   { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/types`, fix: '2.5 inject the registry snapshot' },
 ];

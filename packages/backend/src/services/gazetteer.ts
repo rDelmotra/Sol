@@ -42,6 +42,7 @@
 
 import axios, { AxiosError } from 'axios';
 import { logger } from '../utils/logger.js';
+import type { GazetteerSourceRecord } from '../types/index.js';
 import {
   isGazetteerCacheFresh,
   readGazetteerCache,
@@ -59,27 +60,7 @@ const RETRY_DELAY_MS = 3_000;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
-/** One place record extracted from the source GeoJSON — only the fields the
- *  resolver needs, not the full upstream properties bag. */
-export interface GazetteerSourceRecord {
-  /** Canonical display name (feature.properties.name, falling back to nameascii). */
-  name: string;
-  nameAscii: string | null;
-  nameAlt: string | null;
-  lsName: string | null;
-  megaName: string | null;
-  namePar: string | null;
-  adm0Name: string | null;
-  adm1Name: string | null;
-  popMax: number | null;
-  /** feature.geometry.coordinates[0] — GeoJSON [lon, lat] order. Do not swap. */
-  lonDeg: number;
-  /** feature.geometry.coordinates[1]. */
-  latDeg: number;
-  /** Stable per-record id: `ne:<ne_id>` when the source provides one, else a
-   *  positional fallback (`ne:<index>:<name>`) so dedup by id still works. */
-  sourceId: string;
-}
+export type { GazetteerSourceRecord } from '../types/index.js';
 
 export interface GazetteerAmbiguousMatch {
   name: string;

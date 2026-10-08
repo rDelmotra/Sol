@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'node:url';
 import { logger } from '../utils/logger.js';
-import type { GazetteerSourceRecord } from '../services/gazetteer.js';
+import type { GazetteerSourceRecord } from '../types/index.js';
 
 // ============================================================
 // File-based cache for the Natural Earth populated-places gazetteer.

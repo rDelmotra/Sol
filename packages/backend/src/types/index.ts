@@ -99,3 +99,36 @@ export interface VersionInfo {
   count: number;
   byteSize: number;              // byte size of tle-cache.json
 }
+
+export interface SwpcDailyIndex {
+  /** UTC calendar day, 'YYYY-MM-DD'. */
+  date: string;
+  /** NOAA Estimated Planetary A-index (daily). */
+  apIndex: number | null;
+  /** NOAA Estimated Planetary Kp, daily mean of the 8 three-hourly values. */
+  kpIndex: number | null;
+  /** Observed 10.7cm solar radio flux, sfu. */
+  f107: number | null;
+}
+
+/** One place record extracted from the source GeoJSON — only the fields the
+ *  resolver needs, not the full upstream properties bag. */
+export interface GazetteerSourceRecord {
+  /** Canonical display name (feature.properties.name, falling back to nameascii). */
+  name: string;
+  nameAscii: string | null;
+  nameAlt: string | null;
+  lsName: string | null;
+  megaName: string | null;
+  namePar: string | null;
+  adm0Name: string | null;
+  adm1Name: string | null;
+  popMax: number | null;
+  /** feature.geometry.coordinates[0] — GeoJSON [lon, lat] order. Do not swap. */
+  lonDeg: number;
+  /** feature.geometry.coordinates[1]. */
+  latDeg: number;
+  /** Stable per-record id: `ne:<ne_id>` when the source provides one, else a
+   *  positional fallback (`ne:<index>:<name>`) so dedup by id still works. */
+  sourceId: string;
+}

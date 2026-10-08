@@ -27,6 +27,9 @@
 
 import axios, { AxiosError } from 'axios';
 import { logger } from '../utils/logger.js';
+import type { SwpcDailyIndex } from '../types/index.js';
+
+export type { SwpcDailyIndex } from '../types/index.js';
 
 const DGD_URL = 'https://services.swpc.noaa.gov/text/daily-geomagnetic-indices.txt';
 const DSD_URL = 'https://services.swpc.noaa.gov/text/daily-solar-indices.txt';
@@ -34,17 +37,6 @@ const DSD_URL = 'https://services.swpc.noaa.gov/text/daily-solar-indices.txt';
 const REQUEST_TIMEOUT_MS = 15_000;
 const RETRY_COUNT = 3;
 const RETRY_DELAY_MS = 2_000;
-
-export interface SwpcDailyIndex {
-  /** UTC calendar day, 'YYYY-MM-DD'. */
-  date: string;
-  /** NOAA Estimated Planetary A-index (daily). */
-  apIndex: number | null;
-  /** NOAA Estimated Planetary Kp, daily mean of the 8 three-hourly values. */
-  kpIndex: number | null;
-  /** Observed 10.7cm solar radio flux, sfu. */
-  f107: number | null;
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
