@@ -228,7 +228,9 @@ export class Engine {
 
       // One-time catalog bootstrap — pure data (fetch + store seed). Renderer
       // priming + GPU picker stay here on the render side (data/ never imports engine/).
-      const { catalogData, tles } = await bootstrapCatalog(apiUrl);
+      const { catalogData, tles, catalogInfo } = await bootstrapCatalog(apiUrl);
+      store.setCatalogInfo(catalogInfo);
+      store.setCatalogData(catalogData);
 
       if (this.isDisposed) return;
 
@@ -337,7 +339,10 @@ export class Engine {
       // Only start it if the DSO layer actually activated: no point feeding a
       // disabled visual layer (keeps the "DSO fails soft" story honest).
       if (dsoActivated) {
-        initDsoClient().catch((err) => console.warn('DSO client init error:', err));
+        initDsoClient({
+          setObjects: (o) => useStore.getState().setDsoObjects(o),
+          setEphemeris: (id, s) => useStore.getState().setDsoEphemeris(id, s),
+        }).catch((err) => console.warn('DSO client init error:', err));
       }
 
       // (Satellite-visibility subscription — category/regime/mode/observer — now

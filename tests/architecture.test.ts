@@ -247,9 +247,6 @@ const FE = 'packages/frontend/src';
 const BE = 'packages/backend/src';
 
 const KNOWN_VIOLATIONS: KnownViolation[] = [
-  // data clients write the store directly
-  { rule: 'fe-data-no-app', from: `${FE}/data/dso-client.ts`, to: `${FE}/store/useStore`, fix: '2.7 data clients return data' },
-  { rule: 'fe-data-no-app', from: `${FE}/data/bootstrapCatalog.ts`, to: `${FE}/store/useStore`, fix: '2.7 data clients return data' },
   // UI imports the sim clock from engine/
   // SatellitesLayer builds the analytic live source
   // backend dependency-direction debt

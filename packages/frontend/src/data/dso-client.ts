@@ -1,8 +1,13 @@
-import { useStore } from '../store/useStore';
 import type { DsoCatalog, DsoCatalogEntry, DsoManifest, DsoSnapshot } from '@orbitwatch/contracts';
 import type { DsoObject } from './dso-types';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '';
+/** Where the client delivers data; keeps `data/` free of any store import. */
+export interface DsoSink {
+  setObjects(o: DsoObject[]): void;
+  setEphemeris(id: string, s: DsoSnapshot): void;
+}
+
+const API_BASE = import.meta.env?.VITE_API_URL ?? '';
 const MANIFEST_POLL_MS = 60 * 1000;
 const CATALOG_BOOTSTRAP_POLL_MS = 5 * 1000;
 
@@ -121,14 +126,13 @@ async function fetchManifest(): Promise<DsoManifest | null> {
   }
 }
 
-async function loadAllEphemeris(entries: DsoCatalogEntry[], myGen: number): Promise<void> {
-  const store = useStore.getState();
+async function loadAllEphemeris(sink: DsoSink, entries: DsoCatalogEntry[], myGen: number): Promise<void> {
   for (const entry of entries) {
     if (!entry.availability || !entry.currentSnapshotVersion) continue;
     const snapshot = await fetchEphemeris(entry.dsoId);
     if (generation !== myGen) return; // torn down mid-load — stop mutating store
     if (snapshot) {
-      store.setDsoEphemeris(entry.dsoId, snapshot);
+      sink.setEphemeris(entry.dsoId, snapshot);
       knownVersions.set(entry.dsoId, snapshot.snapshotVersion);
     }
   }
@@ -138,11 +142,9 @@ async function loadAllEphemeris(entries: DsoCatalogEntry[], myGen: number): Prom
  * Poll the manifest endpoint. If any DSO's snapshotVersion changed,
  * re-fetch its ephemeris and update the store.
  */
-async function pollManifest(myGen: number): Promise<void> {
+async function pollManifest(sink: DsoSink, myGen: number): Promise<void> {
   const manifest = await fetchManifest();
   if (generation !== myGen || !manifest) return;
-
-  const store = useStore.getState();
 
   for (const [dsoId, status] of Object.entries(manifest.objects)) {
     if (!status.enabled || !status.availability || !status.currentSnapshotVersion) continue;
@@ -154,7 +156,7 @@ async function pollManifest(myGen: number): Promise<void> {
     const snapshot = await fetchEphemeris(dsoId);
     if (generation !== myGen) return; // torn down mid-poll — stop mutating store
     if (snapshot) {
-      store.setDsoEphemeris(dsoId, snapshot);
+      sink.setEphemeris(dsoId, snapshot);
       knownVersions.set(dsoId, snapshot.snapshotVersion);
     }
   }
@@ -165,7 +167,7 @@ async function pollManifest(myGen: number): Promise<void> {
  * then start manifest polling. Call once from the app layer after
  * TLE loading is complete (or in parallel).
  */
-export async function initDsoClient(): Promise<void> {
+export async function initDsoClient(sink: DsoSink): Promise<void> {
   const myGen = generation;
   const catalog = await fetchCatalog();
   if (generation !== myGen) return; // torn down during fetch — abort
@@ -173,7 +175,7 @@ export async function initDsoClient(): Promise<void> {
     console.log('DSO: no catalog available yet, will retry on next poll');
     pollIntervalMs = CATALOG_BOOTSTRAP_POLL_MS;
     // Start polling even if catalog isn't ready — worker may still be starting
-    startPolling();
+    startPolling(sink);
     return;
   }
 
@@ -181,16 +183,15 @@ export async function initDsoClient(): Promise<void> {
     .filter((e) => e.availability)
     .map(catalogEntryToDsoObject);
 
-  const store = useStore.getState();
-  store.setDsoObjects(dsoObjects);
+  sink.setObjects(dsoObjects);
 
-  await loadAllEphemeris(catalog.objects, myGen);
+  await loadAllEphemeris(sink, catalog.objects, myGen);
   if (generation !== myGen) return; // torn down during ephemeris load — abort
   pollIntervalMs = MANIFEST_POLL_MS;
-  startPolling();
+  startPolling(sink);
 }
 
-function startPolling(): void {
+function startPolling(sink: DsoSink): void {
   if (pollTimer) return;
   const myGen = generation;
   pollTimer = setTimeout(async function poll() {
@@ -204,13 +205,12 @@ function startPolling(): void {
           .filter((e) => e.availability)
           .map(catalogEntryToDsoObject);
 
-        const store = useStore.getState();
-        store.setDsoObjects(dsoObjects);
+        sink.setObjects(dsoObjects);
       } else {
         pollIntervalMs = CATALOG_BOOTSTRAP_POLL_MS;
       }
 
-      await pollManifest(myGen);
+      await pollManifest(sink, myGen);
     } catch (err) {
       console.warn('DSO poll error:', err);
     }
