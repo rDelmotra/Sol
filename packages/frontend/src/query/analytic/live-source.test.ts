@@ -177,6 +177,21 @@ describe('live source — buffer fast-path + physics geometry', () => {
     // 200-iteration fixed-point inverse = 6366.917792 km (6366.917708 km before float32 rounding).
   });
 
+  it('advances the buffered state to the requested instant (r + v·dt)', () => {
+    // Object 1: sunward at 2 ER with velocity 0.0012 ER/s along +y; 2 s later it is
+    // 0.0024 ER further along y. Compare distance-to-object-0 geometry exactly via
+    // the position the plane sees: distToKm(1, 101, t) must change by the extrapolation.
+    const d0 = src.distToKm(1, 101, NOW);
+    const d2 = src.distToKm(1, 101, NOW + 2000);
+    assert.ok(d0 !== null && d2 !== null);
+    // Independent expectation: |p1 + v1·2 − p0 − v0·2|·6371 with p0 = −2·sun, v0 = (0,0,0.0012),
+    // p1 = 2·sun, v1 = (0,0.0012,0).
+    const ex = [2 * sx - -2 * sx, 2 * sy + 0.0012 * 2 - -2 * sy, 2 * sz - (-2 * sz + 0.0012 * 2)];
+    const expected = Math.hypot(ex[0], ex[1], ex[2]) * 6371;
+    assert.ok(Math.abs(d2 - expected) < 5e-3, `d2 ${d2} vs ${expected}`); // buffers are Float32
+    assert.ok(Math.abs(d2 - d0) > 1, 'extrapolation must actually move the object');
+  });
+
   it('umbra geometry: anti-solar eclipsed, sunward lit, invalid null', () => {
     assert.equal(src.getField(0, 'eclipsed', NOW), true);
     assert.equal(src.getField(1, 'eclipsed', NOW), false);

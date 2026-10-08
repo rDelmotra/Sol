@@ -10,7 +10,7 @@
 // State-at-t resolution: when tMs is within BUFFER_TOLERANCE_MS of the
 // worker's last propagation, positions/velocities come from the transferred
 // buffers (TEME, earth-radii + ER/s — already in the shape orbital-core's
-// StateEr wants, no conversion needed). Any other instant falls back to
+// StateEr wants, no conversion needed), advanced to tMs by r + v·dt. Any other instant falls back to
 // on-demand SGP4 via a lazy per-object satrec cache (json2satrec), memoized
 // per (object, t) so a timeScan predicate reading several fields at one step
 // propagates once. On-demand propagation is gated by the ±60-day window in
@@ -94,9 +94,21 @@ export function createLiveAnalyticSource(deps: LiveSourceDeps): AnalyticDataSour
     if (buf && Math.abs(tMs - buf.timestamp) <= BUFFER_TOLERANCE_MS) {
       if (!buf.validFlags[i]) return null;
       const i3 = i * 3;
+      // Advance the buffered state to the requested instant (r + v·dt, v in ER/s):
+      // a stale buffer would otherwise shift a LEO object by up to ~60 km over the
+      // tolerance window — more than the WGS84 correction. Error after
+      // extrapolation is second-order (~0.3 km at 8 s).
+      const dtS = (tMs - buf.timestamp) / 1000;
+      const vx = buf.velocities[i3];
+      const vy = buf.velocities[i3 + 1];
+      const vz = buf.velocities[i3 + 2];
       return {
-        r: { x: buf.positions[i3], y: buf.positions[i3 + 1], z: buf.positions[i3 + 2] },
-        v: { x: buf.velocities[i3], y: buf.velocities[i3 + 1], z: buf.velocities[i3 + 2] },
+        r: {
+          x: buf.positions[i3] + vx * dtS,
+          y: buf.positions[i3 + 1] + vy * dtS,
+          z: buf.positions[i3 + 2] + vz * dtS,
+        },
+        v: { x: vx, y: vy, z: vz },
       };
     }
     const memo = stateMemo.get(i);
