@@ -27,3 +27,11 @@ export interface DsoObject {
   freshnessState: DsoFreshnessState;
   searchAliases: string[];
 }
+
+export interface DsoLabelPosition {
+  dsoId: string;
+  name: string;
+  screenX: number;
+  screenY: number;
+  visible: boolean;
+}

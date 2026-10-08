@@ -1,20 +1,12 @@
 import * as THREE from 'three';
 import dsoVertexShader from '../shaders/dso.vert.glsl?raw';
 import dsoFragmentShader from '../shaders/dso.frag.glsl?raw';
-import type { DsoObject } from '../data/dso-types';
+import type { DsoObject, DsoLabelPosition } from '../data/dso-types';
 import { writeSourceToScene } from './scene/frames';
 
 const INITIAL_DSO_CAPACITY = 64;
 // Base point size passed into the shader (pixels before pixel-ratio scaling)
 const DSO_BASE_SIZE = 5.0;
-
-export interface DsoLabelPosition {
-  dsoId: string;
-  name: string;
-  screenX: number;
-  screenY: number;
-  visible: boolean;
-}
 
 export class DsoRenderer {
   readonly mesh: THREE.Points;

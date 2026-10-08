@@ -16,32 +16,13 @@
  */
 
 import * as satellite from 'satellite.js';
-import type { OMMJsonObject } from 'satellite.js';
 import { ER_KM, MAX_TSINCE_MIN, withinPropagationWindow } from '@orbitwatch/orbital-core';
 import init, { Simulator } from 'wasm-sgp4';
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-interface TLEInput {
-    noradId: number;
-    omm: OMMJsonObject;
-}
-
-type WorkerInMessage =
-    | { type: 'INIT'; tles: TLEInput[]; startIndex: number }
-    | { type: 'PROPAGATE'; timestamp: number; seq: number };
-
-type WorkerOutMessage =
-    | { type: 'READY'; objectCount: number }
-    | {
-        type: 'POSITIONS';
-        positions: Float32Array;
-        velocities: Float32Array;
-        validFlags: Uint8Array;
-        startIndex: number;
-        timestamp: number;
-        seq: number;
-    };
+import type {
+    TLEInput,
+    Sgp4WorkerInMessage as WorkerInMessage,
+    Sgp4WorkerOutMessage as WorkerOutMessage,
+} from './sgp4-protocol';
 
 // ── State ────────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 import { interpolateDsoPosition } from '../data/dso-interpolator';
 import type { DsoSnapshot } from '@orbitwatch/contracts';
-import type { DsoWorkerInMessage as WorkerInMessage, DsoWorkerOutMessage as WorkerOutMessage } from '../engine/dso/dso-worker-types';
+import type { DsoWorkerInMessage as WorkerInMessage, DsoWorkerOutMessage as WorkerOutMessage } from './dso-protocol';
 
 const DEFAULT_VALID_TO_GRACE_SEC = 600;
 const DEFAULT_TRAIL_POINTS = 360;

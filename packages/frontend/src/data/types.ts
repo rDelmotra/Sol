@@ -6,7 +6,7 @@
 // them from there. What's left here is package-local: TLEInput (the client's
 // satellite.js input shape), CatalogType (the UI type-filter key space —
 // extends the wire ObjectType with 'deep_space' for DSO objects), FacetCounts
-// + its factory helpers, and WorkerOutMessage (the SGP4 worker protocol).
+// + its factory helpers. The SGP4 worker message protocol lives in workers/sgp4-protocol.ts.
 // ============================================================
 
 import type { OMMJsonObject } from 'satellite.js';
@@ -58,15 +58,3 @@ export function cloneFacetCounts(src: FacetCounts): FacetCounts {
     country: { ...src.country },
   };
 }
-
-export type WorkerOutMessage =
-    | { type: 'READY'; objectCount: number }
-    | {
-      type: 'POSITIONS';
-      positions: Float32Array;
-      velocities: Float32Array;
-      validFlags: Uint8Array;
-      startIndex: number;
-      timestamp: number;
-      seq: number;
-    }

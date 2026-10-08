@@ -250,10 +250,6 @@ const KNOWN_VIOLATIONS: KnownViolation[] = [
   // data clients write the store directly
   { rule: 'fe-data-no-app', from: `${FE}/data/dso-client.ts`, to: `${FE}/store/useStore`, fix: '2.7 data clients return data' },
   { rule: 'fe-data-no-app', from: `${FE}/data/bootstrapCatalog.ts`, to: `${FE}/store/useStore`, fix: '2.7 data clients return data' },
-  // store imports engine modules
-  { rule: 'fe-store-no-engine', from: `${FE}/store/useStore.ts`, to: `${FE}/engine/DsoRenderer`, fix: '2.6 R3 DsoLabelPosition → data/' },
-  // worker imports its protocol from engine/
-  { rule: 'fe-workers-isolated', from: `${FE}/workers/dso.worker.ts`, to: `${FE}/engine/dso/dso-worker-types`, fix: '2.6 R3 shared worker protocol file' },
   // UI imports the sim clock from engine/
   // SatellitesLayer builds the analytic live source
   { rule: 'fe-layers-no-query-ui', from: `${FE}/engine/world/layers/SatellitesLayer.ts`, to: `${FE}/query/analytic/live-source`, fix: '2.6 AnalyticRuntime extraction' },

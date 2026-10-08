@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { TLEInput, WorkerOutMessage } from '../../data/types';
+import type { TLEInput } from '../../data/types';
+import type { Sgp4WorkerInMessage, Sgp4WorkerOutMessage as WorkerOutMessage } from '../../workers/sgp4-protocol';
 import { simClock } from '../../time/SimClock';
 import { sourceToSceneInto } from '../scene/frames';
 
@@ -71,7 +72,7 @@ export class Sgp4WorkerClient {
           type: 'PROPAGATE',
           timestamp: simClock.now(),
           seq: ++this.propagationSeq,
-        });
+        } satisfies Sgp4WorkerInMessage);
 
         // Start cadence
         this.schedulePropagation();
@@ -105,7 +106,7 @@ export class Sgp4WorkerClient {
       });
     };
 
-    this.worker.postMessage({ type: 'INIT', tles, startIndex: 0 });
+    this.worker.postMessage({ type: 'INIT', tles, startIndex: 0 } satisfies Sgp4WorkerInMessage);
   }
 
   // ── Timing (single source of truth) ─────────────────────────────────────
@@ -196,7 +197,7 @@ export class Sgp4WorkerClient {
       type: 'PROPAGATE',
       timestamp: simClock.now(),
       seq: jumpSeq,
-    });
+    } satisfies Sgp4WorkerInMessage);
 
     // Reset interpolation so we don't tween from old time
     this._lastTickTime = 0;
@@ -226,7 +227,7 @@ export class Sgp4WorkerClient {
     // the worker's READY handler posts a PROPAGATE with a seq > this marker.
     this.snapAtOrAfterSeq = ++this.propagationSeq;
 
-    this.worker.postMessage({ type: 'INIT', tles, startIndex: 0 });
+    this.worker.postMessage({ type: 'INIT', tles, startIndex: 0 } satisfies Sgp4WorkerInMessage);
   }
 
   // ── Dispose ─────────────────────────────────────────────────────────────
@@ -266,7 +267,7 @@ export class Sgp4WorkerClient {
         type: 'PROPAGATE',
         timestamp: simClock.now(),
         seq: ++this.propagationSeq,
-      });
+      } satisfies Sgp4WorkerInMessage);
     }, intervalMs);
   }
 
