@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { getObserverSceneAnchor } from '../scene/sky';
-import { simClock } from '../SimClock';
+import { simClock } from '../../time/SimClock';
 import type { VisibilityMode } from '../../store/useStore';
 
 type ObserverLoc = { lat: number; lon: number; alt: number };

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { TimelineController, type TimelineHost } from './TimelineController';
 import { useStore } from '../../store/useStore';
-import { simClock } from '../SimClock';
+import { simClock } from '../../time/SimClock';
 import type { TleCatalogResult } from '../../data/tle-client';
 
 const obj = (noradId: number) => ({ noradId, name: `SAT-${noradId}`, omm: {} }) as unknown as EnrichedTLEObject;

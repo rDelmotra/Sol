@@ -139,6 +139,12 @@ const RULES: Rule[] = [
     forbidden: (e) => only('orbital')(e) || ['pkg:three', 'pkg:react', 'pkg:zustand'].includes(e.toZone),
   },
   {
+    id: 'fe-time-is-leaf',
+    why: 'time/ is the lowest frontend tier (the simulation clock singleton): it imports nothing from the app.',
+    applies: from('frontend', 'time'),
+    forbidden: only('time'),
+  },
+  {
     id: 'fe-query-no-app',
     why: 'query/ is logic over data + orbital: it must not reach into the engine, store or UI.',
     applies: from('frontend', 'query'),
@@ -245,12 +251,10 @@ const KNOWN_VIOLATIONS: KnownViolation[] = [
   { rule: 'fe-data-no-app', from: `${FE}/data/dso-client.ts`, to: `${FE}/store/useStore`, fix: '2.7 data clients return data' },
   { rule: 'fe-data-no-app', from: `${FE}/data/bootstrapCatalog.ts`, to: `${FE}/store/useStore`, fix: '2.7 data clients return data' },
   // store imports engine modules
-  { rule: 'fe-store-no-engine', from: `${FE}/store/useStore.ts`, to: `${FE}/engine/SimClock`, fix: '2.6 R3 SimClock → time/' },
   { rule: 'fe-store-no-engine', from: `${FE}/store/useStore.ts`, to: `${FE}/engine/DsoRenderer`, fix: '2.6 R3 DsoLabelPosition → data/' },
   // worker imports its protocol from engine/
   { rule: 'fe-workers-isolated', from: `${FE}/workers/dso.worker.ts`, to: `${FE}/engine/dso/dso-worker-types`, fix: '2.6 R3 shared worker protocol file' },
   // UI imports the sim clock from engine/
-  { rule: 'fe-ui-no-engine', from: `${FE}/ui/useAnalyticAsk.ts`, to: `${FE}/engine/SimClock`, fix: '2.6 R3 SimClock → time/' },
   // SatellitesLayer builds the analytic live source
   { rule: 'fe-layers-no-query-ui', from: `${FE}/engine/world/layers/SatellitesLayer.ts`, to: `${FE}/query/analytic/live-source`, fix: '2.6 AnalyticRuntime extraction' },
   { rule: 'fe-layers-no-query-ui', from: `${FE}/engine/world/layers/SatellitesLayer.ts`, to: `${FE}/query/vocab`, fix: '2.6 AnalyticRuntime extraction' },

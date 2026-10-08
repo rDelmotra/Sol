@@ -8,7 +8,7 @@ import { bootstrapCatalog } from '../data/bootstrapCatalog';
 import { useStore } from '../store/useStore';
 import { GPUPicker } from './GPUPicker';
 import { initDsoClient, stopDsoClient } from '../data/dso-client';
-import { simClock } from './SimClock';
+import { simClock } from '../time/SimClock';
 import { InputManager } from './input/InputManager';
 import { Renderer } from './render/Renderer';
 import { Camera } from './render/Camera';

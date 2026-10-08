@@ -7,7 +7,7 @@ import type { DsoObject } from '../data/dso-types';
 import type { VisualListSource, VisualListStatus } from '../data/visualList';
 import type { HistoryCoverage } from '../data/history-client';
 import type { DsoLabelPosition } from '../engine/DsoRenderer';
-import { simClock } from '../engine/SimClock';
+import { simClock } from '../time/SimClock';
 import { reconcileFilterSlices } from '../query/apply';
 import type { QueryFilterPatch } from '../query/types';
 import type { AnalyticProgram, ExecuteOutcome, AnalyticResult } from '@orbitwatch/analytic';

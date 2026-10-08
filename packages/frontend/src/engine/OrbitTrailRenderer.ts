@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import * as satellite from 'satellite.js';
 import type { OMMJsonObject } from 'satellite.js';
-import { simClock } from './SimClock';
+import { simClock } from '../time/SimClock';
 import { sourceToSceneInto, writeSourceToScene } from './scene/frames';
 import { ER_KM } from '@orbitwatch/orbital-core';
 

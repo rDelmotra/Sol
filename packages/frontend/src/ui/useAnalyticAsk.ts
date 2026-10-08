@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { AnalyticResult } from '@orbitwatch/analytic';
 import { useStore } from '../store/useStore';
-import { simClock } from '../engine/SimClock';
+import { simClock } from '../time/SimClock';
 import { askQuestion, type AskResult } from '../data/analytic-client';
 
 function runtimeErrorMessage(code: string, message: string): string {

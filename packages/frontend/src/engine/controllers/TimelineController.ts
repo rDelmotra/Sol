@@ -1,7 +1,7 @@
 import { FUTURE_HORIZON_DAYS } from '@orbitwatch/orbital-core';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { useStore } from '../../store/useStore';
-import { simClock } from '../SimClock';
+import { simClock } from '../../time/SimClock';
 import { fetchHistoryCoverage, fetchHistoryDay, utcDay } from '../../data/history-client';
 import type { TleCatalogResult } from '../../data/tle-client';
 import { computeCatalogTarget, targetKey, type CatalogTarget } from './timeline-target';

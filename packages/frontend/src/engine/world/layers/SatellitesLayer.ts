@@ -3,7 +3,7 @@ import { SatelliteRenderer } from '../../SatelliteRenderer';
 import { DevValidation } from '../../DevValidation';
 import { Sgp4WorkerClient, type Sgp4PositionResult } from '../../tle/Sgp4WorkerClient';
 import { getSunDirection, getObserverSceneAnchor } from '../../scene/sky';
-import { simClock } from '../../SimClock';
+import { simClock } from '../../../time/SimClock';
 import { useStore, isObserverMode, type VisibilityMode } from '../../../store/useStore';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
