@@ -13,8 +13,7 @@
 
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import type {
   DecayedCatalogRow,
   InlineMetadataFacets,
@@ -26,11 +25,11 @@ import type { EnrichmentArtifactMeta } from './types.js';
 import { matchProgram } from './programs.js';
 import { primaryOwnerCode } from './gcat/inherit.js';
 import { logger } from '../utils/logger.js';
+import { enrichmentDataDir } from '../utils/paths.js';
 
 export { primaryOwnerCode };
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = resolve(__dirname, '../../enrichment-data');
+const DATA_DIR = enrichmentDataDir();
 // Committed GZIPPED (~2.7 MB vs ~52 MB) to stay under GitHub's file limits;
 // gunzipped once here at boot. See build-enrichment.ts.
 const METADATA_PATH = resolve(DATA_DIR, 'metadata-enrichment.json.gz');

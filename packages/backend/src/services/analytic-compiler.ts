@@ -13,7 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import { createHash } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { backendDataDir } from '../utils/paths.js';
 import { validateProgram, type AnalyticProgram, type ValidationIssue } from '@orbitwatch/analytic';
 import { buildCompilerSystemPrompt, getPromptVersion } from './analytic-prompt.js';
 import { getDefaultGazetteer, extractPlaceCandidates, type Gazetteer, type GazetteerHit } from './gazetteer.js';
@@ -88,7 +88,7 @@ interface CompilerDeps {
 const LRU_CAP = 500;
 /** Read at call time (not import time) so dotenv load order can't swallow the override. */
 const model = () => process.env.ANALYTIC_COMPILER_MODEL || 'claude-haiku-4-5';
-const DEFAULT_DATA_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data');
+const DEFAULT_DATA_DIR = backendDataDir();
 
 // ── Normalization + cache key ─────────────────────────────────────────────────
 

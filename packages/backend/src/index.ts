@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import compression from 'compression';
@@ -30,8 +29,7 @@ import {
   isHistoryReady,
 } from './history/index.js';
 import { logger } from './utils/logger.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { frontendDistDir } from './utils/paths.js';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -109,7 +107,7 @@ app.get('/health', async (_req, res) => {
 
 // ── Static frontend (production only) ────────────────────────────────────────
 if (isProd) {
-  const frontendDist = path.resolve(__dirname, '../../frontend/dist');
+  const frontendDist = frontendDistDir();
   app.use(express.static(frontendDist, {
     setHeaders: (res, filePath) => {
       if (filePath.includes('/textures/')) {

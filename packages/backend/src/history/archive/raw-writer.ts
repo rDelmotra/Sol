@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { fileURLToPath } from 'node:url';
+import { historyArchiveDir } from '../../utils/paths.js';
 import type { RawGpRecord } from '../ingest/sink.js';
 import { logger } from '../../utils/logger.js';
 
@@ -23,11 +23,7 @@ import { logger } from '../../utils/logger.js';
 // ============================================================
 
 function archiveDir(): string {
-  if (process.env.HISTORY_ARCHIVE_DIR) return path.resolve(process.env.HISTORY_ARCHIVE_DIR);
-  const base = process.env.CACHE_DIR
-    ? path.resolve(process.env.CACHE_DIR)
-    : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../data');
-  return path.join(base, 'history', 'raw');
+  return historyArchiveDir();
 }
 
 /** UTC fetch-day bucket, e.g. '2026-06-25'. */

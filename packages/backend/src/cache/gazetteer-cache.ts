@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'node:url';
+import { cacheDir } from '../utils/paths.js';
 import { logger } from '../utils/logger.js';
 import type { GazetteerSourceRecord } from '../types/index.js';
 
@@ -26,8 +26,7 @@ export interface GazetteerCache {
 }
 
 function getCacheDir(): string {
-  if (process.env.CACHE_DIR) return path.resolve(process.env.CACHE_DIR);
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data');
+  return cacheDir();
 }
 
 function gazetteerCachePath(): string {

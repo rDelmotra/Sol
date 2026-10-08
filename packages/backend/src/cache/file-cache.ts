@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'node:url';
+import { cacheDir } from '../utils/paths.js';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { VersionInfo } from '../types/index.js';
 import { logger } from '../utils/logger.js';
@@ -30,9 +30,7 @@ export interface VisualNoradCache {
 }
 
 function getCacheDir(): string {
-  if (process.env.CACHE_DIR) return path.resolve(process.env.CACHE_DIR);
-  // Anchor to this file's location so the path is stable regardless of cwd
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data');
+  return cacheDir();
 }
 
 function tleCachePath(): string {
