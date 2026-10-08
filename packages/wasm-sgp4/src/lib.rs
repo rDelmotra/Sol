@@ -27,7 +27,9 @@
 use sgp4::{Constants, Elements, MinutesSinceEpoch};
 use wasm_bindgen::prelude::*;
 
-const EARTH_RADIUS_KM: f64 = 6371.0;
+// Scene/wire LENGTH UNIT (1 ER = 6371 km) — NOT the Earth's shape. Same value as
+// orbital-core units.ts ER_KM. The Earth figure (WGS84) lives in orbital-core earth.ts.
+const ER_KM: f64 = 6371.0;
 
 #[wasm_bindgen]
 pub struct Simulator {
@@ -99,12 +101,12 @@ impl Simulator {
                             .chain(p.velocity.iter())
                             .all(|v| v.is_finite());
                         if finite {
-                            self.positions[i3] = (p.position[0] / EARTH_RADIUS_KM) as f32;
-                            self.positions[i3 + 1] = (p.position[1] / EARTH_RADIUS_KM) as f32;
-                            self.positions[i3 + 2] = (p.position[2] / EARTH_RADIUS_KM) as f32;
-                            self.velocities[i3] = (p.velocity[0] / EARTH_RADIUS_KM) as f32;
-                            self.velocities[i3 + 1] = (p.velocity[1] / EARTH_RADIUS_KM) as f32;
-                            self.velocities[i3 + 2] = (p.velocity[2] / EARTH_RADIUS_KM) as f32;
+                            self.positions[i3] = (p.position[0] / ER_KM) as f32;
+                            self.positions[i3 + 1] = (p.position[1] / ER_KM) as f32;
+                            self.positions[i3 + 2] = (p.position[2] / ER_KM) as f32;
+                            self.velocities[i3] = (p.velocity[0] / ER_KM) as f32;
+                            self.velocities[i3 + 1] = (p.velocity[1] / ER_KM) as f32;
+                            self.velocities[i3 + 2] = (p.velocity[2] / ER_KM) as f32;
                             ok = true;
                         }
                     }
