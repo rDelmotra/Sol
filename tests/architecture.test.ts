@@ -252,8 +252,6 @@ const KNOWN_VIOLATIONS: KnownViolation[] = [
   { rule: 'fe-data-no-app', from: `${FE}/data/bootstrapCatalog.ts`, to: `${FE}/store/useStore`, fix: '2.7 data clients return data' },
   // UI imports the sim clock from engine/
   // SatellitesLayer builds the analytic live source
-  { rule: 'fe-layers-no-query-ui', from: `${FE}/engine/world/layers/SatellitesLayer.ts`, to: `${FE}/query/analytic/live-source`, fix: '2.6 AnalyticRuntime extraction' },
-  { rule: 'fe-layers-no-query-ui', from: `${FE}/engine/world/layers/SatellitesLayer.ts`, to: `${FE}/query/vocab`, fix: '2.6 AnalyticRuntime extraction' },
   // backend dependency-direction debt
   { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/index`, fix: '2.5 inject the registry snapshot' },
   { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/types`, fix: '2.5 inject the registry snapshot' },

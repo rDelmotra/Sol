@@ -66,7 +66,7 @@ export interface ResidentInfo {
 
 /**
  * What the Engine hands `tick()` to actually run a program — identical shape
- * to `SatellitesLayer.runAnalyticProgram`, injected so this file never needs
+ * to `AnalyticRuntime.run`, injected so this file never needs
  * to import a layer (or anything engine-shaped) to call it.
  */
 export type RunProgramFn = (program: AnalyticProgram) => ExecuteOutcome | { notReady: true };

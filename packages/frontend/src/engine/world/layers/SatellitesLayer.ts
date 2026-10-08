@@ -7,10 +7,8 @@ import { simClock } from '../../../time/SimClock';
 import { useStore, isObserverMode, type VisibilityMode } from '../../../store/useStore';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
-import { validateProgram, execute, type AnalyticProgram, type ExecuteOutcome } from '@orbitwatch/analytic';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
-import { createLiveAnalyticSource, type LiveBuffers } from '../../../query/analytic/live-source';
-import { getRawQueryVocab } from '../../../query/vocab';
+import type { LiveBuffersShape, LiveDataPort } from '../../analytic/AnalyticRuntime';
 
 /**
  * Satellites: THE product layer. Owns the {@link SatelliteRenderer}, the
@@ -42,7 +40,7 @@ export class SatellitesLayer implements Layer {
   /** True while satellites are hidden for a planetarium (uncovered-past) scrub. */
   private hidden = false;
   /** Latest raw worker buffers (TEME ER) — the analytic live source's fast path. */
-  private latestBuffers: LiveBuffers | null = null;
+  private latestBuffers: LiveBuffersShape | null = null;
 
   /**
    * The satellite renderer, or null if init hasn't run / failed. Nullable on
@@ -184,54 +182,21 @@ export class SatellitesLayer implements Layer {
       onReady: (objectCount) => this.guard('onReady', () => callbacks.onReady(objectCount)),
       onPositions: (result) => this.onPositions(result),
     });
-
-    // ── Dev-only analytic console (P1) ────────────────────────────────────────
-    // window.__analytic(program) — validate → runAnalyticProgram → an 'ids'
-    // result becomes the globe allow-set. __analytic(null) clears it. The P2
-    // compile endpoint is now the user-facing entry (via the runAnalytic command);
-    // this hook stays as the engineer's REPL. Removed in dispose().
-    if (import.meta.env.DEV) {
-      (window as unknown as Record<string, unknown>).__analytic = (program: unknown) => {
-        const store = useStore.getState();
-        if (program == null) {
-          store.setAnalyticFilter(null);
-          return { cleared: true };
-        }
-        const v = validateProgram(program, { nowMs: simClock.now() });
-        if (!v.ok) return { issues: v.issues };
-        const out = this.runAnalyticProgram(v.program);
-        if ('notReady' in out) return { notReady: true };
-        if (!out.ok) return { error: out.error };
-        if (out.result.shape === 'ids' && out.result.ids) {
-          store.setAnalyticFilter(new Set(out.result.ids));
-        }
-        return out.result;
-      };
-      console.info('[analytic] window.__analytic(program) ready — null clears the allow-set');
-    }
   }
 
   /**
-   * Execute a VALIDATED program over the live data source at the current sim
-   * instant + the store observer. **Side-effect-free**: does NOT touch
-   * `analyticFilter` — callers decide what to do with the result (globe highlight,
-   * AnswerCard, …). Returns `{ notReady: true }` before `activate()` has run or
-   * before the first worker buffers arrive.
+   * The live-data port the Engine's AnalyticRuntime reads through. Not
+   * `isReady()` on the layer itself — that one means "first position arrived".
+   * Here ready = activated AND first worker buffers retained (the exact gate
+   * the old `runAnalyticProgram` used).
    */
-  runAnalyticProgram(program: AnalyticProgram): ExecuteOutcome | { notReady: true } {
-    if (!this.callbacks || !this.latestBuffers) return { notReady: true };
-    const callbacks = this.callbacks;
-    const src = createLiveAnalyticSource({
-      catalog: this.catalog,
-      getBuffers: () => this.latestBuffers,
-      getVocab: () => getRawQueryVocab(),
-      getVisualNoradIds: () => callbacks.getVisualNoradIds(),
-    });
-    const obs = useStore.getState().observerLocation;
-    return execute(program, { live: src }, {
-      nowMs: simClock.now(),
-      observer: obs ? { latDeg: obs.lat, lonDeg: obs.lon, altKm: obs.alt } : null,
-    });
+  getLiveDataPort(): LiveDataPort {
+    return {
+      isReady: () => !!this.callbacks && !!this.latestBuffers,
+      getCatalog: () => this.catalog,
+      getLatestBuffers: () => this.latestBuffers,
+      getVisualNoradIds: () => this.callbacks?.getVisualNoradIds() ?? new Set<number>(),
+    };
   }
 
   /**
@@ -271,7 +236,7 @@ export class SatellitesLayer implements Layer {
 
       // P2 resident-set tick: fires AFTER latestBuffers is fresh so a resident
       // program re-executed from this callback sees this tick's data. The
-      // Engine owns the ResidentSet (cross-cutting orchestration, not a layer
+      // Engine's AnalyticRuntime owns the ResidentSet (cross-cutting orchestration, not a layer
       // concern) — this is just the callback firing, same pattern as every
       // other cross-cutting effect below. Runs inside this fn's guard(), so a
       // throw from the Engine's onTick still escalates through the normal
@@ -490,9 +455,6 @@ export class SatellitesLayer implements Layer {
   }
 
   dispose(): void {
-    if (import.meta.env.DEV) {
-      delete (window as unknown as Record<string, unknown>).__analytic;
-    }
     this.latestBuffers = null;
     this.filterUnsub?.();
     this.filterUnsub = null;
@@ -535,9 +497,8 @@ export interface SatellitesLayerCallbacks {
   onExitObserverSky: () => void;
   /**
    * Fires once per SGP4 worker tick (~1 Hz), right after `latestBuffers` is
-   * refreshed. (P2) The Engine's clock for the resident set — it owns a
-   * `ResidentSet` and drives its `tick()` from here, reusing
-   * `runAnalyticProgram` for execution. Optional so call sites that don't
+   * refreshed. (P2) The Engine's clock for the resident set — its
+   * `AnalyticRuntime` drives the `ResidentSet` tick from here. Optional so call sites that don't
    * need residency (tests, a future non-Engine host) can omit it.
    */
   onTick?: () => void;

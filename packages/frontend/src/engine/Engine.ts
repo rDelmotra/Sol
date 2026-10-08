@@ -25,8 +25,9 @@ import { HorizonLayer } from './world/layers/HorizonLayer';
 import { DomeSkyLayer } from './world/layers/DomeSkyLayer';
 import { registerEngineCommands, type EngineCommands } from './command/EngineCommands';
 import type { FrameContext } from './render/Layer';
-import { ResidentSet } from './resident/ResidentSet';
-import { validateProgram } from '@orbitwatch/analytic';
+import { AnalyticRuntime } from './analytic/AnalyticRuntime';
+import { createLiveAnalyticSource } from '../query/analytic/live-source';
+import { getRawQueryVocab } from '../query/vocab';
 import { TimelineController } from './controllers/TimelineController';
 
 export class Engine {
@@ -49,10 +50,11 @@ export class Engine {
   private inputManager: InputManager | null = null;
   private trailsLayer: TrailsLayer;
   private nav: NavigationController;
-  /** P2: standing analytic programs re-evaluated every SGP4 worker tick (~1 Hz)
-   *  via SatellitesLayer's onTick callback. Cross-cutting orchestration (not a
-   *  layer concern) — owned here, driven by `satellitesLayer.runAnalyticProgram`. */
-  private residentSet: ResidentSet = new ResidentSet();
+  /** P2: one-shot program execution + standing programs re-evaluated every SGP4
+   *  worker tick (~1 Hz) via SatellitesLayer's onTick callback. Cross-cutting
+   *  orchestration (not a layer concern) — reads live data through the layer's port. */
+  private analyticRuntime: AnalyticRuntime;
+  private removeAnalyticDevHooks: (() => void) | null = null;
   private trailUnsub: (() => void) | null = null;
   private visualListPoller: VisualListPoller | null = null;
   private lastSimTimeUpdateAt = 0;
@@ -87,6 +89,12 @@ export class Engine {
     this.trailsLayer = new TrailsLayer();
     this.dsoLayer = new DsoLayer();
     this.satellitesLayer = new SatellitesLayer();
+    this.analyticRuntime = new AnalyticRuntime(this.satellitesLayer.getLiveDataPort(), {
+      createSource: createLiveAnalyticSource,
+      getVocab: () => getRawQueryVocab(),
+      getObserver: () => useStore.getState().observerLocation,
+      nowMs: () => simClock.now(),
+    });
     this.world = new World({
       onCriticalError: (err) => this.handleCriticalError(err),
     });
@@ -230,28 +238,14 @@ export class Engine {
 
       registerEngineCommands(this.buildEngineCommands());
 
-      // ── Dev-only resident-set console (P2) ────────────────────────────────────
-      // window.__resident.add(program) — validate → ResidentSet.add() → typed
-      // {ok:true,hash} or a typed rejection (universe:'all' / timeScan cap /
-      // total cap). Mirrors SatellitesLayer's window.__analytic hook, but lives
-      // here because the Engine (not the layer) owns the ResidentSet. Doesn't
-      // need the satellites layer to be activated yet — add()/remove()/list()/
-      // getRecentDeltas() are pure bookkeeping; only tick() (driven by the
-      // worker) actually executes anything. Removed in dispose().
+      // ── Dev-only analytic consoles (window.__analytic / window.__resident) ────
+      // Don't need the satellites layer to be activated yet — resident
+      // add()/remove()/list() are pure bookkeeping; only tick() (driven by the
+      // worker) executes anything. Removed in dispose().
       if (import.meta.env.DEV) {
-        (window as unknown as Record<string, unknown>).__resident = {
-          add: (program: unknown) => {
-            const v = validateProgram(program, { nowMs: simClock.now() });
-            if (!v.ok) return { issues: v.issues };
-            return this.residentSet.add(v.program);
-          },
-          remove: (hash: string) => this.residentSet.remove(hash),
-          list: () => this.residentSet.list(),
-          deltas: (n?: number) => this.residentSet.getRecentDeltas(n),
-        };
-        console.info(
-          '[resident] window.__resident.{add,remove,list,deltas} ready — add(program) validates first',
-        );
+        this.removeAnalyticDevHooks = this.analyticRuntime.installDevHooks({
+          setAnalyticFilter: (ids) => useStore.getState().setAnalyticFilter(ids),
+        });
       }
 
       // ── Satellites layer activation (renderer prime + SGP4 worker) ───────────
@@ -415,7 +409,7 @@ export class Engine {
       scrubPreview: () => this.timeline.onScrubPreview(),
       returnToPresent: () => this.timeline.startGlideToLive(),
       runAnalytic: (program) => {
-        const out = this.satellitesLayer.runAnalyticProgram(program);
+        const out = this.analyticRuntime.run(program);
         return 'notReady' in out ? null : out;
       },
     };
@@ -424,7 +418,7 @@ export class Engine {
   /**
    * P2 resident-set clock: called from SatellitesLayer's onTick, itself fired
    * once per SGP4 worker tick (~1 Hz) right after fresh buffers land. Re-runs
-   * every standing program via `runAnalyticProgram` (side-effect-free — reads
+   * every standing program via `AnalyticRuntime.run` (side-effect-free — reads
    * the same buffers the renderer just consumed) and reports the entered/
    * exited deltas. `ResidentSet.tick()` contractually never throws — a bad
    * resident is contained inside it — but this call still runs inside
@@ -432,10 +426,7 @@ export class Engine {
    * path everything else in that callback uses, so nothing here can bypass it.
    */
   private tickResidentSet(): void {
-    const deltas = this.residentSet.tick(
-      (program) => this.satellitesLayer.runAnalyticProgram(program),
-      simClock.now(),
-    );
+    const deltas = this.analyticRuntime.tick();
     if (import.meta.env.DEV) {
       for (const d of deltas) {
         console.info(
@@ -621,10 +612,9 @@ export class Engine {
 
   dispose(): void {
     this.isDisposed = true;
-    if (import.meta.env.DEV) {
-      delete (window as unknown as Record<string, unknown>).__resident;
-    }
-    this.residentSet.clear();
+    this.removeAnalyticDevHooks?.();
+    this.removeAnalyticDevHooks = null;
+    this.analyticRuntime.dispose();
     this.timeline.dispose();
     stopDsoClient();
     if (this.animationId !== null) {
