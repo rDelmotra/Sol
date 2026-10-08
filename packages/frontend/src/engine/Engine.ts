@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { getSunDirection } from './scene/sky';
-import { FUTURE_HORIZON_DAYS, MS_PER_DAY, gmst } from '@orbitwatch/orbital-core';
+import { FUTURE_HORIZON_DAYS, gmst } from '@orbitwatch/orbital-core';
 import type { VisualListResolvedResult } from '../data/visualList';
 import { VisualListPoller, buildCatalogResult, type TleCatalogResult } from '../data/tle-client';
 import { bootstrapCatalog } from '../data/bootstrapCatalog';
@@ -29,12 +29,7 @@ import { registerEngineCommands, type EngineCommands } from './command/EngineCom
 import type { FrameContext } from './render/Layer';
 import { ResidentSet } from './resident/ResidentSet';
 import { validateProgram } from '@orbitwatch/analytic';
-
-/** What the satellite render plane currently shows for the view-time. */
-type CatalogTarget =
-  | { kind: 'live' }
-  | { kind: 'day'; day: string }
-  | { kind: 'hidden' };
+import { computeCatalogTarget, targetKey, type CatalogTarget } from './controllers/timeline-target';
 
 /** Symmetric ease for the return-to-present glide (no overshoot — never passes "now"). */
 function easeInOutCubic(p: number): number {
@@ -531,24 +526,12 @@ export class Engine {
 
   /** What the catalog SHOULD show for the current view-time. */
   private computeTarget(): CatalogTarget {
-    const cov = useStore.getState().historyCoverage;
-    const today = utcDay(Date.now());
-    // Live TLEs are only meaningful (and cheap to propagate) near their epoch. Beyond a
-    // forward horizon, satellites go planetarium (sky only) — symmetric with the past,
-    // and keeps far-future times out of the SGP4 worker. See @orbitwatch/orbital-core propagation-window.ts.
-    const horizon = utcDay(Date.now() + FUTURE_HORIZON_DAYS * MS_PER_DAY);
-    const t = utcDay(simClock.now());
-    if (t > horizon) return { kind: 'hidden' };                   // beyond forward horizon → planetarium
-    if (t >= today) return { kind: 'live' };                      // today .. +horizon → current elements
-    if (!cov || !cov.from || !cov.to) return { kind: 'hidden' };  // no history → planetarium
-    if (t < cov.from) return { kind: 'hidden' };                  // before coverage → planetarium
-    if (t > cov.to) return { kind: 'live' };                      // recent gap not yet ingested → current
-    return { kind: 'day', day: t };                               // covered past day
-  }
-
-  /** Stable comparison key for a target (so scrubbing across uncovered days never churns). */
-  private static targetKey(t: CatalogTarget): string {
-    return t.kind === 'day' ? t.day : t.kind;
+    return computeCatalogTarget({
+      simMs: simClock.now(),
+      wallMs: Date.now(),
+      coverage: useStore.getState().historyCoverage,
+      futureHorizonDays: FUTURE_HORIZON_DAYS,
+    });
   }
 
   /** The UTC day the loaded catalog is valid for, or null when hidden (→ never snap). */
@@ -570,7 +553,7 @@ export class Engine {
     // caller (loop, onSimTimeJump, the pause on grab) funnels through here, so the
     // single guard covers them all.
     if (performance.now() - this.lastScrubAt < Engine.RESEED_DEBOUNCE_MS) return;
-    if (Engine.targetKey(this.computeTarget()) === Engine.targetKey(this.loadedTarget)) return;
+    if (targetKey(this.computeTarget()) === targetKey(this.loadedTarget)) return;
     if (this.reconcileTimer) clearTimeout(this.reconcileTimer);
     this.reconcileTimer = setTimeout(() => {
       this.reconcileTimer = null;
@@ -581,7 +564,7 @@ export class Engine {
   private async runReseedToDesired(): Promise<void> {
     if (this.isReseeding || this.isDisposed || this.criticalFailed) return;
     const target = this.computeTarget();
-    if (Engine.targetKey(target) === Engine.targetKey(this.loadedTarget)) return;
+    if (targetKey(target) === targetKey(this.loadedTarget)) return;
 
     this.isReseeding = true;
     try {
@@ -595,7 +578,7 @@ export class Engine {
       // Time may have moved during the await → re-check.
       if (
         !this.isDisposed &&
-        Engine.targetKey(this.computeTarget()) !== Engine.targetKey(this.loadedTarget)
+        targetKey(this.computeTarget()) !== targetKey(this.loadedTarget)
       ) {
         this.reconcileCatalogForTime();
       }
