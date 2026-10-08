@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { CameraController, HOME_POSITION, HOME_TARGET } from '../CameraController';
+import { CameraAnimator, HOME_POSITION, HOME_TARGET } from './CameraAnimator';
 import { ObserverSkyController } from './ObserverSkyController';
 import { useStore, isObserverMode, type TrackingStyle, type VisibilityMode } from '../../store/useStore';
 import type { TrackingSource } from './TrackingSource';
@@ -24,7 +24,7 @@ export class NavigationController {
   private readonly controls: OrbitControls;
   private readonly source: TrackingSource;
   private readonly callbacks: NavigationCallbacks;
-  private readonly cameraController: CameraController;
+  private readonly cameraController: CameraAnimator;
   private readonly observerSky: ObserverSkyController;
 
   private arrivalTime = -1; // performance.now() when camera arrived; -1 = none
@@ -50,7 +50,7 @@ export class NavigationController {
     this.controls = controls;
     this.source = source;
     this.callbacks = callbacks;
-    this.cameraController = new CameraController(camera);
+    this.cameraController = new CameraAnimator(camera);
     this.observerSky = new ObserverSkyController(camera, controls, (headingRad) => {
       useStore.getState().setObserverHeadingRad(headingRad);
     });

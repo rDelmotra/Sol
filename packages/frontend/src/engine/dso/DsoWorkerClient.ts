@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import type { DsoSnapshot } from '@orbitwatch/contracts';
-import { useStore } from '../../store/useStore';
 import { sourceToSceneInto } from '../scene/frames';
 import type { DsoWorkerInMessage, DsoWorkerOutMessage } from '../../workers/dso-protocol';
 
@@ -10,6 +9,12 @@ const DSO_VALID_TO_GRACE_SEC = 600;
 const DSO_TRAIL_POINTS = 360;
 const DSO_WORKER_RESTART_DELAY_MS = 500;
 const DSO_WORKER_STALL_TIMEOUT_MS = 5000;
+
+/** Store-derived state the worker is seeded from, read at call time (ctor + every restart). */
+export interface DsoBootstrapState {
+  dsoObjects: ReadonlyArray<{ dsoId: string }>;
+  dsoEphemerisById: Record<string, DsoSnapshot>;
+}
 
 // ── Client ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +33,7 @@ export class DsoWorkerClient {
     visibleFlags: Uint8Array,
   ) => void;
   private readonly onTrail: (dsoId: string, positions: Float32Array) => void;
+  private readonly getBootstrapState: () => DsoBootstrapState;
 
   constructor(callbacks: {
     onPositions: (
@@ -36,9 +42,11 @@ export class DsoWorkerClient {
       visibleFlags: Uint8Array,
     ) => void;
     onTrail: (dsoId: string, positions: Float32Array) => void;
+    getBootstrapState: () => DsoBootstrapState;
   }) {
     this.onPositions = callbacks.onPositions;
     this.onTrail = callbacks.onTrail;
+    this.getBootstrapState = callbacks.getBootstrapState;
     this.spawnWorker();
   }
 
@@ -236,7 +244,7 @@ export class DsoWorkerClient {
   private bootstrapState(): void {
     if (!this.worker) return;
 
-    const state = useStore.getState();
+    const state = this.getBootstrapState();
     const dsoIds = state.dsoObjects.map((dso) => dso.dsoId);
 
     this.worker.postMessage({

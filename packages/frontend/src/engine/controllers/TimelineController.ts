@@ -5,11 +5,7 @@ import { simClock } from '../../time/SimClock';
 import { fetchHistoryCoverage, fetchHistoryDay, utcDay } from '../../data/history-client';
 import type { TleCatalogResult } from '../../data/tle-client';
 import { computeCatalogTarget, targetKey, type CatalogTarget } from './timeline-target';
-
-/** Symmetric ease for the return-to-present glide (no overshoot — never passes "now"). */
-function easeInOutCubic(p: number): number {
-  return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
-}
+import { easeInOutCubic } from '../easing';
 
 /**
  * What the TimelineController needs from the Engine. Keeps the controller free of

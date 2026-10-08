@@ -37,7 +37,7 @@ const SCENE_NORTH_POLE = new THREE.Vector3(0, 1, 0);
 
 /**
  * Owns the **observer-anchored alt-azimuth camera** shared by `visual` and `dome`
- * visibility modes — the planetarium rig. Mirrors how {@link CameraController} is a
+ * visibility modes — the planetarium rig. Mirrors how {@link CameraAnimator} is a
  * focused camera helper owned by {@link NavigationController}: Nav delegates here.
  *
  * The eye is pinned at the observer's location (re-anchored every frame as the Earth

@@ -1,8 +1,6 @@
 import * as THREE from 'three';
+import { easeInOutCubic } from '../easing';
 
-function easeInOutCubic(t: number): number {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
 
 export const HOME_POSITION = new THREE.Vector3(0, 1.5, 3.5);
 export const HOME_TARGET = new THREE.Vector3(0, 0, 0);
@@ -21,7 +19,7 @@ interface AnimState {
  * Does NOT own or modify OrbitControls — the Engine manages controls.enabled
  * and decides when to call controls.update().
  */
-export class CameraController {
+export class CameraAnimator {
   private readonly camera: THREE.PerspectiveCamera;
   private anim: AnimState | null = null;
   private readonly radialDir = new THREE.Vector3();

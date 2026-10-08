@@ -66,6 +66,10 @@ export class DsoLayer implements Layer {
         this._renderer?.updateFromWorkerBuffers(positions, visibleFlags);
       },
       onTrail: (dsoId, positions) => callbacks.onDsoTrail(dsoId, positions),
+      getBootstrapState: () => {
+        const { dsoObjects, dsoEphemerisById } = useStore.getState();
+        return { dsoObjects, dsoEphemerisById };
+      },
     });
 
     // Seed from the CURRENT store immediately: a remount / HMR / late DSO

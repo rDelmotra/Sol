@@ -254,8 +254,6 @@ const KNOWN_VIOLATIONS: KnownViolation[] = [
   // SatellitesLayer builds the analytic live source
   { rule: 'fe-layers-no-query-ui', from: `${FE}/engine/world/layers/SatellitesLayer.ts`, to: `${FE}/query/analytic/live-source`, fix: '2.6 AnalyticRuntime extraction' },
   { rule: 'fe-layers-no-query-ui', from: `${FE}/engine/world/layers/SatellitesLayer.ts`, to: `${FE}/query/vocab`, fix: '2.6 AnalyticRuntime extraction' },
-  // DsoWorkerClient reads the store below the layer tier
-  { rule: 'fe-worker-clients-no-store', from: `${FE}/engine/dso/DsoWorkerClient.ts`, to: `${FE}/store/useStore`, fix: '2.6 R3-D thread via DsoLayer getter' },
   // backend dependency-direction debt
   { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/index`, fix: '2.5 inject the registry snapshot' },
   { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/types`, fix: '2.5 inject the registry snapshot' },
