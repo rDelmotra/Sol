@@ -1,0 +1,26 @@
+import type { CommandSlice, Slice } from './types';
+
+export const createCommandSlice: Slice<CommandSlice> = (set) => ({
+  selectByIndex: null,
+  injectSearchQuery: null,
+  triggerFlyTo: null,
+  triggerJoyride: null,
+  triggerResetCamera: null,
+  triggerRunAnalytic: null,
+  triggerFlyToDso: null,
+  triggerJoyrideDso: null,
+  triggerSimTimeJump: null,
+  triggerScrubPreview: null,
+  triggerReturnToPresent: null,
+  setTriggerFlyTo: (fn) => set({ triggerFlyTo: fn }),
+  setTriggerJoyride: (fn) => set({ triggerJoyride: fn }),
+  setTriggerResetCamera: (fn) => set({ triggerResetCamera: fn }),
+  setTriggerRunAnalytic: (fn) => set({ triggerRunAnalytic: fn }),
+  setSelectByIndex: (fn) => set({ selectByIndex: fn }),
+  setInjectSearchQuery: (fn) => set({ injectSearchQuery: fn }),
+  setTriggerSimTimeJump: (fn) => set({ triggerSimTimeJump: fn }),
+  setTriggerScrubPreview: (fn) => set({ triggerScrubPreview: fn }),
+  setTriggerReturnToPresent: (fn) => set({ triggerReturnToPresent: fn }),
+  setTriggerFlyToDso: (fn) => set({ triggerFlyToDso: fn }),
+  setTriggerJoyrideDso: (fn) => set({ triggerJoyrideDso: fn }),
+});
