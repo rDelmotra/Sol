@@ -14,6 +14,13 @@ import fs from 'fs';
 import path from 'path';
 import { createHash } from 'node:crypto';
 import { backendDataDir } from '../utils/paths.js';
+import {
+  analyticCompilerModel,
+  analyticCompilerModelRaw,
+  geminiCompilerModel,
+  geminiApiKey,
+  anthropicApiKey,
+} from '../utils/config.js';
 import { validateProgram, type AnalyticProgram, type ValidationIssue } from '@orbitwatch/analytic';
 import { buildCompilerSystemPrompt, getPromptVersion } from './analytic-prompt.js';
 import { getDefaultGazetteer, extractPlaceCandidates, type Gazetteer, type GazetteerHit } from './gazetteer.js';
@@ -87,7 +94,7 @@ interface CompilerDeps {
 
 const LRU_CAP = 500;
 /** Read at call time (not import time) so dotenv load order can't swallow the override. */
-const model = () => process.env.ANALYTIC_COMPILER_MODEL || 'claude-haiku-4-5';
+const model = () => analyticCompilerModel();
 const DEFAULT_DATA_DIR = backendDataDir();
 
 // ── Normalization + cache key ─────────────────────────────────────────────────
@@ -207,9 +214,9 @@ export function createAnalyticCompiler(deps: CompilerDeps = {}): AnalyticCompile
   // satisfy the same LlmCall contract; the validator gates them identically.
   const llmCall =
     deps.llmCall ??
-    (process.env.GEMINI_API_KEY
+    (geminiApiKey()
       ? createGeminiLlmCall()
-      : process.env.ANTHROPIC_API_KEY
+      : anthropicApiKey()
         ? createAnthropicLlmCall()
         : undefined);
 
@@ -448,8 +455,7 @@ function saveCache(cachePath: string, cache: Map<string, CachedEntry>): void {
 // the compiler's Anthropic-shaped repair blocks are translated here.
 
 const geminiModel = () => {
-  const m = process.env.ANALYTIC_COMPILER_MODEL;
-  return m && m.startsWith('gemini') ? m : 'gemini-3.1-flash-lite';
+  return geminiCompilerModel();
 };
 
 const GEMINI_JSON_SUFFIX =
@@ -486,7 +492,7 @@ export function createGeminiLlmCall(): LlmCall {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-goog-api-key': process.env.GEMINI_API_KEY ?? '',
+          'x-goog-api-key': geminiApiKey() ?? '',
         },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: system + GEMINI_JSON_SUFFIX }] },
@@ -535,7 +541,7 @@ export function createAnthropicLlmCall(): LlmCall {
   // Lazy import so the SDK/key are only needed when actually compiling live.
   return async ({ system, messages }) => {
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const client = new Anthropic({ apiKey: anthropicApiKey() });
     const res = await client.messages.create({
       model: model(),
       max_tokens: 1500,

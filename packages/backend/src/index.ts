@@ -30,11 +30,12 @@ import {
 } from './history/index.js';
 import { logger } from './utils/logger.js';
 import { frontendDistDir } from './utils/paths.js';
+import { port, isProd as isProdEnv, corsOrigin as corsOriginEnv } from './utils/config.js';
 
 const app = express();
 app.set('trust proxy', 1);
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
-const isProd = process.env.NODE_ENV === 'production';
+const PORT = port();
+const isProd = isProdEnv();
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 
@@ -58,9 +59,7 @@ app.use(helmet({
 }));
 
 // CORS — restrict to frontend domain in production, allow all in dev.
-const corsOrigin = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-  : '*';
+const corsOrigin = corsOriginEnv();
 app.use(cors({ origin: corsOrigin }));
 
 // Rate limiting on API routes — prevents abuse of the large TLE payload.

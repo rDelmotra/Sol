@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import { SpaceTrackGPElement } from '../types/index.js';
 import { logger } from '../utils/logger.js';
+import { spacetrackUser, spacetrackPass } from '../utils/config.js';
 
 // ============================================================
 // Space-Track service — PRIMARY data source
@@ -54,8 +55,8 @@ const TIMEOUT_MS = 120_000;
  * Throws if credentials are wrong or the server is unreachable.
  */
 async function login(): Promise<string> {
-  const user = process.env.SPACETRACK_USER;
-  const pass = process.env.SPACETRACK_PASS;
+  const user = spacetrackUser();
+  const pass = spacetrackPass();
 
   if (!user || !pass) {
     throw new Error(
@@ -187,7 +188,7 @@ export interface SpaceTrackFetchResult {
  * Throws on failure so the caller (tle-updater) can fall back to CelesTrak.
  */
 export async function fetchFromSpaceTrack(): Promise<SpaceTrackFetchResult> {
-  if (!process.env.SPACETRACK_USER || !process.env.SPACETRACK_PASS) {
+  if (!spacetrackUser() || !spacetrackPass()) {
     throw new Error('Space-Track credentials not configured');
   }
 

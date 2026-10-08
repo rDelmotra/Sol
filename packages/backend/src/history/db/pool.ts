@@ -21,10 +21,11 @@ import { logger } from '../../utils/logger.js';
 // ============================================================
 
 import type { PoolConfig } from 'pg';
+import { databaseUrl, historyDbSsl, historyDbPoolMax } from '../../utils/config.js';
 
 const { Pool } = pg;
 
-const DATABASE_URL = process.env.DATABASE_URL?.trim();
+const DATABASE_URL = databaseUrl();
 const enabled = typeof DATABASE_URL === 'string' && DATABASE_URL.length > 0;
 
 let pool: pg.Pool | null = null;
@@ -45,13 +46,6 @@ export function markHistoryReady(): void {
   ready = true;
 }
 
-function intEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
 /**
  * TLS configuration. Managed Postgres (Railway external, Timescale Cloud) almost
  * always needs TLS, frequently with a chain Node won't verify by default. A local
@@ -61,10 +55,7 @@ function intEnv(name: string, fallback: number): number {
  *   unset | disable           → no TLS (local / internal network)
  */
 function sslOption(): PoolConfig['ssl'] {
-  const mode = (process.env.HISTORY_DB_SSL ?? '').toLowerCase();
-  if (mode === 'require' || mode === 'no-verify') return { rejectUnauthorized: false };
-  if (mode === 'verify') return { rejectUnauthorized: true };
-  return undefined;
+  return historyDbSsl();
 }
 
 /**
@@ -77,7 +68,7 @@ export function getPool(): pg.Pool | null {
   try {
     pool = new Pool({
       connectionString: DATABASE_URL,
-      max: intEnv('HISTORY_DB_POOL_MAX', 8),
+      max: historyDbPoolMax(),
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 10_000,
       ssl: sslOption(),
