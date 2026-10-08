@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { ER_KM } from '@orbitwatch/orbital-core';
+
+/** Metres per scene unit (1 ER). The Takram adapter converts scene ↔ metres with this. */
+export const METERS_PER_ER = ER_KM * 1000;
 
 /**
  * The ONE home for the render-side frame conversion.
@@ -46,4 +50,24 @@ export function writeSourceToScene(
   out[offset] = x * scale;
   out[offset + 1] = z * scale;
   out[offset + 2] = -y * scale;
+}
+
+/** Plain source-frame vector (matches orbital-core's Vec3 shape). */
+export interface SourceVec { x: number; y: number; z: number }
+
+/**
+ * Inverse of the swap: scene (x, y, z) → source (x, -z, y). Use this before handing a
+ * scene-frame vector (e.g. the `currentPosition` attribute) to any orbital-core geodetic
+ * helper (altitudeKmFromEr / latitudeDegFromEr), which require z = polar axis.
+ */
+export function sceneToSource(x: number, y: number, z: number): SourceVec {
+  return { x, y: -z, z: y };
+}
+
+/** Allocation-free sceneToSource into `out`. Returns `out`. */
+export function sceneToSourceInto(out: SourceVec, x: number, y: number, z: number): SourceVec {
+  out.x = x;
+  out.y = -z;
+  out.z = y;
+  return out;
 }

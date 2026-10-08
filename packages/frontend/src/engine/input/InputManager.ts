@@ -7,6 +7,10 @@ import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { useStore } from '../../store/useStore';
 import { dsoIndexOf } from '../../data/dso-index';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
+import { sceneToSourceInto, type SourceVec } from '../scene/frames';
+
+// Scratch for scene→source conversion (altitude needs the z = polar-axis frame).
+const _srcScratch: SourceVec = { x: 0, y: 0, z: 0 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -374,7 +378,7 @@ export class InputManager {
       const px = posArr.getX(i);
       const py = posArr.getY(i);
       const pz = posArr.getZ(i);
-      const alt = Math.round(altitudeKmFromEr({ x: px, y: py, z: pz }));
+      const alt = Math.round(altitudeKmFromEr(sceneToSourceInto(_srcScratch, px, py, pz)));
       return { index: i, data: this.catalogData[i], altitude: alt };
     });
     store.setCluster(items, e.clientX, e.clientY);

@@ -8,8 +8,12 @@ import { useStore, isObserverMode, type VisibilityMode } from '../../../store/us
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
+import { sceneToSourceInto, type SourceVec } from '../../scene/frames';
 import type { LiveBuffersShape, LiveDataPort } from '../../analytic/AnalyticRuntime';
 import type { GeodeticObserver } from '../../../data/types';
+
+// Scratch for scene→source conversion (altitude needs the z = polar-axis frame).
+const _srcScratch: SourceVec = { x: 0, y: 0, z: 0 };
 
 /**
  * Satellites: THE product layer. Owns the {@link SatelliteRenderer}, the
@@ -395,7 +399,7 @@ export class SatellitesLayer implements Layer {
     const x = posArr.getX(index);
     const y = posArr.getY(index);
     const z = posArr.getZ(index);
-    return altitudeKmFromEr({ x, y, z });
+    return altitudeKmFromEr(sceneToSourceInto(_srcScratch, x, y, z));
   }
 
   // ── Engine-driven commands ───────────────────────────────────────────────────

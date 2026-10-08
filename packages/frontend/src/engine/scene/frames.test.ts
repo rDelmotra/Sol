@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as THREE from 'three';
-import { sourceToScene, sourceToSceneInto, writeSourceToScene } from './frames';
+import { ER_KM } from '@orbitwatch/orbital-core';
+import {
+  METERS_PER_ER,
+  sceneToSource,
+  sceneToSourceInto,
+  sourceToScene,
+  sourceToSceneInto,
+  writeSourceToScene,
+} from './frames';
 
 // Characterization of the ONE render-side frame swap: scene = (src.x, src.z, -src.y).
 // A sign flip or axis transposition here silently mislocates every satellite, DSO,
@@ -43,5 +51,35 @@ describe('frames: source (TEME/ECI/ECEF) → scene swap', () => {
     writeSourceToScene(arr, 0, x, y, z);
     assert.deepEqual([viaNew.x, viaNew.y, viaNew.z], [viaInto.x, viaInto.y, viaInto.z]);
     assert.deepEqual([viaNew.x, viaNew.y, viaNew.z], Array.from(arr));
+  });
+});
+
+describe('frames: scene → source inverse', () => {
+  it('sceneToSource maps (x, y, z) → (x, -z, y) exactly', () => {
+    assert.deepEqual(sceneToSource(1, 3, -2), { x: 1, y: 2, z: 3 });
+  });
+
+  it('sceneToSourceInto fills and returns the given object', () => {
+    const out = { x: 9, y: 9, z: 9 };
+    const ret = sceneToSourceInto(out, 1, 3, -2);
+    assert.equal(ret, out);
+    assert.deepEqual(out, { x: 1, y: 2, z: 3 });
+  });
+
+  it('round-trips source → scene → source', () => {
+    const s = sourceToScene(7, -11, 4);
+    assert.deepEqual(sceneToSource(s.x, s.y, s.z), { x: 7, y: -11, z: 4 });
+    const arr = new Float32Array(3);
+    writeSourceToScene(arr, 0, 0.5, -1.5, 2.25);
+    assert.deepEqual(sceneToSource(arr[0], arr[1], arr[2]), { x: 0.5, y: -1.5, z: 2.25 });
+  });
+
+  it('preserves |r| (sphere altitude is unchanged by the fix)', () => {
+    const s = sceneToSource(0.3, -1.2, 0.8);
+    assert.equal(Math.hypot(s.x, s.y, s.z), Math.hypot(0.3, -1.2, 0.8));
+  });
+
+  it('METERS_PER_ER = ER_KM * 1000', () => {
+    assert.equal(METERS_PER_ER, ER_KM * 1000);
   });
 });
