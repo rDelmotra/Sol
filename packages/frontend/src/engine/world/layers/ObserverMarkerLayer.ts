@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { getObserverEarthAnchor } from '../../scene/sky';
 import { useStore, isDomeView } from '../../../store/useStore';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
+import type { GeodeticObserver } from '../../../data/types';
 
-type ObserverLoc = { lat: number; lon: number; alt: number };
+type ObserverLoc = GeodeticObserver;
 
 /**
  * The observer location marker — a translucent frustum + wireframe cone showing

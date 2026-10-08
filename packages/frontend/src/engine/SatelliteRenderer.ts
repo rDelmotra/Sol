@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import vertexShader from '../shaders/catalog.vert.glsl?raw';
 import fragmentShader from '../shaders/catalog.frag.glsl?raw';
-import type { FacetCounts } from '../data/types';
+import { emptyFacetCounts, type FacetCounts } from '../data/types';
 import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime } from '@orbitwatch/contracts';
 import {
   TYPE_COLORS,
@@ -55,19 +55,6 @@ export interface VisibleCounts {
   categoryCounts: Record<ObjectCategory, number>;
   regimeCounts: Record<OrbitalRegime, number>;
   facetCounts: FacetCounts;
-}
-
-function makeFacetCounts(): FacetCounts {
-  return {
-    type: { satellite: 0, rocket_body: 0, debris: 0, unknown: 0, deep_space: 0 },
-    status: { in_orbit: 0, decayed: 0, deorbited: 0, beyond_earth: 0, exploded: 0, unknown: 0 },
-    sector: { commercial: 0, government: 0, military: 0, civil: 0, unspecified: 0 },
-    purpose: {
-      communications: 0, earth_observation: 0, navigation: 0, technology_dev: 0,
-      space_science: 0, space_observation: 0, surveillance: 0, meteorological: 0, other: 0,
-    },
-    country: {},
-  };
 }
 
 export class SatelliteRenderer {
@@ -334,7 +321,7 @@ export class SatelliteRenderer {
     const regCounts: Record<OrbitalRegime, number> = {
       LEO: 0, MEO: 0, GEO: 0, HEO: 0, OTHER: 0,
     };
-    const facetCounts = makeFacetCounts();
+    const facetCounts = emptyFacetCounts();
 
     // Destructure once (the gate runs per object over the whole catalog).
     const { typeFilters, statusFilters, sectorFilters, purposeFilters, regimeFilters, countryFilter, programFilter, launchFilter, ownerFilter, analyticFilter } = filters;

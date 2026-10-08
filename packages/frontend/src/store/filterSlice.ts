@@ -1,23 +1,7 @@
-import type { CatalogType } from '../data/types';
 import { emptyFacetCounts } from '../data/types';
-import type { OrbitalStatus, Purpose } from '@orbitwatch/contracts';
-import type { SectorFilterKey } from '../data/metadata-types';
+import { allOn, TYPE_KEYS, STATUS_KEYS, SECTOR_KEYS, PURPOSE_KEYS } from '../data/facets';
 import { reconcileFilterSlices } from '../query/apply';
 import type { FilterSlice, Slice } from './types';
-
-const ALL_TYPE_ON: Record<CatalogType, boolean> = {
-  satellite: true, rocket_body: true, debris: true, unknown: true, deep_space: true,
-};
-const ALL_STATUS_ON: Record<OrbitalStatus, boolean> = {
-  in_orbit: true, decayed: true, deorbited: true, beyond_earth: true, exploded: true, unknown: true,
-};
-const ALL_SECTOR_ON: Record<SectorFilterKey, boolean> = {
-  commercial: true, government: true, military: true, civil: true, unspecified: true,
-};
-const ALL_PURPOSE_ON: Record<Purpose, boolean> = {
-  communications: true, earth_observation: true, navigation: true, technology_dev: true,
-  space_science: true, space_observation: true, surveillance: true, meteorological: true, other: true,
-};
 
 export const createFilterSlice: Slice<FilterSlice> = (set, get) => ({
   categoryFilters: {
@@ -40,10 +24,10 @@ export const createFilterSlice: Slice<FilterSlice> = (set, get) => ({
   visibleRegimeCounts: { LEO: 0, MEO: 0, GEO: 0, HEO: 0, OTHER: 0 },
 
   colorBy: 'type',
-  typeFilters: { ...ALL_TYPE_ON },
-  statusFilters: { ...ALL_STATUS_ON },
-  sectorFilters: { ...ALL_SECTOR_ON },
-  purposeFilters: { ...ALL_PURPOSE_ON },
+  typeFilters: allOn(TYPE_KEYS),
+  statusFilters: allOn(STATUS_KEYS),
+  sectorFilters: allOn(SECTOR_KEYS),
+  purposeFilters: allOn(PURPOSE_KEYS),
   countryFilter: { mode: 'all' },
   programFilter: { mode: 'all' },
   launchFilter: { mode: 'all' },

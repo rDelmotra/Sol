@@ -19,12 +19,13 @@ import type { CatalogType } from '../data/types';
 import type { OrbitalRegime, Purpose, OrbitalStatus } from '@orbitwatch/contracts';
 import type { SectorFilterKey } from '../data/metadata-types';
 import {
+  allOn,
   TYPE_KEYS,
   STATUS_KEYS,
   SECTOR_KEYS,
   PURPOSE_KEYS,
   REGIME_KEYS,
-} from './executor';
+} from '../data/facets';
 import type { QueryFilterPatch } from './types';
 
 type SetFilter<F extends string> =
@@ -42,12 +43,6 @@ export interface QuerySlices {
   programFilter: SetFilter<'ids'>;
   launchFilter: SetFilter<'tags'>;   // G3
   ownerFilter: SetFilter<'codes'>;   // G3
-}
-
-function allOn<K extends string>(keys: readonly K[]): Record<K, boolean> {
-  const rec = {} as Record<K, boolean>;
-  for (const k of keys) rec[k] = true;
-  return rec;
 }
 
 /** Value equality over a fixed key universe (≤9 keys — cheap). */

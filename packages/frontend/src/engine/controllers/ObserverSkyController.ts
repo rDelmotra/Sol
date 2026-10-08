@@ -3,8 +3,9 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js
 import { getObserverSceneAnchor } from '../scene/sky';
 import { simClock } from '../../time/SimClock';
 import type { VisibilityMode } from '../../store/useStore';
+import type { GeodeticObserver } from '../../data/types';
 
-type ObserverLoc = { lat: number; lon: number; alt: number };
+type ObserverLoc = GeodeticObserver;
 
 /** Eye height above the observer's feet, in Earth radii (~16 m). */
 const EYE_HEIGHT_ER = 0.0000025;

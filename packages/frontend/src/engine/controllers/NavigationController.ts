@@ -5,6 +5,7 @@ import { ObserverSkyController } from './ObserverSkyController';
 import { useStore, isObserverMode, type TrackingStyle, type VisibilityMode } from '../../store/useStore';
 import { dsoIndexOf } from '../../data/dso-index';
 import type { TrackingSource } from './TrackingSource';
+import type { GeodeticObserver } from '../../data/types';
 
 interface NavigationCallbacks {
   /** Tell the input layer to drop any in-progress joyride free-look state. */
@@ -364,7 +365,7 @@ export class NavigationController {
   }
 
   /** Enter the observer-sky rig for visual/dome mode (eye pinned + alt-az look). */
-  enterObserverSky(loc: { lat: number; lon: number; alt: number }, mode: VisibilityMode): void {
+  enterObserverSky(loc: GeodeticObserver, mode: VisibilityMode): void {
     const store = useStore.getState();
     if (store.cameraMode !== 'free') {
       // The cameraMode → 'free' transition re-establishes the rig (see the sub

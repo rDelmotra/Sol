@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useStore, type ColorBy } from '../store/useStore';
-import type { CatalogType } from '../data/types';
-import type { OrbitalRegime, OrbitalStatus, Purpose } from '@orbitwatch/contracts';
+import type { CatalogType, GeodeticObserver } from '../data/types';
+import type { OrbitalRegime } from '@orbitwatch/contracts';
 import { displayCountry, countryFlag } from '@orbitwatch/contracts';
-import type { SectorFilterKey } from '../data/metadata-types';
 import { ORBITAL_STATUS_LABELS, PURPOSE_LABELS, SECTOR_LABELS } from '../data/metadata-types';
 import {
   TYPE_COLORS,
@@ -13,10 +12,10 @@ import {
   FALLBACK_GREY,
   rgbToCss,
 } from '../data/facet-colors';
+import { TYPE_KEYS, STATUS_KEYS, SECTOR_KEYS, PURPOSE_KEYS, REGIME_KEYS } from '../data/facets';
 
 // ── Facet group definitions ───────────────────────────────────────────────────
 
-const TYPE_KEYS: CatalogType[] = ['satellite', 'rocket_body', 'debris', 'unknown', 'deep_space'];
 const TYPE_LABELS: Record<CatalogType, string> = {
   satellite: 'Payload',
   rocket_body: 'Rocket Body',
@@ -25,13 +24,6 @@ const TYPE_LABELS: Record<CatalogType, string> = {
   deep_space: 'Deep Space',
 };
 
-const STATUS_KEYS: OrbitalStatus[] = ['in_orbit', 'decayed', 'deorbited', 'beyond_earth', 'exploded', 'unknown'];
-const SECTOR_KEYS: SectorFilterKey[] = ['commercial', 'government', 'military', 'civil', 'unspecified'];
-const PURPOSE_KEYS: Purpose[] = [
-  'communications', 'earth_observation', 'navigation', 'technology_dev',
-  'space_science', 'space_observation', 'surveillance', 'meteorological', 'other',
-];
-const REGIME_KEYS: OrbitalRegime[] = ['LEO', 'MEO', 'GEO', 'HEO', 'OTHER'];
 const REGIME_LABELS: Record<OrbitalRegime, string> = {
   LEO: 'LEO', MEO: 'MEO', GEO: 'GEO', HEO: 'HEO', OTHER: 'Other',
 };
@@ -196,11 +188,7 @@ const OBSERVER_LOCATION_CACHE_KEY = 'orbitwatch:observerLocation:v1';
 const OBSERVER_LOCATION_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const LOCATION_RETRY_MAX_AGE_MS = 30 * 60 * 1000;
 
-interface ObserverLocationValue {
-  lat: number;
-  lon: number;
-  alt: number;
-}
+type ObserverLocationValue = GeodeticObserver;
 
 interface ObserverLocationCacheEnvelope extends ObserverLocationValue {
   savedAt: number;

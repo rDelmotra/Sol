@@ -8,20 +8,12 @@
 // multi-sector object tagged [military, government].
 // ============================================================
 
-import { emptyFacetCounts, type CatalogType } from '../data/types';
-import type { OrbitalRegime, Purpose, OrbitalStatus } from '@orbitwatch/contracts';
-import type { SectorFilterKey } from '../data/metadata-types';
+import { TYPE_KEYS, STATUS_KEYS, SECTOR_KEYS, PURPOSE_KEYS, REGIME_KEYS } from '../data/facets';
 import { getVocabIndexes } from './vocab';
 import type { QueryIR, QueryFilterPatch, FacetGroup } from './types';
 
-// Key universes derived from the one canonical source (emptyFacetCounts) so
-// enum growth can't drift. Regimes aren't in FacetCounts — hardcoded.
-const EMPTY = emptyFacetCounts();
-export const TYPE_KEYS = Object.keys(EMPTY.type) as CatalogType[];
-export const STATUS_KEYS = Object.keys(EMPTY.status) as OrbitalStatus[];
-export const SECTOR_KEYS = Object.keys(EMPTY.sector) as SectorFilterKey[];
-export const PURPOSE_KEYS = Object.keys(EMPTY.purpose) as Purpose[];
-export const REGIME_KEYS: OrbitalRegime[] = ['LEO', 'MEO', 'GEO', 'HEO', 'OTHER'];
+// Key universes live in the facet registry (data/facets.ts); re-exported for query consumers.
+export { TYPE_KEYS, STATUS_KEYS, SECTOR_KEYS, PURPOSE_KEYS, REGIME_KEYS };
 
 function narrow<K extends string>(keys: readonly K[], on: Set<string>): Record<K, boolean> {
   const rec = {} as Record<K, boolean>;

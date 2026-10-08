@@ -2,6 +2,7 @@ import { validateProgram, execute, type AnalyticProgram, type ExecuteOutcome, ty
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { ResidentSet, type ResidentDelta } from '../resident/ResidentSet';
 import type { LiveSourceDeps } from '../../query/analytic/live-source';
+import type { GeodeticObserver } from '../../data/types';
 
 /**
  * Raw worker buffers (TEME ER) the live analytic source reads. Declared
@@ -29,7 +30,7 @@ export interface AnalyticRuntimeDeps {
   /** Builds a fresh live source — called once per run(), never cached. */
   createSource: (deps: LiveSourceDeps) => AnalyticDataSource;
   getVocab: LiveSourceDeps['getVocab'];
-  getObserver: () => { lat: number; lon: number; alt: number } | null;
+  getObserver: () => GeodeticObserver | null;
   nowMs: () => number;
 }
 

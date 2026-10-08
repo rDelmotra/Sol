@@ -9,6 +9,7 @@ import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
 import type { LiveBuffersShape, LiveDataPort } from '../../analytic/AnalyticRuntime';
+import type { GeodeticObserver } from '../../../data/types';
 
 /**
  * Satellites: THE product layer. Owns the {@link SatelliteRenderer}, the
@@ -470,7 +471,7 @@ export class SatellitesLayer implements Layer {
   }
 }
 
-type ObserverLoc = { lat: number; lon: number; alt: number };
+type ObserverLoc = GeodeticObserver;
 
 export interface SatellitesLayerCallbacks {
   /** Curated visual NORAD set (owned by the Engine's VisualListPoller). */

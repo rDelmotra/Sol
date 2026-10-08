@@ -1,5 +1,5 @@
 import type { StateCreator } from 'zustand';
-import type { CatalogType, FacetCounts } from '../data/types';
+import type { CatalogType, FacetCounts, GeodeticObserver } from '../data/types';
 import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime, Purpose, OrbitalStatus, DsoSnapshot } from '@orbitwatch/contracts';
 import type { SectorFilterKey } from '../data/metadata-types';
 import type { DsoObject, DsoLabelPosition } from '../data/dso-types';
@@ -43,7 +43,7 @@ export function isObserverMode(mode: VisibilityMode): boolean {
 export function isDomeView(s: {
   cameraMode: CameraMode;
   visibilityMode: VisibilityMode;
-  observerLocation: { lat: number; lon: number; alt: number } | null;
+  observerLocation: GeodeticObserver | null;
 }): boolean {
   return s.cameraMode === 'free' && s.visibilityMode === 'dome' && s.observerLocation !== null;
 }
@@ -188,12 +188,12 @@ export interface InteractionSlice {
 }
 
 export interface ObserverSlice {
-  observerLocation: { lat: number; lon: number; alt: number } | null;
+  observerLocation: GeodeticObserver | null;
   visibilityMode: VisibilityMode;
   /** Dome-mode gaze heading (radians, from North toward East); drives the HUD compass. */
   observerHeadingRad: number;
   visualList: VisualListState;
-  setObserverLocation: (loc: { lat: number; lon: number; alt: number } | null) => void;
+  setObserverLocation: (loc: GeodeticObserver | null) => void;
   setVisibilityMode: (mode: VisibilityMode) => void;
   setObserverHeadingRad: (rad: number) => void;
   setVisualListState: (state: VisualListState) => void;

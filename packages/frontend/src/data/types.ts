@@ -12,11 +12,15 @@
 import type { OMMJsonObject } from 'satellite.js';
 import type { ObjectType, OrbitalStatus, Purpose } from '@orbitwatch/contracts';
 import type { SectorFilterKey } from './metadata-types';
+import { TYPE_KEYS, STATUS_KEYS, SECTOR_KEYS, PURPOSE_KEYS, zeros } from './facets';
 
 export interface TLEInput {
     noradId: number
     omm: OMMJsonObject
 }
+
+/** Observer position on the ground: degrees, degrees, km. (NOT the {latDeg, lonDeg, altKm} orbital-core shape.) */
+export interface GeodeticObserver { lat: number; lon: number; alt: number } // deg, deg, km
 
 /** Type-filter key space: the live ObjectType plus 'deep_space' for DSO objects. */
 export type CatalogType = ObjectType | 'deep_space';
@@ -37,13 +41,10 @@ export interface FacetCounts {
 /** A fresh zeroed FacetCounts (country starts empty — keys appear as the catalog loads). */
 export function emptyFacetCounts(): FacetCounts {
   return {
-    type: { satellite: 0, rocket_body: 0, debris: 0, unknown: 0, deep_space: 0 },
-    status: { in_orbit: 0, decayed: 0, deorbited: 0, beyond_earth: 0, exploded: 0, unknown: 0 },
-    sector: { commercial: 0, government: 0, military: 0, civil: 0, unspecified: 0 },
-    purpose: {
-      communications: 0, earth_observation: 0, navigation: 0, technology_dev: 0,
-      space_science: 0, space_observation: 0, surveillance: 0, meteorological: 0, other: 0,
-    },
+    type: zeros(TYPE_KEYS),
+    status: zeros(STATUS_KEYS),
+    sector: zeros(SECTOR_KEYS),
+    purpose: zeros(PURPOSE_KEYS),
     country: {},
   };
 }
