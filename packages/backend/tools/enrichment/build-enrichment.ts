@@ -14,7 +14,7 @@
 // (detailed purpose text, power, lifetime, sites/vehicles as display names).
 //
 // Run manually on snapshot refresh — NOT on the request path, NOT at boot:
-//   npx tsx packages/backend/src/enrichment/build-enrichment.ts
+//   npm run enrichment:build -w packages/backend
 //
 // Output lands in packages/backend/enrichment-data/ (committed, NOT the gitignored
 // runtime data/ dir) so it ships to prod and the loader resolves it identically
@@ -39,9 +39,9 @@ import {
   EnrichmentArtifactMeta,
   UCS_USER_TO_SECTOR,
   emptyObjectMetadata,
-} from './types.js';
-import { canonicalFromUcsCountry } from './country-codes.js';
-import { PROGRAMS, matchProgram, applyProgramDefaults } from './programs.js';
+} from '../../src/enrichment/types.js';
+import { canonicalFromUcsCountry } from '../../src/enrichment/country-codes.js';
+import { PROGRAMS, matchProgram, applyProgramDefaults } from '../../src/enrichment/programs.js';
 import { ingestGcat } from './gcat/ingest.js';
 import { parseGcatOrgs } from './gcat/orgs.js';
 import {
@@ -49,7 +49,7 @@ import {
   parseLvFamilies,
   parseSiteNames,
 } from './gcat/launches.js';
-import { applyGraphInheritance } from './gcat/inherit.js';
+import { applyGraphInheritance } from '../../src/enrichment/gcat/inherit.js';
 import { buildQueryVocab } from './query-vocab.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

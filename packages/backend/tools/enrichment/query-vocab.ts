@@ -17,7 +17,7 @@
 // ============================================================
 
 import type { LaunchRecord, ObjectMetadata, OrgRecord, QueryVocab } from '@orbitwatch/contracts';
-import { primaryOwnerCode } from './gcat/inherit.js';
+import { primaryOwnerCode } from '../../src/enrichment/gcat/inherit.js';
 
 // The artifact shape (formerly this module's own `QueryVocabArtifact`) moved
 // to @orbitwatch/contracts as `QueryVocab` (C3), merged with frontend

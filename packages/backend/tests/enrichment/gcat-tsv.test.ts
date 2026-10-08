@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseGcatTsv } from '../../src/enrichment/gcat/tsv.js';
+import { parseGcatTsv } from '../../tools/enrichment/gcat/tsv.js';
 
 const FIXTURE = [
   '#Code\tUCode\tStateCode\tType\tClass\tName',

@@ -2,13 +2,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseGcatOrgs } from '../../src/enrichment/gcat/orgs.js';
+import { parseGcatOrgs } from '../../tools/enrichment/gcat/orgs.js';
 import {
   parseGcatLaunches,
   parseLvFamilies,
   parseSiteNames,
   launchSuccess,
-} from '../../src/enrichment/gcat/launches.js';
+} from '../../tools/enrichment/gcat/launches.js';
 
 // ── orgs ──────────────────────────────────────────────────────────────────────
 

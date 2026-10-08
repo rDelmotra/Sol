@@ -8,7 +8,7 @@ import {
   cleanCode,
   cleanNum,
   yearOf,
-} from '../../src/enrichment/gcat/fixed-width.js';
+} from '../../tools/enrichment/gcat/fixed-width.js';
 
 // Columns deliberately non-uniform widths; offsets must come from the header.
 const FIXTURE = [

@@ -10,7 +10,7 @@ import {
   lookupGcatType,
   clasToSectors,
   categoryToPurpose,
-} from '../../src/enrichment/gcat/vocab.js';
+} from '../../tools/enrichment/gcat/vocab.js';
 
 // Every non-blank Status code observed in the 2026-07-03 satcat (22 codes,
 // incl. '?'-flagged variants), from the survey census.

@@ -67,7 +67,7 @@ export function loadEnrichment(): Map<number, ObjectMetadata> {
   } catch (err) {
     logger.warn(
       `Enrichment metadata unavailable (${(err as Error).message}); serving without it. ` +
-        'Run: npx tsx src/enrichment/build-enrichment.ts',
+        'Run: npm run enrichment:build -w packages/backend',
     );
   }
   metadataCache = map;

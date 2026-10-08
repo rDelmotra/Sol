@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ingestGcat } from '../../src/enrichment/gcat/ingest.js';
+import { ingestGcat } from '../../tools/enrichment/gcat/ingest.js';
 import type { DecayedCatalogRow, ObjectMetadata } from '@orbitwatch/contracts';
 
 // ── Fixture builder ───────────────────────────────────────────────────────────

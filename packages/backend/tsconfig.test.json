@@ -2,6 +2,6 @@
   "//": "Type-checks src + tests + scripts (the build config covers src only; tsx does not type-check). Run by `npm run typecheck`.",
   "extends": "./tsconfig.json",
   "compilerOptions": { "noEmit": true, "rootDir": ".", "allowImportingTsExtensions": true },
-  "include": ["src/**/*", "tests/**/*", "scripts/**/*"],
+  "include": ["src/**/*", "tests/**/*", "scripts/**/*", "tools/**/*"],
   "exclude": ["node_modules", "dist", "scripts/bench-*.ts"]
 }

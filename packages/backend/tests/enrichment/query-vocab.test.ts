@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildQueryVocab } from '../../src/enrichment/query-vocab.js';
+import { buildQueryVocab } from '../../tools/enrichment/query-vocab.js';
 import type { LaunchRecord, ObjectMetadata, OrgRecord } from '@orbitwatch/contracts';
 
 function record(overrides: Partial<ObjectMetadata>): ObjectMetadata {

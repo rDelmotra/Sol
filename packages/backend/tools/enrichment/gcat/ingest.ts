@@ -23,11 +23,11 @@ import {
   ObjectMetadata,
   OrbitalStatus,
 } from '@orbitwatch/contracts';
-import { emptyObjectMetadata } from '../types.js';
+import { emptyObjectMetadata } from '../../../src/enrichment/types.js';
 import {
   canonicalFromSatcatState,
   SATCAT_STATE_TO_CANONICAL,
-} from '../country-codes.js';
+} from '../../../src/enrichment/country-codes.js';
 import { parseGcatCatalog, cleanCode, cleanNum, yearOf } from './fixed-width.js';
 import { lookupGcatStatus, lookupGcatType, clasToSectors, categoryToPurpose } from './vocab.js';
 

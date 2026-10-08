@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "test": "tsx --test 'tests/**/*.test.ts'",
     "test:golden": "tsx --test tests/dso/normalize/convert.test.ts",
+    "enrichment:build": "tsx tools/enrichment/build-enrichment.ts",
     "history:migrate": "tsx src/history/db/migrate-cli.ts"
   },
   "dependencies": {
