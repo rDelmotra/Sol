@@ -1,0 +1,38 @@
+# OPEN — known problems and deferred work
+
+Remove an item when it is fixed. None of these is scheduled unless the owner says so.
+
+## Needs the owner
+
+- Rotate the Gemini key. It was rejected as leaked, so every Ask fails.
+- Rotate the key found in the history of `experiment/nl-to-ir`.
+- DSO validity window: `DEFAULT_VALID_PAST_WINDOW_SEC` is 10 days. Should it be "since launch"?
+- Artemis II fetch fails every 30 minutes. Disable it or fix it?
+- Object category is always `unknown` because Space-Track's SATCAT has no operational-status field. Needs another source.
+- Dead branch cleanup. Many old branches exist.
+
+## Planned projects (not started)
+
+- **Takram integration.** Tiled Earth, atmosphere, clouds. Start with the depth-buffer decision and the `frames.ts` adapter.
+  Known risks: logarithmic depth would force edits to all 7 custom shaders.
+  The atmosphere is a screen-space effect and probably won't blend with additive satellite points, so those likely need a separate pass.
+- **Perceptor and Analytic IR redesign.** See D3. Marked now by 2 known violations in `tests/architecture.test.ts`
+  (`services/analytic-prompt.ts` importing `analytic`) and by the hand-kept list in `packages/analytic/src/capability.ts`.
+
+## Known weaknesses (left alone by decision D2)
+
+- **Filter fan-out.** Adding one filter group touches about 18 files. It needs a facet registry.
+- **Engine reads the store directly** about 95 times across 15 files.
+- **Test blind spots.** The architecture test has no rules for the catch-all `engine` zone, and cannot see `new URL()` worker edges.
+- **Untested critical code.** `World.ts`, `SatelliteRenderer.applyVisibilityAndFilters`, `routes/tle.ts`, cron, history, the Rust crate.
+- **Large files.** FilterPanel 767 lines, SatelliteRenderer 517, SatellitesLayer about 510, TimeScrubber 522, InfoCard 496,
+  and in the Perceptor area `execute` 950, `validate` 676, `analytic-prompt` 623, `compiler` 565.
+- **Duplicated physics in DSO convert.** `packages/backend/src/dso/normalize/convert.ts` has its own Julian date and precession/nutation.
+- **Duplicated constants.** `MS_PER_DAY` in `packages/analytic/src/validate.ts` and `packages/backend/src/routes/query.ts`.
+  `MS_PER_YEAR` in `packages/backend/src/analytic/providers/catalog.ts` and `packages/frontend/src/query/analytic/live-source.ts`.
+- **`VITE_API_URL`** is read in 7 places.
+- **Type-level import cycles.** `data/facets.ts` and `data/types.ts`. `history/archive/raw-writer.ts` and `history/ingest/sink.ts`.
+- **Mutable module singletons**, for example `packages/frontend/src/data/dso-client.ts`.
+- **No CI, no linter.** README is 16 lines.
+- **Two propagation engines** differ slightly. See STATE.md.
+- **Globe is a unit sphere.** See STATE.md.
