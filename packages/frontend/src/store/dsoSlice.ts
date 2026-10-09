@@ -23,11 +23,5 @@ export const createDsoSlice: Slice<DsoSlice> = (set) => ({
     set((state) => ({
       dsoEphemerisById: { ...state.dsoEphemerisById, [dsoId]: snapshot },
     })),
-  clearDsoEphemeris: (dsoId) =>
-    set((state) => {
-      const next = { ...state.dsoEphemerisById };
-      delete next[dsoId];
-      return { dsoEphemerisById: next };
-    }),
   setDsoLabelPositions: (positions) => set({ dsoLabelPositions: positions }),
 });

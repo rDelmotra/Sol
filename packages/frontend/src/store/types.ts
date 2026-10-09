@@ -200,9 +200,7 @@ export interface ObserverSlice {
 }
 
 export interface FilterSlice {
-  categoryFilters: Record<ObjectCategory, boolean>;
   regimeFilters: Record<OrbitalRegime, boolean>;
-  visibleCategoryCounts: Record<ObjectCategory, number>;
   visibleRegimeCounts: Record<OrbitalRegime, number>;
   visibleFacetCounts: FacetCounts;
   // Rich-metadata facet filters + color-by (Phase B; additive to category/regime above)
@@ -215,12 +213,8 @@ export interface FilterSlice {
   programFilter: ProgramFilter;
   launchFilter: LaunchFilter;   // G3 — query-only
   ownerFilter: OwnerFilter;     // G3 — query-only
-  toggleCategoryFilter: (category: ObjectCategory) => void;
   toggleRegimeFilter: (regime: OrbitalRegime) => void;
-  setVisibleCounts: (
-    catCounts: Record<ObjectCategory, number>,
-    regCounts: Record<OrbitalRegime, number>,
-  ) => void;
+  setVisibleCounts: (regCounts: Record<OrbitalRegime, number>) => void;
   setColorBy: (colorBy: ColorBy) => void;
   toggleTypeFilter: (key: CatalogType) => void;
   toggleStatusFilter: (key: OrbitalStatus) => void;
@@ -282,7 +276,6 @@ export interface TimeSlice {
 export interface HistorySlice {
   // Historical time-scrub (review plane) — UI mirrors of Engine-held state.
   historyCoverage: HistoryCoverage | null;
-  historyStatus: 'unknown' | 'available' | 'unavailable';
   historyDay: string | null;     // null = live; else the loaded UTC day 'YYYY-MM-DD'
   historyLoading: boolean;
   /** True while reviewing a date with NO satellite catalog (planetarium: sky only). */
@@ -299,7 +292,6 @@ export interface DsoSlice {
   dsoLabelPositions: DsoLabelPosition[];
   setDsoObjects: (objects: DsoObject[]) => void;
   setDsoEphemeris: (dsoId: string, snapshot: DsoSnapshot) => void;
-  clearDsoEphemeris: (dsoId: string) => void;
   setDsoLabelPositions: (positions: DsoLabelPosition[]) => void;
 }
 

@@ -28,10 +28,8 @@ const STATE_KEYS = [
   'cameraMode',
   'catalogData',
   'categoryCounts',
-  'categoryFilters',
   'clearAnalyticAnswer',
   'clearCluster',
-  'clearDsoEphemeris',
   'clearQueryFilters',
   'clusterItems',
   'clusterScreenX',
@@ -47,7 +45,6 @@ const STATE_KEYS = [
   'historyCoverage',
   'historyDay',
   'historyLoading',
-  'historyStatus',
   'hoverScreenX',
   'hoverScreenY',
   'hoveredName',
@@ -123,7 +120,6 @@ const STATE_KEYS = [
   'simRate',
   'simTimeMs',
   'statusFilters',
-  'toggleCategoryFilter',
   'togglePurposeFilter',
   'toggleRegimeFilter',
   'toggleSectorFilter',
@@ -142,7 +138,6 @@ const STATE_KEYS = [
   'typeFilters',
   'viewMode',
   'visibilityMode',
-  'visibleCategoryCounts',
   'visibleFacetCounts',
   'visibleRegimeCounts',
   'visualList',
@@ -187,10 +182,8 @@ const INITIAL_VALUES: Record<string, unknown> = {
   visibilityMode: 'all',
   observerHeadingRad: 0,
   visualList: { status: 'loading', version: null, source: null, stale: false, count: 0, updatedAt: null, message: null },
-  categoryFilters: allOn(CATS),
   regimeFilters: allOn(REGS),
   regimeCounts: zeros(REGS),
-  visibleCategoryCounts: zeros(CATS),
   visibleRegimeCounts: zeros(REGS),
   colorBy: 'type',
   typeFilters: allOn(['satellite', 'rocket_body', 'debris', 'unknown', 'deep_space']),
@@ -212,7 +205,6 @@ const INITIAL_VALUES: Record<string, unknown> = {
   viewMode: 'live',
   scrubberMode: false,
   historyCoverage: null,
-  historyStatus: 'unknown',
   historyDay: null,
   historyLoading: false,
   planetarium: false,
@@ -220,7 +212,7 @@ const INITIAL_VALUES: Record<string, unknown> = {
 
 test('store exposes exactly today\'s keys (state + actions)', () => {
   assert.deepEqual(Object.keys(initial).sort(), [...STATE_KEYS].sort());
-  assert.equal(STATE_KEYS.length, 125);
+  assert.equal(STATE_KEYS.length, 120);
 });
 
 test('initial values of every non-function key', () => {
@@ -292,7 +284,6 @@ test('setDsoObjects writes deep_space count into categoryCounts, facetCounts.typ
   assert.equal(n.facetCounts.type.deep_space, 2);
   assert.equal(n.visibleFacetCounts.type.deep_space, 2);
   assert.equal(n.categoryCounts.debris, 0);
-  assert.equal(n.visibleCategoryCounts.deep_space, 0); // visibleCategoryCounts is NOT touched
 });
 
 test('setVisibleFacetCounts keeps the deep_space total from facetCounts', () => {
@@ -316,8 +307,6 @@ test('setCatalogInfo seeds visible counts as clones of the totals', () => {
   const n = useStore.getState();
   assert.equal(n.objectCount, 9);
   assert.equal(typeof n.dataTimestamp, 'number');
-  assert.deepEqual(n.visibleCategoryCounts, n.categoryCounts);
-  assert.notEqual(n.visibleCategoryCounts, n.categoryCounts);
   assert.deepEqual(n.visibleRegimeCounts, n.regimeCounts);
   assert.notEqual(n.visibleRegimeCounts, n.regimeCounts);
   assert.equal(n.facetCounts, facetCounts); // totals stored by reference
@@ -447,23 +436,18 @@ test('reviewAt / scrubPreview enter review; scrubPreview calls the preview hook,
   assert.equal(jump.mock.callCount(), 1);
 });
 
-test('setHistoryCoverage: from=null -> unavailable; from set -> available; null -> unavailable', () => {
+test('setHistoryCoverage stores the coverage object (null clears it)', () => {
   const s = useStore.getState();
   const cov = { from: null, to: null, objectCount: 0, lastIngestAt: null } as never;
   s.setHistoryCoverage(cov);
-  assert.equal(useStore.getState().historyStatus, 'unavailable');
   assert.equal(useStore.getState().historyCoverage, cov);
-  s.setHistoryCoverage({ from: '2026-01-01', to: '2026-02-01', objectCount: 1, lastIngestAt: null } as never);
-  assert.equal(useStore.getState().historyStatus, 'available');
   s.setHistoryCoverage(null);
-  assert.equal(useStore.getState().historyStatus, 'unavailable');
   assert.equal(useStore.getState().historyCoverage, null);
 });
 
-test('clearDsoEphemeris removes only that id; setDsoEphemeris adds', () => {
+test('setDsoEphemeris adds per-id snapshots', () => {
   const s = useStore.getState();
   s.setDsoEphemeris('a', { a: 1 } as never);
   s.setDsoEphemeris('b', { b: 1 } as never);
-  s.clearDsoEphemeris('a');
-  assert.deepEqual(Object.keys(useStore.getState().dsoEphemerisById), ['b']);
+  assert.deepEqual(Object.keys(useStore.getState().dsoEphemerisById).sort(), ['a', 'b']);
 });

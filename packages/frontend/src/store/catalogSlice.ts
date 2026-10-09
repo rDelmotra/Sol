@@ -21,7 +21,6 @@ export const createCatalogSlice: Slice<CatalogSlice> = (set) => ({
       objectCount: info.objectCount,
       categoryCounts: info.categoryCounts,
       regimeCounts: info.regimeCounts,
-      visibleCategoryCounts: { ...info.categoryCounts },
       visibleRegimeCounts: { ...info.regimeCounts },
       facetCounts,
       // At load every object is visible — seed visible = total (deep-cloned so the

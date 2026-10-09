@@ -280,7 +280,7 @@ export class SatellitesLayer implements Layer {
           );
 
       const store = useStore.getState();
-      store.setVisibleCounts(counts.categoryCounts, counts.regimeCounts);
+      store.setVisibleCounts(counts.regimeCounts);
       store.setVisibleFacetCounts(counts.facetCounts);
 
       renderer.material.uniforms.uT.value = 0.0;
@@ -324,7 +324,7 @@ export class SatellitesLayer implements Layer {
       this.callbacks.getVisualNoradIds(),
     );
     const store = useStore.getState();
-    store.setVisibleCounts(counts.categoryCounts, counts.regimeCounts);
+    store.setVisibleCounts(counts.regimeCounts);
     store.setVisibleFacetCounts(counts.facetCounts);
 
     const sel = state.selectedIndex;

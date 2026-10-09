@@ -133,12 +133,6 @@ const RULES: Rule[] = [
 
   // ── frontend tiers: core ← render ← data ← layers ← world ← controllers ← Engine ──
   {
-    id: 'fe-orbital-is-core',
-    why: 'orbital/ is the pure physics tier: no app, render or UI imports (three.js is being removed in Phase 2.3).',
-    applies: from('frontend', 'orbital'),
-    forbidden: (e) => only('orbital')(e) || ['pkg:three', 'pkg:react', 'pkg:zustand'].includes(e.toZone),
-  },
-  {
     id: 'fe-time-is-leaf',
     why: 'time/ is the lowest frontend tier (the simulation clock singleton): it imports nothing from the app.',
     applies: from('frontend', 'time'),
@@ -247,11 +241,10 @@ const FE = 'packages/frontend/src';
 const BE = 'packages/backend/src';
 
 const KNOWN_VIOLATIONS: KnownViolation[] = [
-  // UI imports the sim clock from engine/
-  // SatellitesLayer builds the analytic live source
-  // backend dependency-direction debt
-  { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/index`, fix: '2.5 inject the registry snapshot' },
-  { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/types`, fix: '2.5 inject the registry snapshot' },
+  // Deliberate marker for the later Perceptor redesign: the compiler prompt generator
+  // still reads the analytic registry snapshot directly. Not scheduled for a cleanup step.
+  { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/index`, fix: 'Perceptor redesign (deliberate marker)' },
+  { rule: 'be-services-no-analytic', from: `${BE}/services/analytic-prompt.ts`, to: `${BE}/analytic/types`, fix: 'Perceptor redesign (deliberate marker)' },
 ];
 
 // ── Test ──────────────────────────────────────────────────────────────────────

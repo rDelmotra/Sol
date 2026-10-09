@@ -4,23 +4,7 @@ import { reconcileFilterSlices } from '../query/apply';
 import type { FilterSlice, Slice } from './types';
 
 export const createFilterSlice: Slice<FilterSlice> = (set, get) => ({
-  categoryFilters: {
-    active_satellite: true,
-    inactive_satellite: true,
-    rocket_body: true,
-    debris: true,
-    unknown: true,
-    deep_space: true,
-  },
   regimeFilters: { LEO: true, MEO: true, GEO: true, HEO: true, OTHER: true },
-  visibleCategoryCounts: {
-    active_satellite: 0,
-    inactive_satellite: 0,
-    rocket_body: 0,
-    debris: 0,
-    unknown: 0,
-    deep_space: 0,
-  },
   visibleRegimeCounts: { LEO: 0, MEO: 0, GEO: 0, HEO: 0, OTHER: 0 },
 
   colorBy: 'type',
@@ -34,13 +18,6 @@ export const createFilterSlice: Slice<FilterSlice> = (set, get) => ({
   ownerFilter: { mode: 'all' },
   visibleFacetCounts: emptyFacetCounts(),
 
-  toggleCategoryFilter: (category) =>
-    set((state) => ({
-      categoryFilters: {
-        ...state.categoryFilters,
-        [category]: !state.categoryFilters[category],
-      },
-    })),
   toggleRegimeFilter: (regime) =>
     set((state) => ({
       regimeFilters: {
@@ -48,8 +25,7 @@ export const createFilterSlice: Slice<FilterSlice> = (set, get) => ({
         [regime]: !state.regimeFilters[regime],
       },
     })),
-  setVisibleCounts: (catCounts, regCounts) =>
-    set({ visibleCategoryCounts: catCounts, visibleRegimeCounts: regCounts }),
+  setVisibleCounts: (regCounts) => set({ visibleRegimeCounts: regCounts }),
 
   setColorBy: (colorBy) => set({ colorBy }),
   toggleTypeFilter: (key) =>
