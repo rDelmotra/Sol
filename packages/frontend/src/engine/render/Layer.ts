@@ -32,7 +32,7 @@ export interface FrameContext {
   cameraDistance: number;
   /** Sun direction in the ECI/scene frame. */
   sunDirectionECI: THREE.Vector3;
-  /** Greenwich Apparent Sidereal Time, radians — Earth's `rotation.y`. */
+  /** Greenwich Mean Sidereal Time (GMST), radians — Earth's `rotation.y`. */
   gastRadians: number;
   /** Camera is following a target in first-person joyride style (trail dims). */
   isJoyrideTracking: boolean;

@@ -3,9 +3,8 @@
 // satellite is visible to an observer's naked eye right now, plus the
 // sky-dome (planetarium) size/brightness policy.
 //
-// Verbatim copy of frontend orbital/visual-visibility.ts: every export, same
-// names, same math. Zero behavior change — an addition, not a move (the
-// frontend file is deleted in a later step per PROJECT_MAP/15, §3).
+// This module is the single home of the visibility gate; the frontend and
+// backend consume it from here.
 // ============================================================
 
 const DEG_TO_RAD = Math.PI / 180;

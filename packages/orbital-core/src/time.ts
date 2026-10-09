@@ -1,9 +1,8 @@
 // ============================================================
 // Time — Julian date + Greenwich Mean Sidereal Time.
 //
-// gmst() is bit-identical to the pre-orbital-core "getGAST" math (frontend
-// orbital/time.ts, orbital/coordinates.ts's private copy, backend
-// analytic/astro.ts): same operation order, same constants, same modulo
+// gmst() is bit-identical to the pre-orbital-core "getGAST" math (the former
+// frontend and backend copies, now removed): same operation order, same constants, same modulo
 // normalisation. The old name "getGAST" (Greenwich APPARENT Sidereal Time)
 // was a misnomer — this is the IAU-82 GMST (MEAN sidereal time) formula.
 // There is no equation-of-the-equinoxes correction here, so it does not

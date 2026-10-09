@@ -2,7 +2,7 @@
 // Sun direction — equatorial (TEME-treated) frame.
 //
 // Bit-identical to the pre-orbital-core sunDirTeme/getSunDirection math
-// (backend analytic/astro.ts, frontend orbital/time.ts): same operation
+// (the former backend and frontend copies, now removed): same operation
 // order, same constants. No GMST rotation is applied — this is the
 // inertial-of-date direction (frames that need the Earth-fixed direction
 // rotate it themselves via rotation.ts).

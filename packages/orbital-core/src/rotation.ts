@@ -3,8 +3,8 @@
 // (z) axis by a sidereal angle θ (typically gmst(tMs)).
 //
 // EXACT current sum order preserved:
-//   - ecefToTeme matches astro.ts observerTeme / orbital/coordinates.ts
-//     getObserverScenePosition's ECEF→ECI step.
+//   - ecefToTeme matches the former observerTeme / getObserverScenePosition
+//     ECEF→ECI step (those copies are now removed).
 //   - temeToEcef matches the latDeg/lonDeg field case in
 //     query/analytic/live-source.ts and backend analytic/providers/sgp4.ts.
 // (Caching cos(theta)/sin(theta) once instead of recomputing per component is

@@ -13,8 +13,8 @@
 //     units as the old worker (positions in earth-radii, velocities in
 //     km/s / 6371), so downstream consumers (SatelliteRenderer, live-source)
 //     are unchanged.
-//   - maxTsinceMin mirrors frontend/src/orbital/propagation-limits.ts
-//     MAX_TSINCE_MIN and is passed in from JS so the window policy keeps ONE
+//   - maxTsinceMin mirrors @orbitwatch/orbital-core's propagation-window.ts
+//     (MAX_PROPAGATION_DAYS / tsinceMinutes) and is passed in from JS so the window policy keeps ONE
 //     home. Deep-space resonant orbits (GEO/GPS/Molniya) integrate from epoch
 //     in fixed steps — cost grows with |tsince| — the cap is what makes a far
 //     time-scrub unable to wedge the worker. NaN-safe: a non-finite timestamp

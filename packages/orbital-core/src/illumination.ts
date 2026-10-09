@@ -2,15 +2,14 @@
 // Illumination — sun-relative lighting: satellite eclipse (cylindrical Earth
 // umbra), observer darkness (civil twilight), and apparent phase brightness.
 //
-// isEclipsedFromComponents / getPhaseMultiplierFromComponents are copies of
-// frontend orbital/lighting.ts. The eclipse test is the CYLINDRICAL umbra
+// isEclipsedFromComponents / getPhaseMultiplierFromComponents live here (this is
+// their home). The eclipse test is the CYLINDRICAL umbra
 // model, with the cylinder radius UMBRA_RADIUS_ER (earth.ts) = WGS84
 // equatorial radius a / ER_KM = 1.0011202... earth-radii (it was a literal
 // 1.0 under the old spherical figure).
 //
-// isObserverInDarkFromComponents is ALSO kept verbatim — current render code
-// (frontend orbital/lighting.ts) calls it directly with a raw position it
-// normalizes itself. New code should prefer isObserverDarkFromUp / isObserverDark,
+// isObserverInDarkFromComponents is ALSO kept — render code calls it directly
+// with a raw position it normalizes itself. New code should prefer isObserverDarkFromUp / isObserverDark,
 // which take an already-unit "up" vector (e.g. observer.ts's ObserverFrame.up)
 // and skip the redundant normalize.
 // ============================================================
@@ -25,7 +24,6 @@ export const CIVIL_TWILIGHT_SIN = Math.sin(-6 * RAD);
 /**
  * True when a satellite at TEME position (satX,satY,satZ) (earth-radii) is in
  * Earth's cylindrical shadow, given the sun direction as a unit vector.
- * Verbatim: frontend orbital/lighting.ts isEclipsedFromComponents.
  */
 export function isEclipsedFromComponents(
   satX: number,
@@ -46,9 +44,8 @@ export function isEclipsedFromComponents(
 /**
  * True when the observer at raw position (obsX,obsY,obsZ) is in civil
  * darkness (sun elevation < -6°). Normalizes the position itself — kept
- * verbatim for the current render call sites; prefer isObserverDarkFromUp
+ * for the current render call sites; prefer isObserverDarkFromUp
  * when an already-unit "up" is available.
- * Verbatim: frontend orbital/lighting.ts isObserverInDarkFromComponents.
  */
 export function isObserverInDarkFromComponents(
   obsX: number,
@@ -71,7 +68,6 @@ export function isObserverInDarkFromComponents(
 /**
  * Apparent-phase brightness multiplier (0.1..1) for a satellite seen from an
  * observer, given the sun direction as a unit vector.
- * Verbatim: frontend orbital/lighting.ts getPhaseMultiplierFromComponents.
  */
 export function getPhaseMultiplierFromComponents(
   satX: number,
