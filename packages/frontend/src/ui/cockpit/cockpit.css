@@ -16,6 +16,10 @@
   --hud-text-dim: oklch(0.94 0.01 240 / 0.55);
   --hud-warn: oklch(0.82 0.14 55);
   --hud-good: oklch(0.82 0.14 165);
+  /* Compass strip (ground view): north red-orange, ticks and labels cool white. */
+  --hud-north: #ff6b4a;
+  --hud-compass-tick: rgba(143, 227, 255, 0.85);
+  --hud-compass-label: rgba(220, 244, 255, 0.95);
   --font-hud-mono: "JetBrains Mono", ui-monospace, monospace;
   --font-hud-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 }

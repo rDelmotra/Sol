@@ -2,15 +2,10 @@ import { Suspense, lazy, useEffect, useRef } from 'react';
 import type { Engine } from './engine/Engine';
 import { LoadingScreen } from './ui/LoadingScreen';
 import { useNextPasses } from './ui/hooks/useNextPasses';
-import { HudErrorBoundary } from './ui/cockpit/HudErrorBoundary';
 
 // The cockpit HUD (state/DECISIONS.md D8) replaces the old overlay. Split out
 // of the first-paint chunk like the old overlay was.
 const CockpitHud = lazy(() => import('./ui/cockpit/CockpitHud'));
-// Ground-mode compass: the spike kept it beside the cockpit (self-gated on the dome view).
-const CompassStrip = lazy(() =>
-  import('./ui/CompassStrip').then((m) => ({ default: m.CompassStrip })),
-);
 const DevOverlay = lazy(() => import('./ui/DevOverlay').then((m) => ({ default: m.DevOverlay })));
 
 export default function App() {
@@ -50,9 +45,6 @@ export default function App() {
       />
       <Suspense fallback={null}>
         <CockpitHud />
-        <HudErrorBoundary region="compass">
-          <CompassStrip />
-        </HudErrorBoundary>
         {import.meta.env.DEV && <DevOverlay />}
       </Suspense>
       <LoadingScreen />

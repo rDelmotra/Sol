@@ -1,12 +1,14 @@
 import './cockpit.css';
 import { AskBar } from './AskBar';
 import { AnalysisPanes } from './AnalysisPanes';
+import { CompassStrip } from './CompassStrip';
 import { Dock } from './Dock';
 import { EdgeArc } from './EdgeArc';
 import { FocusPanes } from './FocusPanes';
 import { HudErrorBoundary } from './HudErrorBoundary';
 import { HudTitle } from './HudTitle';
 import { ObjectDisc } from './ObjectDisc';
+import { PassReadout } from './PassReadout';
 import { Reticle } from './Reticle';
 import { TimeConsole } from './TimeConsole';
 import { TelemetryBL } from './TelemetryBL';
@@ -42,6 +44,11 @@ export default function CockpitHud() {
 
       <HudErrorBoundary region="object disc">
         <ObjectDisc />
+      </HudErrorBoundary>
+
+      <HudErrorBoundary region="compass">
+        <CompassStrip />
+        <PassReadout />
       </HudErrorBoundary>
 
       <HudErrorBoundary region="edge arcs">
