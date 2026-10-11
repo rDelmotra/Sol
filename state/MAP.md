@@ -103,6 +103,13 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Cockpit readout formatters and honest altitude/speed rules | `packages/frontend/src/ui/cockpit/format.ts` |
 | Cockpit keyboard map, pure | `packages/frontend/src/ui/cockpit/keys.ts` |
 | Cockpit tokens and keyframes | `packages/frontend/src/ui/cockpit/cockpit.css` |
+| Cockpit time console (clock row that unfolds into the scrubber) | `packages/frontend/src/ui/cockpit/TimeConsole.tsx` |
+| Time console parts: digit group, field chips, momentum wheel, return button | `packages/frontend/src/ui/cockpit/TimeDigit.tsx`, `TimeFieldChips.tsx`, `TimeWheel.tsx`, `ReturnToPresentButton.tsx` |
+| Time console mouse stepping (preview now, commit after 220 ms) | `packages/frontend/src/ui/cockpit/useTimeStep.ts` |
+| Time console pure helpers (digits, delta, calendar-correct wheel stepping) | `packages/frontend/src/ui/cockpit/time-console.ts` |
+| Cockpit ask bar (input, caption) and its waveform | `packages/frontend/src/ui/cockpit/AskBar.tsx`, `Waveform.tsx` |
+| Ask bar pure helpers (bar geometry, caption text) | `packages/frontend/src/ui/cockpit/ask-bar.ts` |
+| Cockpit native-button reset style | `packages/frontend/src/ui/cockpit/hudStyles.ts` |
 | GPS fix hook for the dock's location pin | `packages/frontend/src/ui/hooks/useObserverLocation.ts` |
 | Observer location acquisition and cache policy | `packages/frontend/src/ui/observer-location.ts` |
 | GLSL shaders | `packages/frontend/src/shaders/` |
