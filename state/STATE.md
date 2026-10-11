@@ -1,6 +1,6 @@
 # STATE — what is true now
 
-As of commit `4ef5100` on branch `cockpit/port`, 2026-10-11.
+As of commit `8ac0ae9` on branch `cockpit/port`, 2026-10-11.
 
 ## What Orbitwatch is
 
@@ -13,15 +13,16 @@ Backend: Express. Frontend: React, three.js, Zustand, Vite. Physics: SGP4.
 | Check | Result |
 |---|---|
 | `npm run typecheck` | clean |
-| `npm run test` | 1022 pass, 0 fail |
+| `npm run test` | 1046 pass, 0 fail |
 | Linter | none exists |
 | CI | none exists |
 
-Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 346, frontend 333, repo-level tests 11 (architecture 4, state files 7).
+Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 346, frontend 357, repo-level tests 11 (architecture 4, state files 7).
 
 ## Recent milestones (newest first)
 
-- Cockpit engine side ported (`cockpit/port`): live altitude/speed, gamepad reticle soft-lock, pass arc, free flight with gears (keyboard + gamepad), land / take off / unfollow. The cockpit UI is not ported yet.
+- Cockpit HUD frame ported (`cockpit/port`): it replaces the old overlay. Shell, telemetry corners, reticle, edge arcs + speed gauge, side panes, dock. Time console, ask bar, object disc, orbit diagram, pass readout + compass and the controls sheet are not built yet.
+- Cockpit engine side ported (`cockpit/port`): live altitude/speed, gamepad reticle soft-lock, pass arc, free flight with gears (keyboard + gamepad), land / take off / unfollow.
 - Janitor pass: dead store state and a vacuous architecture rule removed, stale comments fixed.
 - Stale worker buffers are now extrapolated (position + velocity × time) in `live-source.ts`.
 - Earth model is WGS84, in one file: `packages/orbital-core/src/earth.ts`. Done 2026-10-09.

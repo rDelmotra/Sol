@@ -98,6 +98,12 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Pass plan for the selected object (hook, mounted in App) | `packages/frontend/src/ui/hooks/useNextPasses.ts` |
 | OMM to orbit-diagram elements | `packages/frontend/src/sky/orbit-elements.ts` |
 | Overlay UI | `packages/frontend/src/ui/` |
+| Cockpit HUD (one component per file, mounted by App) | `packages/frontend/src/ui/cockpit/` |
+| Cockpit layout numbers (px, golden geometry) | `packages/frontend/src/ui/cockpit/layout.ts` |
+| Cockpit readout formatters and honest altitude/speed rules | `packages/frontend/src/ui/cockpit/format.ts` |
+| Cockpit keyboard map, pure | `packages/frontend/src/ui/cockpit/keys.ts` |
+| Cockpit tokens and keyframes | `packages/frontend/src/ui/cockpit/cockpit.css` |
+| GPS fix hook for the dock's location pin | `packages/frontend/src/ui/hooks/useObserverLocation.ts` |
 | Observer location acquisition and cache policy | `packages/frontend/src/ui/observer-location.ts` |
 | GLSL shaders | `packages/frontend/src/shaders/` |
 
