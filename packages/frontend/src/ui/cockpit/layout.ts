@@ -90,3 +90,10 @@ export const RIGHT_PANE_W = 300;
 export const PANE_STAGGER_MS = 60;
 /** OBJECT SCAN's orbit diagram slot height. */
 export const ORBIT_DIAGRAM_H = 128;
+
+// ── Dock ─────────────────────────────────────────────────────────────────────
+/** Horizontal padding inside the dock. */
+export const DOCK_PAD_X = 24;
+/** Location popover: width, and its gap above the dock's top edge. */
+export const LOCATION_POPOVER_W = 230;
+export const LOCATION_POPOVER_GAP = 6;

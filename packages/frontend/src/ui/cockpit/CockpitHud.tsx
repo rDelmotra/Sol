@@ -1,5 +1,6 @@
 import './cockpit.css';
 import { AnalysisPanes } from './AnalysisPanes';
+import { Dock } from './Dock';
 import { EdgeArc } from './EdgeArc';
 import { FocusPanes } from './FocusPanes';
 import { HudErrorBoundary } from './HudErrorBoundary';
@@ -58,6 +59,10 @@ export default function CockpitHud() {
       {/* Slot: ask bar (bottom centre, above the dock). Built in a separate step. */}
 
       <HudTitle />
+
+      <HudErrorBoundary region="dock">
+        <Dock />
+      </HudErrorBoundary>
     </div>
   );
 }
