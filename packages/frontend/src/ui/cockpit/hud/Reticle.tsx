@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useStore } from '../../../store/useStore';
+import { useStore, selectReticleCandidateName } from '../../../store/useStore';
 import { RETICLE_BOX_PX, RETICLE_RING_RADIUS_PX } from '../../../constants/reticle';
 import { altitudeReading, elementOrbit, finite, groupInt, kindCode, velStr } from '../format';
 import {
@@ -23,7 +23,7 @@ export function Reticle() {
   const liveAltitudeKm = useStore((s) => s.liveAltitudeKm);
   const liveSpeedKmS = useStore((s) => s.liveSpeedKmS);
   const gamepadConnected = useStore((s) => s.gamepadConnected);
-  const candidateName = useStore((s) => (s.gamepadConnected ? s.reticleCandidateName : null));
+  const candidateName = useStore((s) => (s.gamepadConnected ? selectReticleCandidateName(s) : null));
   const candidateCount = useStore((s) => (s.gamepadConnected ? s.reticleCandidates.length : 0));
   const meanAltKm = useMemo(() => (selected ? elementOrbit(selected).meanAltKm : null), [selected]);
 

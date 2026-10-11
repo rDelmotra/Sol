@@ -15,6 +15,7 @@ import { createHudSlice } from './hudSlice';
 
 // Public surface: importers keep using `store/useStore`; types + helpers live in ./types.
 export { isDomeView } from './types';
+export { selectReticleCandidateName } from './flightSlice';
 export type {
   AnalyticAnswer,
   LoadingPhase,

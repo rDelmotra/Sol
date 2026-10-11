@@ -7,6 +7,14 @@ function sameIndices(a: number[], b: number[]): boolean {
   return true;
 }
 
+/** Name of the highlighted reticle candidate, looked up in the catalog (null when none). */
+export function selectReticleCandidateName(state: {
+  reticleCandidateIndex: number | null;
+  catalogData: { name: string }[];
+}): string | null {
+  return state.reticleCandidateIndex !== null ? state.catalogData[state.reticleCandidateIndex]?.name ?? null : null;
+}
+
 export const createFlightSlice: Slice<FlightSlice> = (set) => ({
   cameraGear: DEFAULT_GEAR,
   cameraGearCount: GEAR_COUNT,
@@ -14,7 +22,6 @@ export const createFlightSlice: Slice<FlightSlice> = (set) => ({
   gamepadConnected: false,
   reticleCandidates: [],
   reticleCandidateIndex: null,
-  reticleCandidateName: null,
   setCameraGearState: (gear, gearCount, speedMps) =>
     set({ cameraGear: gear, cameraGearCount: gearCount, cameraSpeedMps: speedMps }),
   setGamepadConnected: (connected) => set({ gamepadConnected: connected }),
@@ -29,8 +36,7 @@ export const createFlightSlice: Slice<FlightSlice> = (set) => ({
         state.reticleCandidateIndex !== null && indices.includes(state.reticleCandidateIndex)
           ? state.reticleCandidateIndex
           : indices[0] ?? null;
-      const name = idx !== null ? state.catalogData[idx]?.name ?? null : null;
-      return { reticleCandidates: indices, reticleCandidateIndex: idx, reticleCandidateName: name };
+      return { reticleCandidates: indices, reticleCandidateIndex: idx };
     }),
   cycleReticleCandidate: (dir) =>
     set((state) => {
@@ -38,6 +44,6 @@ export const createFlightSlice: Slice<FlightSlice> = (set) => ({
       if (c.length === 0) return state;
       const pos = state.reticleCandidateIndex !== null ? c.indexOf(state.reticleCandidateIndex) : -1;
       const next = c[(((pos === -1 ? 0 : pos) + dir) % c.length + c.length) % c.length];
-      return { reticleCandidateIndex: next, reticleCandidateName: state.catalogData[next]?.name ?? null };
+      return { reticleCandidateIndex: next };
     }),
 });

@@ -1,7 +1,7 @@
 import { test, mock, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
-import { useStore, isDomeView } from './useStore';
+import { useStore, isDomeView, selectReticleCandidateName } from './useStore';
 import { emptyFacetCounts } from '../data/types';
 import type { DsoObject } from '../data/dso-types';
 
@@ -79,7 +79,6 @@ const STATE_KEYS = [
   'regimeFilters',
   'resetSimClock',
   'reticleCandidateIndex',
-  'reticleCandidateName',
   'reticleCandidates',
   'returnToPresent',
   'reviewAt',
@@ -258,7 +257,6 @@ const INITIAL_VALUES: Record<string, unknown> = {
   gamepadConnected: false,
   reticleCandidates: [],
   reticleCandidateIndex: null,
-  reticleCandidateName: null,
   analysisPanelOpen: false,
   focusPanelOpen: false,
   askBarOpen: false,
@@ -267,7 +265,7 @@ const INITIAL_VALUES: Record<string, unknown> = {
 
 test('store exposes exactly today\'s keys (state + actions)', () => {
   assert.deepEqual(Object.keys(initial).sort(), [...STATE_KEYS].sort());
-  assert.equal(STATE_KEYS.length, 156);
+  assert.equal(STATE_KEYS.length, 155);
 });
 
 test('initial values of every non-function key', () => {
@@ -568,7 +566,7 @@ test('setReticleCandidates keeps a present highlight, else takes the first; equa
   const s = useStore.getState();
   s.setReticleCandidates([1, 2]);
   assert.equal(useStore.getState().reticleCandidateIndex, 1);
-  assert.equal(useStore.getState().reticleCandidateName, 'SAT-11');
+  assert.equal(selectReticleCandidateName(useStore.getState()), 'SAT-11');
   s.cycleReticleCandidate(1);
   assert.equal(useStore.getState().reticleCandidateIndex, 2);
   s.setReticleCandidates([0, 2]);
@@ -582,7 +580,7 @@ test('setReticleCandidates keeps a present highlight, else takes the first; equa
   assert.equal(writes, 0);
   s.setReticleCandidates([]);
   assert.equal(useStore.getState().reticleCandidateIndex, null);
-  assert.equal(useStore.getState().reticleCandidateName, null);
+  assert.equal(selectReticleCandidateName(useStore.getState()), null);
 });
 
 test('cycleReticleCandidate wraps both ways and is a no-op with no candidates', () => {
@@ -593,7 +591,7 @@ test('cycleReticleCandidate wraps both ways and is a no-op with no candidates', 
   s.setReticleCandidates([0, 1, 2]);
   s.cycleReticleCandidate(-1);
   assert.equal(useStore.getState().reticleCandidateIndex, 2);
-  assert.equal(useStore.getState().reticleCandidateName, 'SAT-12');
+  assert.equal(selectReticleCandidateName(useStore.getState()), 'SAT-12');
   s.cycleReticleCandidate(1);
   assert.equal(useStore.getState().reticleCandidateIndex, 0);
 });

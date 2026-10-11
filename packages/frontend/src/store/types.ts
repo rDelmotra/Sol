@@ -189,6 +189,11 @@ export interface InteractionSlice {
   clusterScreenY: number;
   setCameraMode: (mode: CameraMode) => void;
   setTrackingStyle: (style: TrackingStyle) => void;
+  /**
+   * Coupled writes: every call clears the live altitude/speed readout (it belongs
+   * to the old object) and hides the orbit trail; a non-null index also clears
+   * selectedDso; null while following/flying also sets cameraMode 'returning'.
+   */
   setSelectedSatellite: (
     index: number | null,
     data: EnrichedTLEObject | null,
@@ -221,9 +226,9 @@ export interface ObserverSlice {
   setObserverPlaceName: (name: string | null) => void;
   /** Both halves of the pass plan in ONE write, so list and status never disagree. */
   setPassPlan: (passes: Pass[], status: PassStatus) => void;
-  /** Ground vantage forces lens 'all' to 'horizon' (see observerSlice). */
+  /** Coupled write: going to the ground also rewrites skyLens 'all' to 'horizon' in the same set (see observerSlice). */
   setVantage: (vantage: Vantage) => void;
-  /** On the ground, 'all' becomes 'horizon' (see observerSlice). */
+  /** Coupled write: on the ground 'all' is stored as 'horizon'; in orbit it sticks (see observerSlice). */
   setSkyLens: (lens: SkyLens) => void;
   setObserverHeadingRad: (rad: number) => void;
   setVisualListState: (state: VisualListState) => void;
@@ -336,11 +341,11 @@ export interface FlightSlice {
    *  one (L3/R3 cycle, A locks). */
   reticleCandidates: number[];
   reticleCandidateIndex: number | null;
-  reticleCandidateName: string | null;
   setCameraGearState: (gear: number, gearCount: number, speedMps: number) => void;
   setGamepadConnected: (connected: boolean) => void;
   /** Keeps the current highlight if still present, else picks the first. No write
-   *  when the indices equal the current list element-wise. */
+   *  when the indices equal the current list element-wise. The highlighted name
+   *  is not stored: read it with `selectReticleCandidateName`. */
   setReticleCandidates: (indices: number[]) => void;
   /** Step the highlight through reticleCandidates: -1 back, +1 forward (wraps). */
   cycleReticleCandidate: (dir: number) => void;
