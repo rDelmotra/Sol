@@ -1,6 +1,7 @@
 import './cockpit.css';
 import { HudErrorBoundary } from './HudErrorBoundary';
 import { HudTitle } from './HudTitle';
+import { Reticle } from './Reticle';
 import { TelemetryBL } from './TelemetryBL';
 import { TelemetryTR } from './TelemetryTR';
 import { VignetteAndScan } from './VignetteAndScan';
@@ -27,6 +28,10 @@ export default function CockpitHud() {
   return (
     <div style={ROOT_STYLE}>
       <VignetteAndScan />
+
+      <HudErrorBoundary region="reticle">
+        <Reticle />
+      </HudErrorBoundary>
 
       {/* Slot: time console (top-left, 24/24). Built in a separate step. */}
 
