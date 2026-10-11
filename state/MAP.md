@@ -77,6 +77,8 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | D-pad: panes, land, time-scrub field focus and step/hold, pure | `packages/frontend/src/engine/input/gamepad-scrub.ts` |
 | Gamepad time-scrub auto-repeat, pure | `packages/frontend/src/engine/input/scrub-repeat.ts` |
 | Reticle area-pick circle test and ranking, pure | `packages/frontend/src/engine/input/reticle-pick.ts` |
+| Follow to free pull-back (eases the camera out of follow range), pure step and plan | `packages/frontend/src/engine/controllers/UnfollowAnimator.ts` |
+| Land where you look / take off: ground pick plus the vantage, location and place-name store writes | `packages/frontend/src/engine/controllers/LandingController.ts` |
 | Live altitude and speed of the locked object (~4 Hz) | `packages/frontend/src/engine/controllers/LiveKinematics.ts` |
 | Land where you look: view ray to WGS84 lat/lon | `packages/frontend/src/engine/scene/ground-pick.ts` |
 | Selected object's next pass drawn across the sky | `packages/frontend/src/engine/world/layers/PassArcLayer.ts` |

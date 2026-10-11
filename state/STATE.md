@@ -1,6 +1,6 @@
 # STATE — what is true now
 
-As of commit `3355436` on branch `cockpit/port`, 2026-10-11.
+As of commit `dd4351a` on branch `cockpit/port`, 2026-10-11.
 
 ## What Orbitwatch is
 
@@ -13,14 +13,15 @@ Backend: Express. Frontend: React, three.js, Zustand, Vite. Physics: SGP4.
 | Check | Result |
 |---|---|
 | `npm run typecheck` | clean |
-| `npm run test` | 1122 pass, 0 fail |
+| `npm run test` | 1136 pass, 0 fail |
 | Linter | none exists |
 | CI | none exists |
 
-Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 346, frontend 433, repo-level tests 11 (architecture 4, state files 7).
+Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 346, frontend 447, repo-level tests 11 (architecture 4, state files 7).
 
 ## Recent milestones (newest first)
 
+- Engine-side cleanup on `cockpit/port`: pass planning is an Engine-owned `PassPlanner` (no React hook); `NavigationController` delegates to `UnfollowAnimator` and `LandingController`; reticle candidate name is a selector, not stored; per-call buffers reused; gamepad choice is stable.
 - Input bindings declared once in `packages/frontend/src/bindings/bindings.ts`: keyboard, gamepad, controls-sheet rows and HUD hints all derive from it. `FlyController` is camera-only; pad HUD buttons and the D-pad scrub moved to `pad-commands.ts` and `gamepad-scrub.ts`, both unit-tested.
 - Cockpit HUD frame ported (`cockpit/port`): it replaces the old overlay. Shell, telemetry corners, reticle, edge arcs + speed gauge, side panes, dock, time console, ask bar, object disc, orbit diagram, pass readout + compass, controls sheet. The old `ui/CompassStrip.tsx` is gone.
 - Cockpit engine side ported (`cockpit/port`): live altitude/speed, gamepad reticle soft-lock, pass arc, free flight with gears (keyboard + gamepad), land / take off / unfollow.
