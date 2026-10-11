@@ -69,12 +69,14 @@ export function discItems(
       { k: 'ROLE', v: upperText(o.purpose) },
     ],
     secondary: [
-      { k: 'COUNTRY', v: o.countryCode || '—' },
-      { k: 'LAUNCHED', v: o.launchDate ?? '—' },
-      { k: 'RCS', v: upperText(o.rcsSize) },
-      { k: 'PERIOD', v: minStr(orbit.period).toLowerCase() },
-      { k: 'INCL', v: degStr(orbit.inclination) },
+      // Listed bottom-up: the dim arcs run 214°→294°, so the first item lands
+      // lowest on screen and COUNTRY ends on top, as in the approved spike.
       { k: 'NORAD', v: String(o.noradId) },
+      { k: 'INCL', v: degStr(orbit.inclination) },
+      { k: 'PERIOD', v: minStr(orbit.period).toLowerCase() },
+      { k: 'RCS', v: upperText(o.rcsSize) },
+      { k: 'LAUNCHED', v: o.launchDate ?? '—' },
+      { k: 'COUNTRY', v: o.countryCode || '—' },
     ],
   };
 }

@@ -44,8 +44,8 @@ describe('discItems', () => {
     assert.deepEqual(primary[0], { k: 'ALTITUDE', v: '418 km' });
     assert.deepEqual(primary[1], { k: 'VELOCITY', v: '7.66 km/s' });
     assert.deepEqual(primary[2], { k: 'ROLE', v: 'SCIENCE' });
-    assert.deepEqual(secondary.map((i) => i.k), ['COUNTRY', 'LAUNCHED', 'RCS', 'PERIOD', 'INCL', 'NORAD']);
-    assert.equal(secondary[3]!.v, '92.4 min');
+    assert.deepEqual(secondary.map((i) => i.k), ['NORAD', 'INCL', 'PERIOD', 'RCS', 'LAUNCHED', 'COUNTRY']);
+    assert.equal(secondary.find((i) => i.k === 'PERIOD')!.v, '92.4 min');
   });
   it('without a live state: MEAN ALT label and a velocity dash', () => {
     const { primary } = discItems(obj(), null, null);
