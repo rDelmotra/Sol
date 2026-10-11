@@ -1,7 +1,7 @@
 import { test, mock, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
-import { useStore } from './useStore';
+import { useStore, isDomeView } from './useStore';
 import { emptyFacetCounts } from '../data/types';
 import type { DsoObject } from '../data/dso-types';
 
@@ -101,6 +101,7 @@ const STATE_KEYS = [
   'setShowOrbitTrail',
   'setSimRate',
   'setSimTimeMs',
+  'setSkyLens',
   'setTrackingStyle',
   'setTriggerFlyTo',
   'setTriggerFlyToDso',
@@ -111,7 +112,7 @@ const STATE_KEYS = [
   'setTriggerRunAnalytic',
   'setTriggerScrubPreview',
   'setTriggerSimTimeJump',
-  'setVisibilityMode',
+  'setVantage',
   'setVisibleCounts',
   'setVisibleFacetCounts',
   'setVisualListState',
@@ -135,9 +136,10 @@ const STATE_KEYS = [
   'triggerRunAnalytic',
   'triggerScrubPreview',
   'triggerSimTimeJump',
+  'skyLens',
   'typeFilters',
+  'vantage',
   'viewMode',
-  'visibilityMode',
   'visibleFacetCounts',
   'visibleRegimeCounts',
   'visualList',
@@ -179,7 +181,8 @@ const INITIAL_VALUES: Record<string, unknown> = {
   clusterScreenX: 0,
   clusterScreenY: 0,
   observerLocation: null,
-  visibilityMode: 'all',
+  vantage: 'orbit',
+  skyLens: 'all',
   observerHeadingRad: 0,
   visualList: { status: 'loading', version: null, source: null, stale: false, count: 0, updatedAt: null, message: null },
   regimeFilters: allOn(REGS),
@@ -212,7 +215,7 @@ const INITIAL_VALUES: Record<string, unknown> = {
 
 test('store exposes exactly today\'s keys (state + actions)', () => {
   assert.deepEqual(Object.keys(initial).sort(), [...STATE_KEYS].sort());
-  assert.equal(STATE_KEYS.length, 120);
+  assert.equal(STATE_KEYS.length, 122);
 });
 
 test('initial values of every non-function key', () => {
@@ -443,6 +446,36 @@ test('setHistoryCoverage stores the coverage object (null clears it)', () => {
   assert.equal(useStore.getState().historyCoverage, cov);
   s.setHistoryCoverage(null);
   assert.equal(useStore.getState().historyCoverage, null);
+});
+
+test('setVantage(ground) turns lens all into horizon; other lenses survive', () => {
+  const s = useStore.getState();
+  s.setVantage('ground');
+  assert.equal(useStore.getState().skyLens, 'horizon');
+  s.setSkyLens('radio');
+  assert.equal(useStore.getState().skyLens, 'radio');
+  s.setVantage('orbit');
+  s.setVantage('ground');
+  assert.equal(useStore.getState().skyLens, 'radio');
+});
+
+test('setSkyLens(all) on the ground becomes horizon; in orbit it sticks', () => {
+  const s = useStore.getState();
+  s.setVantage('ground');
+  s.setSkyLens('all');
+  assert.equal(useStore.getState().skyLens, 'horizon');
+  s.setVantage('orbit');
+  assert.equal(useStore.getState().skyLens, 'horizon'); // leaving the ground keeps the lens
+  s.setSkyLens('all');
+  assert.equal(useStore.getState().skyLens, 'all');
+});
+
+test('isDomeView needs free camera + ground vantage + an observer, whatever the lens', () => {
+  const loc = { lat: 0, lon: 0, alt: 0 };
+  assert.equal(isDomeView({ cameraMode: 'free', vantage: 'ground', observerLocation: loc }), true);
+  assert.equal(isDomeView({ cameraMode: 'free', vantage: 'orbit', observerLocation: loc }), false);
+  assert.equal(isDomeView({ cameraMode: 'following', vantage: 'ground', observerLocation: loc }), false);
+  assert.equal(isDomeView({ cameraMode: 'free', vantage: 'ground', observerLocation: null }), false);
 });
 
 test('setDsoEphemeris adds per-id snapshots', () => {

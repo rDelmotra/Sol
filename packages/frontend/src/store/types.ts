@@ -24,28 +24,33 @@ export interface AnalyticAnswer {
 export type LoadingPhase = 'fetching' | 'initializing' | 'propagating' | 'ready';
 export type CameraMode = 'free' | 'flying' | 'following' | 'returning';
 export type TrackingStyle = 'follow' | 'joyride';
-export type VisibilityMode = 'all' | 'radio' | 'dome';
+/** Where the camera is: flying in orbit, or standing on the ground looking up. */
+export type Vantage = 'orbit' | 'ground';
+
+/** How the observer's position filters the sky. Independent of vantage. */
+export type SkyLens =
+  | 'all'      // no observer gating — the whole catalog
+  | 'horizon'  // everything above the observer's horizon, naked-eye ones highlighted
+  | 'radio';   // above ~10° elevation, with range falloff
+
 /** Live = view-clock tracks wall-clock now; Review = scrubbed/playing away from now. */
 export type ViewMode = 'live' | 'review';
 
-/** Visibility modes that drive the observer-anchored sky camera (vs the globe view). */
-export function isObserverMode(mode: VisibilityMode): boolean {
-  return mode === 'dome';
-}
-
 /**
  * True only while the camera is actually in the dome observer view — standing on the
- * ground looking up: `free` camera + `dome` mode + a known observer location. Joyride
+ * ground looking up: `free` camera + ground vantage + a known observer location. Joyride
  * and fly-to flip `cameraMode` away from `free` (the observer rig exits), so this gates
  * the dome **visuals** (gradient sky, hidden Earth surface, compass) off and restores
  * the normal space view — keeping visuals in lockstep with the camera, no race.
  */
 export function isDomeView(s: {
   cameraMode: CameraMode;
-  visibilityMode: VisibilityMode;
+  vantage: Vantage;
   observerLocation: GeodeticObserver | null;
 }): boolean {
-  return s.cameraMode === 'free' && s.visibilityMode === 'dome' && s.observerLocation !== null;
+  // Deliberately ignores skyLens: on the ground you get sky, horizon and compass
+  // whichever lens is filtering satellites.
+  return s.cameraMode === 'free' && s.vantage === 'ground' && s.observerLocation !== null;
 }
 
 export interface VisualListState {
@@ -189,12 +194,16 @@ export interface InteractionSlice {
 
 export interface ObserverSlice {
   observerLocation: GeodeticObserver | null;
-  visibilityMode: VisibilityMode;
+  vantage: Vantage;
+  skyLens: SkyLens;
   /** Dome-mode gaze heading (radians, from North toward East); drives the HUD compass. */
   observerHeadingRad: number;
   visualList: VisualListState;
   setObserverLocation: (loc: GeodeticObserver | null) => void;
-  setVisibilityMode: (mode: VisibilityMode) => void;
+  /** Ground vantage forces lens 'all' to 'horizon' (see observerSlice). */
+  setVantage: (vantage: Vantage) => void;
+  /** On the ground, 'all' becomes 'horizon' (see observerSlice). */
+  setSkyLens: (lens: SkyLens) => void;
   setObserverHeadingRad: (rad: number) => void;
   setVisualListState: (state: VisualListState) => void;
 }

@@ -4,7 +4,7 @@ import type { SatelliteRenderer } from '../SatelliteRenderer';
 import type { DsoRenderer } from '../DsoRenderer';
 import type { GPUPicker } from '../GPUPicker';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
-import { useStore } from '../../store/useStore';
+import { useStore, isDomeView } from '../../store/useStore';
 import { dsoIndexOf } from '../../data/dso-index';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
 import { sceneToSourceInto, type SourceVec } from '../scene/frames';
@@ -117,13 +117,9 @@ export class InputManager {
 
   // ── Private ─────────────────────────────────────────────────────────────
 
-  /** Dome lens active = free camera + dome mode + a known observer location. */
+  /** Dome lens active = free camera + ground vantage + a known observer location. */
   private isDomeActive(state: ReturnType<typeof useStore.getState>): boolean {
-    return (
-      state.cameraMode === 'free' &&
-      state.visibilityMode === 'dome' &&
-      state.observerLocation !== null
-    );
+    return isDomeView(state);
   }
 
   private syncPickerUniforms(): void {
@@ -162,7 +158,7 @@ export class InputManager {
     }
     // Sky-dome look: drag rotates the gaze (OrbitControls are disabled here). Also
     // record pointerDownPos so a tap still falls through to GPU pick/select below.
-    if (state.cameraMode === 'free' && state.visibilityMode === 'dome' && state.observerLocation) {
+    if (isDomeView(state)) {
       this.domeLookPointerPos = { x: e.clientX, y: e.clientY };
     }
     this.pointerDownPos = { x: e.clientX, y: e.clientY };
@@ -215,8 +211,7 @@ export class InputManager {
     }
 
     if (this.domeLookPointerPos) {
-      const domeActive =
-        mode === 'free' && state.visibilityMode === 'dome' && state.observerLocation !== null;
+      const domeActive = isDomeView(state);
       if (!domeActive) {
         this.domeLookPointerPos = null;
       } else {

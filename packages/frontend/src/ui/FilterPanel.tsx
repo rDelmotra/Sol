@@ -318,9 +318,24 @@ export function FilterPanel() {
   const toggleRegime = useStore((s) => s.toggleRegimeFilter);
   const setCountryFilter = useStore((s) => s.setCountryFilter);
   const setColorBy = useStore((s) => s.setColorBy);
-  const visibilityMode = useStore((s) => s.visibilityMode);
+  const vantage = useStore((s) => s.vantage);
+  const skyLens = useStore((s) => s.skyLens);
   const observerLocation = useStore((s) => s.observerLocation);
-  const setVisibilityMode = useStore((s) => s.setVisibilityMode);
+  const setVantage = useStore((s) => s.setVantage);
+  const setSkyLens = useStore((s) => s.setSkyLens);
+  // Shim: this panel still speaks the old three-way mode (it is deleted in the
+  // cockpit port). all → orbit+all, radio → orbit+radio, dome → ground+horizon.
+  const visibilityMode: 'all' | 'radio' | 'dome' =
+    vantage === 'ground' ? 'dome' : skyLens === 'radio' ? 'radio' : 'all';
+  const setVisibilityMode = (mode: 'all' | 'radio' | 'dome') => {
+    if (mode === 'dome') {
+      setVantage('ground');
+      setSkyLens('horizon');
+    } else {
+      setVantage('orbit');
+      setSkyLens(mode);
+    }
+  };
   const setObserverLocation = useStore((s) => s.setObserverLocation);
   const visualList = useStore((s) => s.visualList);
 

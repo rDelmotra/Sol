@@ -55,7 +55,7 @@ export class ObserverMarkerLayer implements Layer {
     // Hide the marker only while actually in the dome view: the camera sits AT the
     // observer, so the cone would clutter the inside. During joyride/fly-to out of
     // dome the camera is in space, so the marker should show again (like any space
-    // view with an observer set) — gate on isDomeView, not visibilityMode alone.
+    // view with an observer set) — gate on isDomeView, not vantage alone.
     if (this.marker) {
       this.marker.visible = !isDomeView(useStore.getState());
     }

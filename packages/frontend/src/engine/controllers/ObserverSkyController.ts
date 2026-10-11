@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { getObserverSceneAnchor } from '../scene/sky';
 import { simClock } from '../../time/SimClock';
-import type { VisibilityMode } from '../../store/useStore';
 import type { GeodeticObserver } from '../../data/types';
 
 type ObserverLoc = GeodeticObserver;
@@ -10,8 +9,7 @@ type ObserverLoc = GeodeticObserver;
 /** Eye height above the observer's feet, in Earth radii (~16 m). */
 const EYE_HEIGHT_ER = 0.0000025;
 /**
- * Target **horizontal** FOV for the immersive dome (Star Walk-style); visual mode
- * keeps the default lens. Three.js `camera.fov` is vertical, so we derive the
+ * Target **horizontal** FOV for the immersive dome (Star Walk-style). Three.js `camera.fov` is vertical, so we derive the
  * vertical FOV from this target + the live aspect ratio (see {@link verticalFovForHorizontal}).
  * Kept moderate (not the full 90°): at 90° the cardinals 90° apart sit right at the
  * screen edges — the most `tan`-distorted zone — which makes the horizon markers
@@ -55,8 +53,6 @@ export class ObserverSkyController {
   private readonly onHeadingChange?: (headingRad: number) => void;
 
   private active = false;
-  /** True while the wide dome lens is applied (mode === 'dome'); 'visual' keeps default. */
-  private domeLens = false;
   /** Current dome **horizontal** FOV (degrees); driven by scroll/pinch zoom. */
   private domeHFovDeg = DOME_HFOV_DEG;
   /** Aspect the dome vertical FOV was last derived from; re-derived on change (resize/rotate). */
@@ -87,33 +83,27 @@ export class ObserverSkyController {
     return this.active;
   }
 
-  /** Enter observer-sky: pin the eye, disable orbit, set FOV, seed the gaze. */
-  enter(loc: ObserverLoc, mode: VisibilityMode): void {
+  /** Enter observer-sky: pin the eye, disable orbit, set the dome FOV, seed the gaze. */
+  enter(loc: ObserverLoc): void {
     this.active = true;
     this.azimuth = 0;
     this.elevation = INITIAL_ELEVATION_RAD;
     this.domeHFovDeg = DOME_HFOV_DEG; // fresh entry starts at the default lens
     this.onHeadingChange?.(this.azimuth);
     this.controls.enabled = false;
-    this.domeLens = mode === 'dome';
-    if (this.domeLens) {
-      this.applyDomeFov();
-    } else {
-      this.setFov(this.originalFov);
-    }
+    this.applyDomeFov();
     this.applyToCamera(loc);
   }
 
   /**
    * Leave observer-sky: restore the default FOV and world-up. Called both when the
-   * user leaves dome/visual mode AND when the camera leaves the free view (fly-to /
+   * user leaves ground vantage AND when the camera leaves the free view (fly-to /
    * joyride) — so those never inherit the dome lens or the tilted local-zenith up.
    * (Nav re-enables controls via its cameraMode machine.)
    */
   exit(): void {
     if (!this.active) return;
     this.active = false;
-    this.domeLens = false;
     this.setFov(this.originalFov);
     this.camera.up.set(0, 1, 0);
   }
@@ -140,7 +130,7 @@ export class ObserverSkyController {
     this.controls.enabled = false;
     // Re-derive the dome's vertical FOV if the aspect changed (window resize /
     // device rotation). The setFov equality guard makes the steady state a no-op.
-    if (this.domeLens && this.camera.aspect !== this.lastAspect) {
+    if (this.camera.aspect !== this.lastAspect) {
       this.applyDomeFov();
     }
     this.applyToCamera(loc);
@@ -188,10 +178,10 @@ export class ObserverSkyController {
   /**
    * Scroll/pinch zoom — the Star Walk lens. `factor < 1` narrows the FOV (zoom in),
    * `factor > 1` widens it (zoom out); the horizontal FOV is clamped to
-   * [{@link DOME_HFOV_MIN_DEG}, {@link DOME_HFOV_MAX_DEG}]. No-op outside dome mode.
+   * [{@link DOME_HFOV_MIN_DEG}, {@link DOME_HFOV_MAX_DEG}]. No-op unless active.
    */
   zoom(factor: number): void {
-    if (!this.active || !this.domeLens) return;
+    if (!this.active) return;
     this.domeHFovDeg = THREE.MathUtils.clamp(
       this.domeHFovDeg * factor,
       DOME_HFOV_MIN_DEG,

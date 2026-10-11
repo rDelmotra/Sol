@@ -12,13 +12,14 @@ import { createHistorySlice } from './historySlice';
 import { createDsoSlice } from './dsoSlice';
 
 // Public surface: importers keep using `store/useStore`; types + helpers live in ./types.
-export { isObserverMode, isDomeView } from './types';
+export { isDomeView } from './types';
 export type {
   AnalyticAnswer,
   LoadingPhase,
   CameraMode,
   TrackingStyle,
-  VisibilityMode,
+  Vantage,
+  SkyLens,
   ViewMode,
   VisualListState,
   ColorBy,

@@ -4,7 +4,7 @@ import { DevValidation } from '../../DevValidation';
 import { Sgp4WorkerClient, type Sgp4PositionResult } from '../../tle/Sgp4WorkerClient';
 import { getSunDirection, getObserverSceneAnchor } from '../../scene/sky';
 import { simClock } from '../../../time/SimClock';
-import { useStore, isObserverMode, type VisibilityMode } from '../../../store/useStore';
+import { useStore } from '../../../store/useStore';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
@@ -116,7 +116,8 @@ export class SatellitesLayer implements Layer {
     let prevAnalytic = s0.analyticFilter;
     let prevReg = s0.regimeFilters;
     let prevColorBy = s0.colorBy;
-    let prevMode = s0.visibilityMode;
+    let prevVantage = s0.vantage;
+    let prevLens = s0.skyLens;
     let prevObs = s0.observerLocation;
     this.filterUnsub = useStore.subscribe((state) => {
       const filtersChanged =
@@ -132,11 +133,12 @@ export class SatellitesLayer implements Layer {
         state.regimeFilters !== prevReg;
       const colorByChanged = state.colorBy !== prevColorBy;
       const obsLocChanged = state.observerLocation !== prevObs;
-      const modeChanged = state.visibilityMode !== prevMode;
-      if (!filtersChanged && !colorByChanged && !obsLocChanged && !modeChanged) {
+      const vantageChanged = state.vantage !== prevVantage;
+      const lensChanged = state.skyLens !== prevLens;
+      if (!filtersChanged && !colorByChanged && !obsLocChanged && !vantageChanged && !lensChanged) {
         return;
       }
-      const fromMode = prevMode;
+      const fromVantage = prevVantage;
       prevType = state.typeFilters;
       prevStatus = state.statusFilters;
       prevSector = state.sectorFilters;
@@ -148,7 +150,8 @@ export class SatellitesLayer implements Layer {
       prevAnalytic = state.analyticFilter;
       prevReg = state.regimeFilters;
       prevColorBy = state.colorBy;
-      prevMode = state.visibilityMode;
+      prevVantage = state.vantage;
+      prevLens = state.skyLens;
       prevObs = state.observerLocation;
 
       this.guard('filter', () => {
@@ -156,8 +159,8 @@ export class SatellitesLayer implements Layer {
         if (colorByChanged && this._renderer) {
           this._renderer.recolorBy(this.catalog, state.colorBy);
         }
-        // Filter / mode / observer changes recompute the visible set + counts.
-        if (filtersChanged || modeChanged || obsLocChanged) {
+        // Filter / vantage / lens / observer changes recompute the visible set + counts.
+        if (filtersChanged || vantageChanged || lensChanged || obsLocChanged) {
           this.recomputeVisibleCounts(state);
         }
 
@@ -165,19 +168,15 @@ export class SatellitesLayer implements Layer {
           callbacks.onObserverChange(state.observerLocation);
         }
 
-        if (
-          isObserverMode(state.visibilityMode) &&
-          state.observerLocation &&
-          (modeChanged || obsLocChanged)
-        ) {
-          // Covers entering visual/dome AND switching between them (re-enter
-          // re-seeds the rig + FOV for the new mode).
-          callbacks.onEnterObserverSky(state.observerLocation, state.visibilityMode);
-        } else if (modeChanged && isObserverMode(fromMode) && !isObserverMode(state.visibilityMode)) {
+        if (state.vantage === 'ground' && state.observerLocation && (vantageChanged || obsLocChanged)) {
+          // Covers entering ground vantage AND the observer moving while grounded
+          // (re-enter re-seeds the rig + FOV).
+          callbacks.onEnterObserverSky(state.observerLocation);
+        } else if (vantageChanged && fromVantage === 'ground' && state.vantage !== 'ground') {
           callbacks.onExitObserverSky();
         }
 
-        if (state.showOrbitTrail && (modeChanged || obsLocChanged)) {
+        if (state.showOrbitTrail && (vantageChanged || lensChanged || obsLocChanged)) {
           callbacks.onTrailRefresh();
         }
       });
@@ -262,7 +261,7 @@ export class SatellitesLayer implements Layer {
             result.objectCount,
             observerAnchor,
             sunDir,
-            state.visibilityMode,
+            state.skyLens,
             this.catalog,
             state,
             visualNoradIds,
@@ -273,7 +272,7 @@ export class SatellitesLayer implements Layer {
             result.objectCount,
             observerAnchor,
             sunDir,
-            state.visibilityMode,
+            state.skyLens,
             this.catalog,
             state,
             visualNoradIds,
@@ -320,7 +319,7 @@ export class SatellitesLayer implements Layer {
       state,
       observerAnchor,
       sunDir,
-      state.visibilityMode,
+      state.skyLens,
       this.callbacks.getVisualNoradIds(),
     );
     const store = useStore.getState();
@@ -340,7 +339,7 @@ export class SatellitesLayer implements Layer {
     state: ReturnType<typeof useStore.getState>,
     date: Date,
   ): { position: THREE.Vector3; up: THREE.Vector3 } | null {
-    if (state.visibilityMode === 'all' || !state.observerLocation) {
+    if (state.skyLens === 'all' || !state.observerLocation) {
       return null;
     }
     return getObserverSceneAnchor(
@@ -495,10 +494,10 @@ export interface SatellitesLayerCallbacks {
   onTrailRefresh: () => void;
   /** Observer location changed → reposition the observer marker. */
   onObserverChange: (loc: ObserverLoc | null) => void;
-  /** Entered visual/dome (or moved, or switched between them) with an observer set
-   *  → enter the observer-sky rig for that mode. */
-  onEnterObserverSky: (loc: ObserverLoc, mode: VisibilityMode) => void;
-  /** Left visual/dome for a non-observer mode → return the camera home. */
+  /** Entered ground vantage (or the observer moved while grounded) → enter the
+   *  observer-sky rig. */
+  onEnterObserverSky: (loc: ObserverLoc) => void;
+  /** Left ground vantage → return the camera home. */
   onExitObserverSky: () => void;
   /**
    * Fires once per SGP4 worker tick (~1 Hz), right after `latestBuffers` is

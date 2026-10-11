@@ -291,7 +291,7 @@ export class Engine {
                 this.horizonLayer.setLocation(loc),
               );
             },
-            onEnterObserverSky: (loc, mode) => this.nav.enterObserverSky(loc, mode),
+            onEnterObserverSky: (loc) => this.nav.enterObserverSky(loc),
             onExitObserverSky: () => this.nav.exitObserverSky(),
             onTick: () => this.tickResidentSet(),
           }),

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CameraAnimator, HOME_POSITION, HOME_TARGET } from './CameraAnimator';
 import { ObserverSkyController } from './ObserverSkyController';
-import { useStore, isObserverMode, type TrackingStyle, type VisibilityMode } from '../../store/useStore';
+import { useStore, type TrackingStyle } from '../../store/useStore';
 import { dsoIndexOf } from '../../data/dso-index';
 import type { TrackingSource } from './TrackingSource';
 import type { GeodeticObserver } from '../../data/types';
@@ -87,10 +87,10 @@ export class NavigationController {
           this.returnEndPos = null;
         }
 
-        // Still in dome/visual? Re-establish the observer-sky rig (re-pins the eye +
+        // Still on the ground? Re-establish the observer-sky rig (re-pins the eye +
         // its FOV) so it survives a joyride/fly-to round-trip.
-        if (isObserverMode(state.visibilityMode) && state.observerLocation) {
-          this.observerSky.enter(state.observerLocation, state.visibilityMode);
+        if (state.vantage === 'ground' && state.observerLocation) {
+          this.observerSky.enter(state.observerLocation);
         }
       }
 
@@ -364,12 +364,12 @@ export class NavigationController {
     }
   }
 
-  /** Enter the observer-sky rig for visual/dome mode (eye pinned + alt-az look). */
-  enterObserverSky(loc: GeodeticObserver, mode: VisibilityMode): void {
+  /** Enter the observer-sky rig for ground vantage (eye pinned + alt-az look). */
+  enterObserverSky(loc: GeodeticObserver): void {
     const store = useStore.getState();
     if (store.cameraMode !== 'free') {
       // The cameraMode → 'free' transition re-establishes the rig (see the sub
-      // above), reading the now-current observer mode + location — so don't also
+      // above), reading the now-current vantage + location — so don't also
       // enter here, or it would double-fire.
       store.setCameraMode('free');
       return;
@@ -377,7 +377,7 @@ export class NavigationController {
     this.cameraController.cancel();
     this.arrivalTime = -1;
     this.returnEndPos = null;
-    this.observerSky.enter(loc, mode);
+    this.observerSky.enter(loc);
   }
 
   /** Leave the observer-sky rig (mode → non-observer) and return the camera home. */
