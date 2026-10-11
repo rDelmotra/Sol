@@ -56,5 +56,6 @@ Test counts by package: contracts 12, orbital-core 104, analytic 201, backend 34
 - `spike/god1` — current working branch.
 - `main` — release branch, behind this one.
 - `spike/takram` — earlier Takram (tiled Earth) spike. Not merged.
-- `claude/ui-run-spike-c350c8` — rejected cockpit UI. Kept only to cherry-pick from.
+- `claude/ui-run-spike-c350c8` — cockpit UI spike. Visual reference for `cockpit/port` (see D8). Not merged.
+- `cockpit/port` — the cockpit HUD being rebuilt on top of `spike/god1`.
 - `experiment/nl-to-ir` — its history contains a leaked key. Do not push or merge it.
