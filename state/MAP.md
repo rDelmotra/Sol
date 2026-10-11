@@ -110,6 +110,18 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Cockpit ask bar (input, caption) and its waveform | `packages/frontend/src/ui/cockpit/AskBar.tsx`, `Waveform.tsx` |
 | Ask bar pure helpers (bar geometry, caption text) | `packages/frontend/src/ui/cockpit/ask-bar.ts` |
 | Cockpit native-button reset style | `packages/frontend/src/ui/cockpit/hudStyles.ts` |
+| Cockpit object disc (sector ring and nine fields around the lock) | `packages/frontend/src/ui/cockpit/ObjectDisc.tsx` |
+| Object disc geometry and field text, pure | `packages/frontend/src/ui/cockpit/disc.ts` |
+| Element size hook (ResizeObserver) for HUD layers | `packages/frontend/src/ui/cockpit/useElementSize.ts` |
+| Orbit diagram in OBJECT SCAN (3D, spins by writing SVG attributes from one rAF loop) | `packages/frontend/src/ui/cockpit/OrbitDiagram.tsx` |
+| Orbit diagram geometry (once per object, once per frame), pure | `packages/frontend/src/ui/cockpit/orbit-diagram.ts` |
+| Cockpit pass readout (top 66, says why when empty) | `packages/frontend/src/ui/cockpit/PassReadout.tsx` |
+| Pass readout text: one 10 degree threshold, LOW band, clipped ends, pure | `packages/frontend/src/ui/cockpit/pass-readout.ts` |
+| Cockpit compass strip (ground view only) | `packages/frontend/src/ui/cockpit/CompassStrip.tsx` |
+| Compass geometry and rise / set bearings, pure | `packages/frontend/src/ui/cockpit/compass.ts` |
+| Controls sheet (keyboard / gamepad diagram / mouse, opens on `controlsSheetOpen`) | `packages/frontend/src/ui/cockpit/ControlsSheet.tsx` |
+| Gamepad diagram art | `packages/frontend/src/ui/cockpit/GamepadDiagram.tsx` |
+| Controls sheet rows (the real bindings) and diagram part looks, pure | `packages/frontend/src/ui/cockpit/controls-sheet.ts` |
 | GPS fix hook for the dock's location pin | `packages/frontend/src/ui/hooks/useObserverLocation.ts` |
 | Observer location acquisition and cache policy | `packages/frontend/src/ui/observer-location.ts` |
 | GLSL shaders | `packages/frontend/src/shaders/` |

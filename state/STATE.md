@@ -13,15 +13,15 @@ Backend: Express. Frontend: React, three.js, Zustand, Vite. Physics: SGP4.
 | Check | Result |
 |---|---|
 | `npm run typecheck` | clean |
-| `npm run test` | 1056 pass, 0 fail |
+| `npm run test` | 1089 pass, 0 fail |
 | Linter | none exists |
 | CI | none exists |
 
-Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 346, frontend 367, repo-level tests 11 (architecture 4, state files 7).
+Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 346, frontend 400, repo-level tests 11 (architecture 4, state files 7).
 
 ## Recent milestones (newest first)
 
-- Cockpit HUD frame ported (`cockpit/port`): it replaces the old overlay. Shell, telemetry corners, reticle, edge arcs + speed gauge, side panes, dock. Time console, ask bar, object disc, orbit diagram, pass readout + compass and the controls sheet are not built yet.
+- Cockpit HUD frame ported (`cockpit/port`): it replaces the old overlay. Shell, telemetry corners, reticle, edge arcs + speed gauge, side panes, dock, time console, ask bar, object disc, orbit diagram, pass readout + compass, controls sheet. The old `ui/CompassStrip.tsx` is gone.
 - Cockpit engine side ported (`cockpit/port`): live altitude/speed, gamepad reticle soft-lock, pass arc, free flight with gears (keyboard + gamepad), land / take off / unfollow.
 - Janitor pass: dead store state and a vacuous architecture rule removed, stale comments fixed.
 - Stale worker buffers are now extrapolated (position + velocity × time) in `live-source.ts`.
