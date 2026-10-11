@@ -1,4 +1,5 @@
 import './cockpit.css';
+import { AskBar } from './AskBar';
 import { AnalysisPanes } from './AnalysisPanes';
 import { Dock } from './Dock';
 import { EdgeArc } from './EdgeArc';
@@ -59,7 +60,9 @@ export default function CockpitHud() {
         <TelemetryBL />
       </HudErrorBoundary>
 
-      {/* Slot: ask bar (bottom centre, above the dock). Built in a separate step. */}
+      <HudErrorBoundary region="ask bar">
+        <AskBar />
+      </HudErrorBoundary>
 
       <HudTitle />
 
