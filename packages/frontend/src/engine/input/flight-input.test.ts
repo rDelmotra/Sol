@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { BTN, CHORD_WINDOW_MS, PadMapper, SELECT_HOLD_MS, classifyKey, type PadSnapshot } from './flight-input';
+import { BTN, CHORD_WINDOW_MS, PadMapper, SELECT_HOLD_MS, chooseActivePad, classifyKey, emptySnapshot, snapshotOf, type PadSnapshot } from './flight-input';
 
 function pad(down: number[] = [], extra: Partial<PadSnapshot> = {}): PadSnapshot {
   const pressed = Array.from({ length: 17 }, (_, i) => down.includes(i));
@@ -84,5 +84,43 @@ describe('PadMapper', () => {
     assert.equal(f.move.vert, 1);
     assert.equal(f.move.z, 1);
     assert.equal(f.look.x, 0.125);
+  });
+});
+
+describe('chooseActivePad', () => {
+  const p = (index: number) => ({ index });
+  it('picks the first pad when none is active (no connect event)', () => {
+    assert.equal(chooseActivePad([null, p(1), p(2)], null), 1);
+    assert.equal(chooseActivePad([null, null], null), null);
+    assert.equal(chooseActivePad([], null), null);
+  });
+  it('keeps the active pad when a second pad appears, even one in an earlier slot', () => {
+    assert.equal(chooseActivePad([p(0), p(1)], 1), 1);
+  });
+  it('hands over only once the active pad is gone', () => {
+    assert.equal(chooseActivePad([p(0), null], 1), 0);
+    assert.equal(chooseActivePad([null, null], 1), null);
+  });
+});
+
+describe('snapshotOf', () => {
+  const gp = (n: number, axes: number[]) =>
+    ({
+      buttons: Array.from({ length: n }, (_, i) => ({ pressed: i % 2 === 0, value: i / 10 })),
+      axes,
+    }) as unknown as Gamepad;
+
+  it('fills the given snapshot in place and resizes it', () => {
+    const into = emptySnapshot();
+    const pressed = into.pressed;
+    const out = snapshotOf(gp(3, [0.5, -0.5]), into);
+    assert.equal(out, into);
+    assert.equal(out.pressed, pressed); // same array object, no per-frame allocation
+    assert.deepEqual(out.pressed, [true, false, true]);
+    assert.deepEqual(out.values, [0, 0.1, 0.2]);
+    assert.deepEqual(out.axes, [0.5, -0.5]);
+    snapshotOf(gp(1, []), into);
+    assert.deepEqual(into.pressed, [true]);
+    assert.deepEqual(into.axes, []);
   });
 });

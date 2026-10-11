@@ -8,7 +8,7 @@ import {
   type FlightKeyAction,
   type PadAction,
 } from '../../bindings/bindings';
-import { hasModifier, isTypingOrModified } from '../../bindings/key-guards';
+import { hasModifier, isTypingOrModified, type TypingGuardEvent } from '../../bindings/key-guards';
 import { FLIGHT, curve, triggerLinear, type MoveIntent } from '../controllers/flight-model';
 
 export { BTN };
@@ -28,13 +28,7 @@ export type { PadAction };
 export type KeyAction = FlightKeyAction;
 
 /** What a keydown means for flight: an action, a held move/look key, or nothing. */
-export function classifyKey(e: {
-  key: string;
-  metaKey: boolean;
-  ctrlKey: boolean;
-  altKey: boolean;
-  target: unknown;
-}): { action: KeyAction } | { hold: string; look: boolean } | null {
+export function classifyKey(e: TypingGuardEvent & { key: string }): { action: KeyAction } | { hold: string; look: boolean } | null {
   // Browser/OS shortcuts (Cmd+C, Ctrl+R, Alt+…) and typing are never flight input.
   if (isTypingOrModified(e)) return null;
   const k = e.key.toLowerCase();
@@ -147,12 +141,44 @@ export interface PadFrame {
   dpadVertical: number;
 }
 
-export function snapshotOf(gp: Gamepad): PadSnapshot {
-  return {
-    pressed: gp.buttons.map((b) => b.pressed),
-    values: gp.buttons.map((b) => b.value),
-    axes: Array.from(gp.axes),
-  };
+/** A snapshot with no buttons or axes, to be filled by {@link snapshotOf}. */
+export function emptySnapshot(): PadSnapshot {
+  return { pressed: [], values: [], axes: [] };
+}
+
+/**
+ * Copy a Gamepad's state into `into` (per frame: no new arrays). With no
+ * `into`, returns a fresh snapshot.
+ */
+export function snapshotOf(gp: Gamepad, into: PadSnapshot = emptySnapshot()): PadSnapshot {
+  const n = gp.buttons.length;
+  into.pressed.length = n;
+  into.values.length = n;
+  for (let i = 0; i < n; i++) {
+    into.pressed[i] = gp.buttons[i].pressed;
+    into.values[i] = gp.buttons[i].value;
+  }
+  into.axes.length = gp.axes.length;
+  for (let i = 0; i < gp.axes.length; i++) into.axes[i] = gp.axes[i];
+  return into;
+}
+
+/**
+ * Which pad drives the game. Keeps `activeIndex` for as long as that slot still
+ * holds a pad, so a second pad connecting (or the first one's slot staying put)
+ * never steals control. Only when the active pad is gone does the first
+ * remaining pad take over. Pure; `pads` is what `navigator.getGamepads()` returns.
+ */
+export function chooseActivePad(
+  pads: ArrayLike<{ index: number } | null>,
+  activeIndex: number | null,
+): number | null {
+  if (activeIndex !== null && pads[activeIndex]) return activeIndex;
+  for (let i = 0; i < pads.length; i++) {
+    const p = pads[i];
+    if (p) return p.index;
+  }
+  return null;
 }
 
 const EDGE_ACTIONS = PAD_EDGE_ACTIONS;
@@ -164,7 +190,7 @@ const START = padButton('start');
 
 /** Per-frame gamepad mapper: edges, chord and Select timing. Pure. */
 export class PadMapper {
-  private prev: boolean[] = [];
+  private readonly prev: boolean[] = [];
   private l3PendingMs: number | null = null;
   private r3PendingMs: number | null = null;
   private selectHeldMs = 0;
@@ -186,7 +212,8 @@ export class PadMapper {
     this.stepChord(down(L3), down(R3), edge(L3), edge(R3), dtMs, actions);
     this.stepSelect(down(SELECT), dtMs, actions);
 
-    this.prev = s.pressed.slice();
+    this.prev.length = s.pressed.length;
+    for (let i = 0; i < s.pressed.length; i++) this.prev[i] = s.pressed[i];
     const ax = (i: number) => s.axes[i] ?? 0;
     const val = (i: number) => s.values[i] ?? 0;
     return {
@@ -265,7 +292,7 @@ export class PadMapper {
   }
 
   reset(): void {
-    this.prev = [];
+    this.prev.length = 0;
     this.l3PendingMs = null;
     this.r3PendingMs = null;
     this.selectHeldMs = 0;

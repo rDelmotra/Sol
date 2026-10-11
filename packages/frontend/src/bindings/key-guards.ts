@@ -23,8 +23,10 @@ export function hasModifier(e: ModifierState): boolean {
 
 /** The key landed in a text field (input, textarea, select, contenteditable). */
 export function isTextTarget(target: unknown): boolean {
-  const t = (target ?? null) as { tagName?: string; isContentEditable?: boolean } | null;
-  return !!t && (TEXT_TAGS.has(t.tagName ?? '') || t.isContentEditable === true);
+  if (typeof target !== 'object' || target === null) return false;
+  const tagName = 'tagName' in target ? target.tagName : undefined;
+  const editable = 'isContentEditable' in target && target.isContentEditable === true;
+  return (typeof tagName === 'string' && TEXT_TAGS.has(tagName)) || editable;
 }
 
 /** True when a keydown must NOT drive flight or the HUD: a modifier chord or typing. */

@@ -3,7 +3,7 @@ import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js
 import { useStore } from '../../store/useStore';
 import { simClock } from '../../time/SimClock';
 import { isDpadAction, isFlightPadAction, type FlightPadAction } from '../../bindings/bindings';
-import { KeyboardFlightInput, PadMapper, snapshotOf, type KeyAction, type PadFrame } from '../input/flight-input';
+import { KeyboardFlightInput, PadMapper, chooseActivePad, emptySnapshot, snapshotOf, type KeyAction, type PadFrame } from '../input/flight-input';
 import { GamepadScrubDriver } from '../input/gamepad-scrub';
 import { PadCommandRouter, type PadEffects } from '../input/pad-commands';
 import { FLIGHT, FlightModel, GEAR_COUNT, proximityScales, rightVector, shiftGear } from './flight-model';
@@ -48,7 +48,9 @@ export class FlyController {
   private readonly pad = new PadMapper();
   private readonly hud = new PadCommandRouter(() => useStore.getState());
   private readonly scrub: GamepadScrubDriver;
+  /** Slot of the pad in use; kept until that pad disconnects (see chooseActivePad). */
   private gamepadIndex: number | null = null;
+  private readonly padSnapshot = emptySnapshot();
   private gamepadWasConnected = false;
 
   private readonly forward = new THREE.Vector3();
@@ -67,8 +69,6 @@ export class FlyController {
       wallNow: () => Date.now(),
       toggleLanding: () => this.nav.toggleLanding(),
     });
-    window.addEventListener('gamepadconnected', this.onPadConnected);
-    window.addEventListener('gamepaddisconnected', this.onPadDisconnected);
     this.publishGear();
   }
 
@@ -76,7 +76,7 @@ export class FlyController {
   update(dt: number): void {
     const gp = this.readGamepad();
     this.syncGamepadConnected(gp);
-    const frame = gp ? this.pad.step(snapshotOf(gp), dt * 1000) : null;
+    const frame = gp ? this.pad.step(snapshotOf(gp, this.padSnapshot), dt * 1000) : null;
     if (gp && frame) this.applyPad(gp, frame, dt);
 
     const store = useStore.getState();
@@ -178,10 +178,10 @@ export class FlyController {
   private readGamepad(): Gamepad | null {
     const pads = navigator.getGamepads?.();
     if (!pads) return null;
-    // Some browsers never fire 'gamepadconnected' for a pad already in use when the
-    // tab loaded, so fall back to the first pad found.
-    const byIndex = this.gamepadIndex !== null ? pads[this.gamepadIndex] : null;
-    return byIndex ?? Array.from(pads).find((p): p is Gamepad => p !== null) ?? null;
+    // Polled, not event-driven: some browsers never fire 'gamepadconnected' for a
+    // pad already in use when the tab loaded. A second pad never steals the first.
+    this.gamepadIndex = chooseActivePad(pads, this.gamepadIndex);
+    return this.gamepadIndex !== null ? pads[this.gamepadIndex] : null;
   }
 
   private syncGamepadConnected(gp: Gamepad | null): void {
@@ -194,14 +194,6 @@ export class FlyController {
     store.setGamepadConnected(connected);
     if (!connected) store.setReticleCandidates([]);
   }
-
-  private onPadConnected = (e: GamepadEvent): void => {
-    this.gamepadIndex = e.gamepad.index;
-  };
-
-  private onPadDisconnected = (e: GamepadEvent): void => {
-    if (this.gamepadIndex === e.gamepad.index) this.gamepadIndex = null;
-  };
 
   /** Short rumble; no-op where unsupported. weak = right motor, strong = left. */
   private rumble(gp: Gamepad, durationMs: number, weakMagnitude: number, strongMagnitude: number): void {
@@ -235,7 +227,5 @@ export class FlyController {
 
   dispose(): void {
     this.keyboard.dispose();
-    window.removeEventListener('gamepadconnected', this.onPadConnected);
-    window.removeEventListener('gamepaddisconnected', this.onPadDisconnected);
   }
 }

@@ -9,6 +9,13 @@ const PICK_TARGET_SIZE = 512;
 const SAMPLE_RADIUS = 2; // 5×5 pixel area
 const SAMPLE_SIZE = SAMPLE_RADIUS * 2 + 1;
 
+/** A named geometry attribute that must be a plain (non-interleaved) BufferAttribute. */
+function requireBufferAttribute(geometry: THREE.BufferGeometry, name: string): THREE.BufferAttribute {
+  const attr = geometry.getAttribute(name);
+  if (attr instanceof THREE.BufferAttribute) return attr;
+  throw new Error(`GPUPicker: geometry attribute '${name}' is missing or interleaved`);
+}
+
 export class GPUPicker {
   private readonly renderTarget: THREE.WebGLRenderTarget;
   private readonly pickScene: THREE.Scene;
@@ -20,6 +27,9 @@ export class GPUPicker {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly pixelBuffer = new Uint8Array(4);
   private readonly areaBuffer = new Uint8Array(SAMPLE_SIZE * SAMPLE_SIZE * 4);
+  /** pickAreaRadius scratch: grows to the largest circle asked for, then is reused. */
+  private radiusBuffer = new Uint8Array(0);
+  private readonly closestDistSq = new Map<number, number>();
   private catalogSize: number;  // TLE-only count (mutable: changes on a history re-seed)
   private dsoCount = 0;                  // DSO count, set after init
   private dsoPickMesh: THREE.Points | null = null;
@@ -35,8 +45,8 @@ export class GPUPicker {
     this.renderer = renderer;
     this.camera = camera;
     this.catalogSize = catalogSize;
-    this.sizeAttr = satelliteRenderer.mesh.geometry.getAttribute('size') as THREE.BufferAttribute;
-    this.posAttr = satelliteRenderer.mesh.geometry.getAttribute('currentPosition') as THREE.BufferAttribute;
+    this.sizeAttr = requireBufferAttribute(satelliteRenderer.mesh.geometry, 'size');
+    this.posAttr = requireBufferAttribute(satelliteRenderer.mesh.geometry, 'currentPosition');
 
     this.renderTarget = new THREE.WebGLRenderTarget(PICK_TARGET_SIZE, PICK_TARGET_SIZE, {
       minFilter: THREE.NearestFilter,
@@ -187,7 +197,8 @@ export class GPUPicker {
    * like {@link pickArea}: the reticle cycles whatever is physically nearest you
    * first. DSOs (no entry in the TLE position buffer) rank as nearest.
    *
-   * Allocates a buffer per call sized to the circle; the caller throttles (~10 Hz).
+   * Reuses one pixel buffer and one distance map across calls (grown to the
+   * largest circle seen); the caller throttles (~10 Hz).
    */
   pickAreaRadius(screenX: number, screenY: number, canvasWidth: number, canvasHeight: number, radiusPx: number): number[] {
     const scaleX = PICK_TARGET_SIZE / canvasWidth;
@@ -206,12 +217,15 @@ export class GPUPicker {
     const w = x1 - x0 + 1;
     const h = y1 - y0 + 1;
 
-    const buffer = new Uint8Array(w * h * 4);
+    const need = w * h * 4;
+    if (this.radiusBuffer.length < need) this.radiusBuffer = new Uint8Array(need);
+    const buffer = this.radiusBuffer;
     this.renderer.readRenderTargetPixels(this.renderTarget, x0, y0, w, h, buffer);
     this.restoreState();
 
     // Each hit's closest pixel to the centre, in squared CSS px; pixels outside the circle are skipped.
-    const closestDistSq = new Map<number, number>();
+    const closestDistSq = this.closestDistSq;
+    closestDistSq.clear();
     for (let iy = 0; iy < h; iy++) {
       for (let ix = 0; ix < w; ix++) {
         const d2 = cssDistSqInCircle(x0 + ix - pickX, y0 + iy - pickY, scaleX, scaleY, radiusPx);
