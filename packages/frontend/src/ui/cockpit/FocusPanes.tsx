@@ -6,13 +6,13 @@ import { ageString, kindCode } from './format';
 import { GlassPane } from './GlassPane';
 import { KV } from './KV';
 import { ORBIT_DIAGRAM_H, PANE_EDGE_INSET, PANE_GAP, PANE_STAGGER_MS, RIGHT_PANE_W } from './layout';
+import { OrbitDiagram } from './OrbitDiagram';
 import { PaneHeader } from './PaneHeader';
 import { TelemetryPane } from './TelemetryPane';
 
 /**
- * Right stack (E): OBJECT SCAN (orbit diagram slot + scan sweep), TELEMETRY,
- * ACTIONS. The orbit diagram is a later step; its 128 px slot is kept so the
- * stack already has its final size.
+ * Right stack (E): OBJECT SCAN (orbit diagram + scan sweep), TELEMETRY,
+ * ACTIONS. The diagram's slot is ORBIT_DIAGRAM_H (128 px) tall.
  */
 export function FocusPanes() {
   const open = useStore((s) => s.focusPanelOpen);
@@ -43,7 +43,7 @@ export function FocusPanes() {
             <PaneHeader label="OBJECT SCAN" value={`NORAD ${selected.noradId}`} />
             <div style={{ padding: '12px' }}>
               <div style={{ position: 'relative', margin: '0 auto', height: ORBIT_DIAGRAM_H, width: '100%' }}>
-                {/* Slot: orbit diagram (ui/OrbitDiagram in the spike). Built in a separate step. */}
+                <OrbitDiagram object={selected} />
                 <div
                   className="hud-loop"
                   style={{
