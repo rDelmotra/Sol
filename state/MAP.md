@@ -69,9 +69,12 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Layer registry and failure isolation | `packages/frontend/src/engine/world/World.ts` |
 | Layer contract | `packages/frontend/src/engine/render/Layer.ts` |
 | Camera, timeline, tracking controllers | `packages/frontend/src/engine/controllers/` |
-| Free flight glue (keyboard, gamepad, pad time scrub) | `packages/frontend/src/engine/controllers/FlyController.ts` |
+| Free flight, camera only; hands HUD and time buttons to the two below | `packages/frontend/src/engine/controllers/FlyController.ts` |
 | Flight physics (gears, inertia, surface clamp), pure | `packages/frontend/src/engine/controllers/flight-model.ts` |
-| Keyboard and gamepad to named flight actions | `packages/frontend/src/engine/input/flight-input.ts` |
+| Every key, pad button and chord declared once (id, keys, pad trigger, label, hint glyph, which side handles it). Leaf zone: engine and UI both read it. Also the shared "typing or modified" key guard | `packages/frontend/src/bindings/` (`bindings.ts`, `key-guards.ts`) |
+| Keyboard and gamepad to named flight actions (derived from the bindings table) | `packages/frontend/src/engine/input/flight-input.ts` |
+| Gamepad HUD buttons (lock, START, L3/R3, SELECT) to store calls, pure | `packages/frontend/src/engine/input/pad-commands.ts` |
+| D-pad: panes, land, time-scrub field focus and step/hold, pure | `packages/frontend/src/engine/input/gamepad-scrub.ts` |
 | Gamepad time-scrub auto-repeat, pure | `packages/frontend/src/engine/input/scrub-repeat.ts` |
 | Reticle area-pick circle test and ranking, pure | `packages/frontend/src/engine/input/reticle-pick.ts` |
 | Live altitude and speed of the locked object (~4 Hz) | `packages/frontend/src/engine/controllers/LiveKinematics.ts` |
