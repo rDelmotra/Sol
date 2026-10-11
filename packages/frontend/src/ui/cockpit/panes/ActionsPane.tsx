@@ -2,7 +2,9 @@ import { keyHint } from '../../../bindings/bindings';
 import { useStore } from '../../../store/useStore';
 import { ActionRow } from '../primitives/ActionRow';
 import { GlassPane } from '../primitives/GlassPane';
+import { PaneBody } from '../primitives/PaneBody';
 import { PaneHeader } from '../primitives/PaneHeader';
+import type { PaneSlotProps } from '../primitives/PaneStack';
 
 /**
  * ACTIONS card. APPROACH flies to and follows the lock (FOLLOWING · ON while
@@ -10,7 +12,7 @@ import { PaneHeader } from '../primitives/PaneHeader';
  * lock and flies home. Calls go through the store's trigger slots; ui/ never
  * imports the engine.
  */
-export function ActionsPane({ delay }: { delay: number }) {
+export function ActionsPane({ delay = 0, fromLeft = false }: PaneSlotProps) {
   const selectedIndex = useStore((s) => s.selectedIndex);
   const cameraMode = useStore((s) => s.cameraMode);
   const showOrbitTrail = useStore((s) => s.showOrbitTrail);
@@ -18,9 +20,9 @@ export function ActionsPane({ delay }: { delay: number }) {
   const noLock = selectedIndex === null;
 
   return (
-    <GlassPane fromLeft={false} delay={delay}>
+    <GlassPane fromLeft={fromLeft} delay={delay}>
       <PaneHeader label="ACTIONS" />
-      <div style={{ padding: '4px 12px 8px' }}>
+      <PaneBody padding="4px 12px 8px">
         <ActionRow
           label={tracking ? 'FOLLOWING' : 'APPROACH'}
           hint={tracking ? 'ON' : keyHint('flyTo')}
@@ -49,7 +51,7 @@ export function ActionsPane({ delay }: { delay: number }) {
             s.triggerResetCamera?.();
           }}
         />
-      </div>
+      </PaneBody>
     </GlassPane>
   );
 }

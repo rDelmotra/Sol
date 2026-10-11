@@ -3,7 +3,9 @@ import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { useStore } from '../../../store/useStore';
 import { GlassPane } from '../primitives/GlassPane';
 import { KV } from '../primitives/KV';
+import { PaneBody } from '../primitives/PaneBody';
 import { PaneHeader } from '../primitives/PaneHeader';
+import type { PaneSlotProps } from '../primitives/PaneStack';
 import {
   altitudeLabel,
   altitudeReading,
@@ -22,7 +24,7 @@ import {
  * speed (format.ts escapeFraction), a real ratio; the spike's "% of 7.9 km/s"
  * is gone. Its own leaf: it changes ~4×/s.
  */
-export function TelemetryPane({ selected, delay }: { selected: EnrichedTLEObject; delay: number }) {
+export function TelemetryPane({ selected, delay = 0, fromLeft = false }: { selected: EnrichedTLEObject } & PaneSlotProps) {
   const liveAltitudeKm = useStore((s) => s.liveAltitudeKm);
   const liveSpeedKmS = useStore((s) => s.liveSpeedKmS);
   const orbit = useMemo(() => elementOrbit(selected), [selected]);
@@ -31,9 +33,9 @@ export function TelemetryPane({ selected, delay }: { selected: EnrichedTLEObject
   const frac = escapeFraction(liveSpeedKmS, liveAltitudeKm);
 
   return (
-    <GlassPane fromLeft={false} delay={delay}>
+    <GlassPane fromLeft={fromLeft} delay={delay}>
       <PaneHeader label="TELEMETRY" value={live ? 'LIVE' : 'MEAN'} />
-      <div style={{ padding: '12px' }}>
+      <PaneBody>
         <KV k={altitudeLabel(alt)} v={live ? kmStr3(alt?.km) : kmStr(alt?.km)} />
         <KV k="INCL" v={degStr(orbit.inclination)} />
         <KV k="VELOCITY" v={velStr3(liveSpeedKmS)} />
@@ -68,7 +70,7 @@ export function TelemetryPane({ selected, delay }: { selected: EnrichedTLEObject
           <span>OF ESCAPE VELOCITY</span>
           <span>{frac !== null ? `${Math.round(frac * 100)}%` : '—'}</span>
         </div>
-      </div>
+      </PaneBody>
     </GlassPane>
   );
 }

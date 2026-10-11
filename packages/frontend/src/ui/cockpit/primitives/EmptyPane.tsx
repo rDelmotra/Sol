@@ -1,9 +1,10 @@
 import { GlassPane } from './GlassPane';
+import type { PaneSlotProps } from './PaneStack';
 
 /** A single card with a centred message, for a stack with nothing to show. */
-export function EmptyPane({ text, fromLeft = true }: { text: string; fromLeft?: boolean }) {
+export function EmptyPane({ text, fromLeft = true, delay = 0 }: { text: string } & PaneSlotProps) {
   return (
-    <GlassPane fromLeft={fromLeft}>
+    <GlassPane fromLeft={fromLeft} delay={delay}>
       <div
         style={{
           padding: '18px 14px',
