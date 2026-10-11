@@ -2,6 +2,9 @@ import type { ObserverSlice, Slice } from './types';
 
 export const createObserverSlice: Slice<ObserverSlice> = (set) => ({
   observerLocation: null,
+  observerPlaceName: null,
+  nextPasses: [],
+  passStatus: 'no-selection',
   vantage: 'orbit',
   skyLens: 'all',
   observerHeadingRad: 0,
@@ -15,6 +18,8 @@ export const createObserverSlice: Slice<ObserverSlice> = (set) => ({
     message: null,
   },
   setObserverLocation: (loc) => set({ observerLocation: loc }),
+  setObserverPlaceName: (name) => set({ observerPlaceName: name }),
+  setPassPlan: (passes, status) => set({ nextPasses: passes, passStatus: status }),
   // Standing on the ground, lens 'all' is a broken view, not a useful one.
   // DomeSkyLayer is a background (depthWrite false, renderOrder -1000), so it
   // occludes nothing: without a horizon gate the objects beneath your feet draw

@@ -75,7 +75,10 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Satellite point cloud | `packages/frontend/src/engine/SatelliteRenderer.ts` |
 | Earth globe | `packages/frontend/src/engine/EarthRenderer.ts` |
 | Workers and their message types | `packages/frontend/src/workers/` |
-| Store (10 slices, one composed hook) | `packages/frontend/src/store/` |
+| Store (12 slices, one composed hook) | `packages/frontend/src/store/` |
+| Vantage + sky lens, observer place name, pass plan | `packages/frontend/src/store/observerSlice.ts` |
+| Cockpit flight state (speed gears, gamepad, reticle candidates) | `packages/frontend/src/store/flightSlice.ts` |
+| Cockpit HUD open/closed state (panels, ask bar, controls sheet) | `packages/frontend/src/store/hudSlice.ts` |
 | Data clients (pure fetch, no store) | `packages/frontend/src/data/` |
 | Live query data source | `packages/frontend/src/query/analytic/live-source.ts` |
 | Older keyword query engine | `packages/frontend/src/query/` |

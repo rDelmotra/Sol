@@ -10,6 +10,8 @@ import { createAnalyticSlice } from './analyticSlice';
 import { createTimeSlice } from './timeSlice';
 import { createHistorySlice } from './historySlice';
 import { createDsoSlice } from './dsoSlice';
+import { createFlightSlice } from './flightSlice';
+import { createHudSlice } from './hudSlice';
 
 // Public surface: importers keep using `store/useStore`; types + helpers live in ./types.
 export { isDomeView } from './types';
@@ -42,4 +44,6 @@ export const useStore = create<AppState>()((...a) => ({
   ...createTimeSlice(...a),
   ...createHistorySlice(...a),
   ...createDsoSlice(...a),
+  ...createFlightSlice(...a),
+  ...createHudSlice(...a),
 }));
