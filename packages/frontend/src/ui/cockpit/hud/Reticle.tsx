@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
 import { RETICLE_BOX_PX, RETICLE_RING_RADIUS_PX } from '../../../constants/reticle';
-import { altitudeReading, elementOrbit, groupInt, kindCode } from '../format';
+import { altitudeReading, elementOrbit, finite, groupInt, kindCode, velStr } from '../format';
 import {
   RETICLE_BRACKETS,
   RETICLE_LABEL_GAP,
@@ -90,7 +90,7 @@ export function Reticle() {
             <div style={{ marginTop: 4 }}>
               {kindCode(selected.objectType)}
               {alt ? ` · ${alt.live ? '' : 'MEAN '}${groupInt(alt.km)} KM` : ''}
-              {liveSpeedKmS !== null && Number.isFinite(liveSpeedKmS) ? ` · ${liveSpeedKmS.toFixed(2)} KM/S` : ''}
+              {finite(liveSpeedKmS) ? ` · ${velStr(liveSpeedKmS)}` : ''}
             </div>
           </>
         ) : candidate ? (

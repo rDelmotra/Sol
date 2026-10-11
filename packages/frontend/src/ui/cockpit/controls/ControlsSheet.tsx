@@ -12,10 +12,14 @@ import {
 import { GamepadDiagram } from './GamepadDiagram';
 import { BUTTON_RESET } from '../primitives/hud-styles';
 import { useElementSize } from '../../hooks/useElementSize';
-
-/** Below this the sheet gets an opaque scrim (the globe behind it would crowd it). */
-const ROOMY_MIN_W = 1300;
-const ROOMY_MIN_H = 880;
+import {
+  CONTROLS_BOTTOM,
+  CONTROLS_CLOSE_INSET,
+  CONTROLS_DIAGRAM_COL_W,
+  CONTROLS_ROOMY_MIN_H,
+  CONTROLS_ROOMY_MIN_W,
+  CONTROLS_SIDE_INSET,
+} from '../layout';
 
 /**
  * The controls sheet, "hands on" view: keyboard / gamepad diagram / mouse.
@@ -35,7 +39,7 @@ function Sheet() {
   const scrimRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const { w, h } = useElementSize(scrimRef);
-  const roomy = w >= ROOMY_MIN_W && h >= ROOMY_MIN_H;
+  const roomy = w >= CONTROLS_ROOMY_MIN_W && h >= CONTROLS_ROOMY_MIN_H;
   const padConnected = useStore((s) => s.gamepadConnected);
   const [hover, setHover] = useState<ActivePart>(null);
 
@@ -67,9 +71,9 @@ function Sheet() {
         onClick={(e) => e.stopPropagation()}
         style={{
           position: 'absolute',
-          left: 24,
-          right: 24,
-          bottom: 48,
+          left: CONTROLS_SIDE_INSET,
+          right: CONTROLS_SIDE_INSET,
+          bottom: CONTROLS_BOTTOM,
           display: 'grid',
           gridTemplateColumns: '1fr auto 1fr',
           pointerEvents: 'auto',
@@ -102,7 +106,7 @@ function Sheet() {
             padding: '12px 20px 16px',
             borderLeft: '1px solid oklch(0.98 0.01 240 / 0.08)',
             borderRight: '1px solid oklch(0.98 0.01 240 / 0.08)',
-            width: 400,
+            width: CONTROLS_DIAGRAM_COL_W,
           }}
         >
           <div
@@ -150,8 +154,8 @@ function Sheet() {
         style={{
           ...BUTTON_RESET,
           position: 'absolute',
-          right: 24,
-          bottom: 24,
+          right: CONTROLS_CLOSE_INSET,
+          bottom: CONTROLS_CLOSE_INSET,
           display: 'flex',
           height: 22,
           width: 22,

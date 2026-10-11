@@ -1,9 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '../../../store/useStore';
+import { TIME_WHEEL_FADE_PCT, TIME_WHEEL_H } from '../layout';
 import {
   FLICK_THRESHOLD, FRICTION, STOP_VELOCITY, TICK_COUNT, TICK_MAJOR_EVERY, TICK_PERIOD, TICK_SPACING,
-  WHEEL_NOTCH_PX, tickStripOffset, wheelAdvance,
+  VELOCITY_KEEP, VELOCITY_NEW, WHEEL_NOTCH_PX, tickStripOffset, wheelAdvance,
 } from './time-console';
+
+const WHEEL_FADE_MASK = `linear-gradient(to right, transparent, black ${TIME_WHEEL_FADE_PCT}%, black ${100 - TIME_WHEEL_FADE_PCT}%, transparent)`;
 
 const ARROW: React.CSSProperties = {
   position: 'absolute', top: '50%', transform: 'translateY(-50%)', fontSize: 8,
@@ -100,7 +103,7 @@ export function TimeWheel() {
     }
     tickAcc.current += dx;
     applyTick();
-    if (dt > 0) vel.current = 0.7 * vel.current + 0.3 * (dx / dt);
+    if (dt > 0) vel.current = VELOCITY_KEEP * vel.current + VELOCITY_NEW * (dx / dt);
     applyDelta(dx);
     if (justStarted && useStore.getState().simRate !== 0) useStore.getState().setSimRate(0);
   };
@@ -162,7 +165,7 @@ export function TimeWheel() {
         pointerEvents: 'auto',
         position: 'relative',
         width: '100%',
-        height: 36,
+        height: TIME_WHEEL_H,
         marginTop: 8,
         background: 'oklch(0.08 0.015 250 / 0.65)',
         border: '1px solid var(--hud-glass-edge)',
@@ -172,8 +175,8 @@ export function TimeWheel() {
         touchAction: 'none',
         userSelect: 'none',
         boxShadow: 'inset 0 1px 4px rgba(0,0,0,0.5)',
-        maskImage: 'linear-gradient(to right, transparent, black 15%, black 85%, transparent)',
-        WebkitMaskImage: 'linear-gradient(to right, transparent, black 15%, black 85%, transparent)',
+        maskImage: WHEEL_FADE_MASK,
+        WebkitMaskImage: WHEEL_FADE_MASK,
       }}
     >
       <div style={{ ...ARROW, left: 6 }}>◀</div>

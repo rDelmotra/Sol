@@ -97,3 +97,29 @@ export const DOCK_PAD_X = 24;
 /** Location popover: width, and its gap above the dock's top edge. */
 export const LOCATION_POPOVER_W = 230;
 export const LOCATION_POPOVER_GAP = 6;
+
+// ── Controls sheet ───────────────────────────────────────────────────────────
+/** At or above this viewport size the sheet needs no scrim (the globe behind it stays calm). */
+export const CONTROLS_ROOMY_MIN_W = 1300;
+export const CONTROLS_ROOMY_MIN_H = 880;
+/** Sheet inset from the left and right edges. */
+export const CONTROLS_SIDE_INSET = HUD_CORNER_INSET;
+/** Sheet distance from the bottom edge. */
+export const CONTROLS_BOTTOM = 48;
+/** Fixed width of the centre (gamepad diagram) column. */
+export const CONTROLS_DIAGRAM_COL_W = 400;
+/** The × close button's right and bottom inset. */
+export const CONTROLS_CLOSE_INSET = HUD_CORNER_INSET;
+
+// ── Time console ─────────────────────────────────────────────────────────────
+/** Width of the console while it is unfolded into the scrubber. */
+export const TIME_CONSOLE_OPEN_W = 260;
+/** Momentum wheel height, and how much of each end fades out, % of its width. */
+export const TIME_WHEEL_H = 36;
+export const TIME_WHEEL_FADE_PCT = 15;
+
+// ── Dock (right group) ───────────────────────────────────────────────────────
+/** Gap between the lens/location controls and the `?` button. */
+export const DOCK_ITEM_GAP = 14;
+/** The round `?` help button, width and height. */
+export const DOCK_HELP_SIZE = 20;

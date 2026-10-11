@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
 import { EmptyPane } from '../primitives/EmptyPane';
-import { degStr, elementOrbit, kmStr, minStr } from '../format';
+import { degStr, elementOrbit, kmStr, minStr, statusLabel } from '../format';
 import { GlassPane } from '../primitives/GlassPane';
 import { IdentityPane } from './IdentityPane';
 import { KV } from '../primitives/KV';
@@ -48,7 +48,7 @@ export function AnalysisPanes() {
           <GlassPane delay={2 * PANE_STAGGER_MS}>
             <PaneHeader label="CATALOG" value={selected.countryCode || '—'} />
             <div style={{ padding: '12px' }}>
-              <KV k="STATUS" v={(selected.status ?? 'unknown').replace(/_/g, ' ').toUpperCase()} />
+              <KV k="STATUS" v={statusLabel(selected.status ?? 'unknown')} />
               <KV k="LAUNCH" v={selected.launchDate ?? '—'} />
               <KV k="EPOCH" v={selected.epoch?.slice(0, 10) ?? '—'} />
               <KV k="RCS" v={selected.rcsSize ?? '—'} />

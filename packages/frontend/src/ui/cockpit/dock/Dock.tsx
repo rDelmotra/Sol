@@ -1,5 +1,5 @@
 import { useStore } from '../../../store/useStore';
-import { DOCK_H, DOCK_PAD_X } from '../layout';
+import { DOCK_H, DOCK_HELP_SIZE, DOCK_ITEM_GAP, DOCK_PAD_X } from '../layout';
 import { LensLocationControls } from './LensLocationControls';
 import { ModeControls } from './ModeControls';
 
@@ -37,7 +37,7 @@ export function Dock() {
       <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'flex-start', height: '100%' }}>
         <ModeControls />
       </div>
-      <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', height: '100%', gap: 14 }}>
+      <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', height: '100%', gap: DOCK_ITEM_GAP }}>
         <LensLocationControls />
         <button
           type="button"
@@ -48,8 +48,8 @@ export function Dock() {
             background: 'none',
             border: '1px solid var(--hud-arc-dim)',
             borderRadius: 9999,
-            width: 20,
-            height: 20,
+            width: DOCK_HELP_SIZE,
+            height: DOCK_HELP_SIZE,
             padding: 0,
             color: 'var(--hud-text-dim)',
             fontFamily: 'var(--font-hud-mono)',

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useStore } from '../../../store/useStore';
 import { LIVE_EPSILON_MS, type TimeField } from '../../../time/time-fields';
 import { BUTTON_RESET } from '../primitives/hud-styles';
-import { HUD_CORNER_INSET } from '../layout';
+import { groupInt } from '../format';
+import { HUD_CORNER_INSET, TIME_CONSOLE_OPEN_W } from '../layout';
 import { ReturnToPresentButton } from './ReturnToPresentButton';
 import { TimeDigit } from './TimeDigit';
 import { TimeFieldChips } from './TimeFieldChips';
@@ -61,7 +62,7 @@ export function TimeConsole() {
         lineHeight: 1.625,
         fontFamily: 'var(--font-hud-mono)',
         color: 'var(--hud-text-dim)',
-        width: open ? 260 : undefined,
+        width: open ? TIME_CONSOLE_OPEN_W : undefined,
       }}
     >
       {open && (
@@ -153,7 +154,7 @@ export function TimeConsole() {
         )}
 
         <div style={{ marginTop: open ? 6 : 0 }}>MODE {viewMode.toUpperCase()} · {simRate}×</div>
-        <div>TRACKING {objectCount.toLocaleString('en-US')} OBJ</div>
+        <div>TRACKING {groupInt(objectCount)} OBJ</div>
 
         {open && (
           <div style={{ marginTop: 6, fontSize: 8, letterSpacing: '0.08em', opacity: 0.5 }}>

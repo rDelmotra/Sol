@@ -12,6 +12,7 @@
  */
 import type { Pass, PassStatus } from '../../../sky/passes';
 import { DEFAULT_MIN_ELEVATION_DEG } from '../../../sky/passes';
+import { pad } from '../format';
 
 const CARDINALS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 
@@ -26,7 +27,7 @@ export function formatCountdown(deltaMs: number): string {
   const total = Math.max(0, Math.round(deltaMs / 1000));
   if (total < 3600) return `${Math.floor(total / 60)}m ${total % 60}s`;
   const mins = Math.round(total / 60);
-  return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
+  return `${Math.floor(mins / 60)}h ${pad(mins % 60)}m`;
 }
 
 export interface ReadoutModel {

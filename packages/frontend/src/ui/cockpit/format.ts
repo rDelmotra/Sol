@@ -15,6 +15,16 @@ import { ER_KM, MU_KM3_S2, semiMajorAxisKmFromMeanMotion } from '@orbitwatch/orb
 
 const LOCALE = 'en-US';
 
+/** Zero-pad a whole number to `len` digits: pad(7) → "07". */
+export function pad(n: number, len = 2): string {
+  return String(n).padStart(len, '0');
+}
+
+/** A status code as a label: "partial_data" → "PARTIAL DATA". */
+export function statusLabel(code: string): string {
+  return code.replace(/_/g, ' ').toUpperCase();
+}
+
 export function finite(n: number | null | undefined): n is number {
   return typeof n === 'number' && Number.isFinite(n);
 }

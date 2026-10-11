@@ -10,6 +10,8 @@ import {
   escapeFraction,
   gearSpeedStr,
   kindCode,
+  pad,
+  statusLabel,
   kmStr,
   kmStr3,
   minStr,
@@ -97,5 +99,17 @@ describe('altitude and speed honesty', () => {
     assert.equal(escapeFraction(null, alt), null);
     assert.equal(escapeFraction(7.6, null), null);
     assert.equal(escapeFraction(99, alt), 1); // clamped
+  });
+});
+
+describe('pad and statusLabel', () => {
+  it('zero-pads to the width', () => {
+    assert.equal(pad(7), '07');
+    assert.equal(pad(987, 4), '0987');
+    assert.equal(pad(12), '12');
+  });
+  it('turns a status code into a label', () => {
+    assert.equal(statusLabel('partial_data'), 'PARTIAL DATA');
+    assert.equal(statusLabel('unknown'), 'UNKNOWN');
   });
 });

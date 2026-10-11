@@ -28,7 +28,7 @@ export function TelemetryTR() {
       }}
     >
       <div style={{ color: 'var(--hud-text)' }}>
-        {selected ? `${selected.regime} · ${altText}` : `SSA · ${objectCount.toLocaleString('en-US')} OBJ`}
+        {selected ? `${selected.regime} · ${altText}` : `SSA · ${groupInt(objectCount)} OBJ`}
       </div>
       <div>{selected ? `LOCK ${kindCode(selected.objectType)} ${selected.noradId}` : 'LOCK —'}</div>
       <div>SYNC {syncStr(dataTimestamp)}</div>
