@@ -23,7 +23,7 @@ export const createFlightSlice: Slice<FlightSlice> = (set) => ({
       // not re-render the HUD.
       if (sameIndices(indices, state.reticleCandidates)) return state;
       // Keep the current highlight if it is still in the circle, so aiming wobble
-      // does not reset a D-pad cycle; otherwise take the top (largest) hit.
+      // does not reset an L3/R3 cycle; otherwise take the top-ranked hit.
       const idx =
         state.reticleCandidateIndex !== null && indices.includes(state.reticleCandidateIndex)
           ? state.reticleCandidateIndex

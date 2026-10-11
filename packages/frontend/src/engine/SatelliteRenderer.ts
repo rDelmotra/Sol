@@ -116,6 +116,7 @@ export class SatelliteRenderer {
         uBaseColor: { value: new THREE.Vector3(1, 1, 1) },
         uT: { value: 0.0 },
         uSelectedIndex: { value: -1.0 },
+        uCandidateIndex: { value: -1.0 },
         uTimeSinceArrival: { value: -1.0 },
       },
       transparent: true,
@@ -282,6 +283,11 @@ export class SatelliteRenderer {
   updateSelectedUniforms(selectedIndex: number, timeSinceArrival: number): void {
     this.material.uniforms.uSelectedIndex.value = selectedIndex;
     this.material.uniforms.uTimeSinceArrival.value = timeSinceArrival;
+  }
+
+  /** Gamepad reticle's highlighted soft-lock candidate (amber); -1 = none. */
+  updateCandidateUniform(candidateIndex: number): void {
+    this.material.uniforms.uCandidateIndex.value = candidateIndex;
   }
 
   /** Returns the GPU-equivalent interpolated world position for a single object. */

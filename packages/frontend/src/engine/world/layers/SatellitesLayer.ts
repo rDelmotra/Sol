@@ -355,10 +355,13 @@ export class SatellitesLayer implements Layer {
 
     this._renderer.material.uniforms.uT.value = frame.uT;
 
-    const selectedIdx = useStore.getState().selectedIndex;
+    const state = useStore.getState();
     this._renderer.updateSelectedUniforms(
-      selectedIdx !== null ? selectedIdx : -1,
+      state.selectedIndex !== null ? state.selectedIndex : -1,
       frame.selectionTimeSinceArrival,
+    );
+    this._renderer.updateCandidateUniform(
+      state.gamepadConnected && state.reticleCandidateIndex !== null ? state.reticleCandidateIndex : -1,
     );
 
     this._renderer.updateUniforms(frame.cameraDistance, frame.pixelRatio);

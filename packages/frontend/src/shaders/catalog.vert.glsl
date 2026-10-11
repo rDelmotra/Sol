@@ -11,6 +11,7 @@ uniform float uCameraDistance;
 uniform vec3 uBaseColor;
 uniform float uT;
 uniform float uSelectedIndex;    // -1.0 = no selection
+uniform float uCandidateIndex;   // -1.0 = none; gamepad reticle soft-lock highlight
 uniform float uTimeSinceArrival; // seconds since camera arrived; -1.0 = no pulse
 
 varying vec3 vColor;
@@ -40,6 +41,7 @@ void main() {
 
   // gl_VertexID is available in WebGL 2 / GLSL ES 3.00 (Three.js r165+)
   bool isSelected = uSelectedIndex >= 0.0 && abs(float(gl_VertexID) - uSelectedIndex) < 0.5;
+  bool isCandidate = !isSelected && uCandidateIndex >= 0.0 && abs(float(gl_VertexID) - uCandidateIndex) < 0.5;
 
   if (isSelected) {
     float sizeBoost = 2.5;
@@ -54,6 +56,12 @@ void main() {
     alphaFade = max(alphaFade, 0.6);
     pointSize *= max(sizeBoost, 1.0);
     vColor = vec3(0.0, 0.898, 1.0); // cyan override for selected object
+  } else if (isCandidate) {
+    // Reticle candidate: amber, bigger, no pulse (the pulse means "just arrived").
+    sizeFade = max(sizeFade, 0.45);
+    alphaFade = max(alphaFade, 0.6);
+    pointSize *= 1.8;
+    vColor = vec3(1.0, 0.55, 0.1);
   } else {
     // Sky-dome naked-eye highlight: tint toward bright gold so the visible passes
     // pop out of the faint background traffic regardless of category colour.

@@ -596,6 +596,7 @@ export class Engine {
     // Push sim-time to store at ~4Hz for UI (HUD, TimeScrubber)
     const wallNow = performance.now();
     this.liveKinematics.tick(wallNow);
+    this.inputManager?.tickReticle(wallNow);
     if (wallNow - this.lastSimTimeUpdateAt > 250) {
       const store = useStore.getState();
       store.setSimTimeMs(simClock.now());

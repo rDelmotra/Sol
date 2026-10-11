@@ -332,7 +332,8 @@ export interface FlightSlice {
   cameraSpeedMps: number;
   gamepadConnected: boolean;
   /** Gamepad reticle soft-lock: TLE indices inside the reticle circle this poll,
-   *  sorted by on-screen size, plus the highlighted one (D-pad ◄► cycles, A locks). */
+   *  nearest the camera first (then nearest the crosshair), plus the highlighted
+   *  one (L3/R3 cycle, A locks). */
   reticleCandidates: number[];
   reticleCandidateIndex: number | null;
   reticleCandidateName: string | null;
