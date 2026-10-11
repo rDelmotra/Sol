@@ -1,5 +1,6 @@
 import { useStore } from '../../../store/useStore';
-import { DOCK_H, DOCK_HELP_SIZE, DOCK_ITEM_GAP, DOCK_PAD_X } from '../layout';
+import { DOCK_H, DOCK_ITEM_GAP, DOCK_PAD_X } from '../layout';
+import { DockIconButton } from './DockIconButton';
 import { LensLocationControls } from './LensLocationControls';
 import { ModeControls } from './ModeControls';
 
@@ -30,7 +31,7 @@ export function Dock() {
         borderTop: '1px solid var(--hud-glass-edge)',
         backdropFilter: 'blur(14px) saturate(120%)',
         WebkitBackdropFilter: 'blur(14px) saturate(120%)',
-        boxShadow: '0 0 40px oklch(0.85 0.14 220 / 0.06) inset',
+        boxShadow: 'var(--hud-inner-glow)',
         pointerEvents: 'auto',
       }}
     >
@@ -39,27 +40,7 @@ export function Dock() {
       </div>
       <div style={{ flex: '1 1 0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', height: '100%', gap: DOCK_ITEM_GAP }}>
         <LensLocationControls />
-        <button
-          type="button"
-          onClick={() => useStore.getState().toggleControlsSheet()}
-          aria-label="Cockpit controls help"
-          style={{
-            appearance: 'none',
-            background: 'none',
-            border: '1px solid var(--hud-arc-dim)',
-            borderRadius: 9999,
-            width: DOCK_HELP_SIZE,
-            height: DOCK_HELP_SIZE,
-            padding: 0,
-            color: 'var(--hud-text-dim)',
-            fontFamily: 'var(--font-hud-mono)',
-            fontSize: 11,
-            lineHeight: 1,
-            cursor: 'pointer',
-          }}
-        >
-          ?
-        </button>
+        <DockIconButton glyph="?" label="Cockpit controls help" onClick={() => useStore.getState().toggleControlsSheet()} />
       </div>
     </div>
   );

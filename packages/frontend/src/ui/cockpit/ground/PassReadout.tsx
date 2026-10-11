@@ -19,7 +19,7 @@ const PANEL: React.CSSProperties = {
   border: '1px solid var(--hud-glass-edge)',
   backdropFilter: 'blur(14px) saturate(120%)',
   WebkitBackdropFilter: 'blur(14px) saturate(120%)',
-  boxShadow: '0 0 40px oklch(0.85 0.14 220 / 0.06) inset, 0 20px 60px oklch(0.05 0 0 / 0.4)',
+  boxShadow: 'var(--hud-inner-glow), var(--hud-drop-shadow)',
   padding: '8px 14px',
   fontFamily: 'var(--font-hud-mono)',
   color: 'var(--hud-text)',

@@ -69,13 +69,13 @@ export function GamepadDiagram({
             d="M220.5 294.5C220.5 294.5 195 294.5 150 294.5C105 294.5 81.5 378.5 49.5 378.5C17.5 378.5 4 363.9 4 317.5C4 271.1 43.5 165.5 55 137.5C66.5 109.5 95.5 92.0001 128 92.0001C154 92.0001 200.5 92.0001 220.5 92.0001"
             stroke="var(--hud-arc)"
             strokeWidth="1.5"
-            fill="var(--hud-glass-panel, oklch(0.11 0.02 250 / 0.82))"
+            fill="var(--hud-glass-panel)"
           />
           <path
             d="M220 294.5C220 294.5 245.5 294.5 290.5 294.5C335.5 294.5 359 378.5 391 378.5C423 378.5 436.5 363.9 436.5 317.5C436.5 271.1 397 165.5 385.5 137.5C374 109.5 345 92.0001 312.5 92.0001C286.5 92.0001 240 92.0001 220 92.0001"
             stroke="var(--hud-arc)"
             strokeWidth="1.5"
-            fill="var(--hud-glass-panel, oklch(0.11 0.02 250 / 0.82))"
+            fill="var(--hud-glass-panel)"
           />
           <line x1="27.5" y1="214.5" x2="126" y2="302.5" stroke="var(--hud-arc-dim)" strokeWidth="1" strokeDasharray="4" />
           <line x1="315" y1="214.5" x2="413.5" y2="302.5" stroke="var(--hud-arc-dim)" strokeWidth="1" strokeDasharray="4" />

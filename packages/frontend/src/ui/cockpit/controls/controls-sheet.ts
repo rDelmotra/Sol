@@ -150,7 +150,7 @@ export function partLook(id: GamepadPartId, active: ActivePart): PartLook {
   }
   return {
     opacity: 0.95,
-    fill: 'var(--hud-glass-panel, oklch(0.11 0.02 250 / 0.82))',
+    fill: 'var(--hud-glass-panel)',
     stroke: 'var(--hud-arc, rgba(255, 255, 255, 0.75))',
     strokeWidth: 2,
     filter: 'none',

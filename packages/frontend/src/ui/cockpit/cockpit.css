@@ -14,6 +14,16 @@
   --hud-glass-edge: oklch(0.98 0.01 240 / 0.14);
   --hud-text: oklch(0.94 0.01 240);
   --hud-text-dim: oklch(0.94 0.01 240 / 0.55);
+  /* Hairlines and faint text on the controls sheet. */
+  --hud-rule: oklch(0.98 0.01 240 / 0.08);
+  --hud-rule-faint: oklch(0.98 0.01 240 / 0.06);
+  --hud-text-faint: oklch(0.94 0.01 240 / 0.3);
+  /* Deep glass behind the gamepad diagram's body. */
+  --hud-glass-panel: oklch(0.11 0.02 250 / 0.82);
+  /* Pane depth: a cool inner glow plus a soft drop shadow (GlassPane, dock, pass readout). */
+  --hud-glow-tint: oklch(0.85 0.14 220 / 0.06);
+  --hud-inner-glow: 0 0 40px var(--hud-glow-tint) inset;
+  --hud-drop-shadow: 0 20px 60px oklch(0.05 0 0 / 0.4);
   --hud-warn: oklch(0.82 0.14 55);
   --hud-good: oklch(0.82 0.14 165);
   /* Compass strip (ground view): north red-orange, ticks and labels cool white. */

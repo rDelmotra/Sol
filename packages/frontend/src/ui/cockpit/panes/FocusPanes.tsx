@@ -49,7 +49,7 @@ export function FocusPanes() {
                     position: 'absolute',
                     inset: 0,
                     background:
-                      'linear-gradient(180deg, transparent 40%, oklch(0.85 0.14 220 / 0.06) 50%, transparent 60%)',
+                      'linear-gradient(180deg, transparent 40%, var(--hud-glow-tint) 50%, transparent 60%)',
                     animation: 'hud-scan 3.4s linear infinite',
                   }}
                 />

@@ -10,7 +10,7 @@ import {
   type ControlEntry,
 } from './controls-sheet';
 import { GamepadDiagram } from './GamepadDiagram';
-import { BUTTON_RESET } from '../primitives/hud-styles';
+import { BUTTON_RESET, SECTION_LABEL } from '../primitives/hud-styles';
 import { useElementSize } from '../../hooks/useElementSize';
 import {
   CONTROLS_BOTTOM,
@@ -90,7 +90,7 @@ function Sheet() {
           {KEYBOARD_ROWS.map((item) => (
             <ControlRow key={item.label} item={item} hover={hover} onHover={setHover} />
           ))}
-          <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid oklch(0.98 0.01 240 / 0.06)' }}>
+          <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--hud-rule-faint)' }}>
             {META_ROWS.map((item) => (
               <ControlRow key={item.label} item={item} hover={hover} onHover={setHover} />
             ))}
@@ -104,22 +104,12 @@ function Sheet() {
             alignItems: 'center',
             justifyContent: 'center',
             padding: '12px 20px 16px',
-            borderLeft: '1px solid oklch(0.98 0.01 240 / 0.08)',
-            borderRight: '1px solid oklch(0.98 0.01 240 / 0.08)',
+            borderLeft: '1px solid var(--hud-rule)',
+            borderRight: '1px solid var(--hud-rule)',
             width: CONTROLS_DIAGRAM_COL_W,
           }}
         >
-          <div
-            style={{
-              fontSize: 9,
-              letterSpacing: '0.18em',
-              fontFamily: 'var(--font-hud-mono)',
-              color: 'var(--hud-arc-dim)',
-              fontWeight: 600,
-              marginBottom: 4,
-              textAlign: 'center',
-            }}
-          >
+          <div style={{ ...SECTION_LABEL, marginBottom: 4, textAlign: 'center' }}>
             GAMEPAD
           </div>
           <GamepadDiagram activeId={hover} onHoverPart={setHover} style={{ width: '100%', maxHeight: 280 }} />
@@ -130,13 +120,13 @@ function Sheet() {
           {MOUSE_ROWS.map((item) => (
             <ControlRow key={item.label} item={item} hover={hover} onHover={setHover} />
           ))}
-          <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid oklch(0.98 0.01 240 / 0.06)' }}>
+          <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--hud-rule-faint)' }}>
             <SectionHeader label="GAMEPAD ONLY" />
             {PAD_ONLY_ROWS.map((item) => (
               <ControlRow key={item.label} item={item} hover={hover} onHover={setHover} />
             ))}
           </div>
-          <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid oklch(0.98 0.01 240 / 0.06)', textAlign: 'center' }}>
+          <div style={{ marginTop: 'auto', paddingTop: 10, borderTop: '1px solid var(--hud-rule-faint)', textAlign: 'center' }}>
             <span style={{ fontSize: 8, fontFamily: 'var(--font-hud-mono)', color: 'oklch(0.94 0.01 240 / 0.25)', letterSpacing: '0.1em' }}>
               HOVER ANY KEY ↔ GAMEPAD HIGHLIGHT
             </span>
@@ -203,12 +193,10 @@ function SectionHeader({ label, right }: { label: string; right?: React.ReactNod
         alignItems: 'center',
         paddingBottom: 6,
         marginBottom: 4,
-        borderBottom: '1px solid oklch(0.98 0.01 240 / 0.08)',
+        borderBottom: '1px solid var(--hud-rule)',
       }}
     >
-      <span style={{ fontSize: 9, letterSpacing: '0.18em', fontFamily: 'var(--font-hud-mono)', color: 'var(--hud-arc-dim)', fontWeight: 600 }}>
-        {label}
-      </span>
+      <span style={SECTION_LABEL}>{label}</span>
       {right}
     </div>
   );
@@ -226,7 +214,7 @@ function Keycap({ label, small }: { label: string; small?: boolean }) {
         padding: '0 5px',
         borderRadius: 4,
         border: '1px solid oklch(0.98 0.01 240 / 0.3)',
-        background: 'oklch(0.98 0.01 240 / 0.06)',
+        background: 'var(--hud-rule-faint)',
         color: 'var(--hud-text)',
         fontSize: small ? 8 : 9,
         fontFamily: 'var(--font-hud-mono)',
@@ -281,7 +269,7 @@ function ControlRow({ item, hover, onHover }: { item: ControlEntry; hover: Activ
         style={{
           fontSize: 8,
           fontFamily: 'var(--font-hud-mono)',
-          color: active ? 'var(--hud-arc)' : 'oklch(0.94 0.01 240 / 0.3)',
+          color: active ? 'var(--hud-arc)' : 'var(--hud-text-faint)',
           letterSpacing: '0.08em',
           flexShrink: 0,
           transition: 'color 160ms ease',

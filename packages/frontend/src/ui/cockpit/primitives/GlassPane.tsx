@@ -16,7 +16,7 @@ export function GlassPane({ children, fromLeft = true, delay = 0 }: { children: 
           border: '1px solid var(--hud-glass-edge)',
           backdropFilter: 'blur(14px) saturate(120%)',
           WebkitBackdropFilter: 'blur(14px) saturate(120%)',
-          boxShadow: '0 0 40px oklch(0.85 0.14 220 / 0.06) inset, 0 20px 60px oklch(0.05 0 0 / 0.4)',
+          boxShadow: 'var(--hud-inner-glow), var(--hud-drop-shadow)',
           animation: `hud-pane-in 380ms ${delay}ms cubic-bezier(.2,.7,.2,1) both`,
           '--hud-pane-from': fromLeft ? '-16px' : '16px',
         } as React.CSSProperties

@@ -11,3 +11,12 @@ export const BUTTON_RESET: React.CSSProperties = {
   pointerEvents: 'auto',
   textAlign: 'left',
 };
+
+/** Mono 9px header over a group of rows (controls sheet columns). */
+export const SECTION_LABEL: React.CSSProperties = {
+  fontSize: 9,
+  letterSpacing: '0.18em',
+  fontFamily: 'var(--font-hud-mono)',
+  color: 'var(--hud-arc-dim)',
+  fontWeight: 600,
+};

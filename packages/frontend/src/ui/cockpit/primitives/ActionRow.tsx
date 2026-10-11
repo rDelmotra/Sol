@@ -1,4 +1,4 @@
-const DISABLED = 'oklch(0.94 0.01 240 / 0.3)';
+const DISABLED = 'var(--hud-text-faint)';
 
 /** One ACTIONS row: a full-width button, label left, key hint / state right. */
 export function ActionRow({

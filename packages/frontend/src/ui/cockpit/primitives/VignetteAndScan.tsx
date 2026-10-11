@@ -1,3 +1,5 @@
+const SCAN_LINE = 'rgba(255,255,255,0.4)';
+
 /** Screen vignette plus faint scanlines over the globe. Static, no store. */
 export function VignetteAndScan() {
   return (
@@ -18,7 +20,7 @@ export function VignetteAndScan() {
           opacity: 0.06,
           mixBlendMode: 'overlay',
           backgroundImage:
-            'repeating-linear-gradient(0deg, rgba(255,255,255,0.4) 0px, rgba(255,255,255,0.4) 1px, transparent 1px, transparent 3px)',
+            `repeating-linear-gradient(0deg, ${SCAN_LINE} 0px, ${SCAN_LINE} 1px, transparent 1px, transparent 3px)`,
         }}
       />
     </>
