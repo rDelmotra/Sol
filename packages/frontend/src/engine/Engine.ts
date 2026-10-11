@@ -29,6 +29,7 @@ import { AnalyticRuntime } from './analytic/AnalyticRuntime';
 import { createLiveAnalyticSource } from '../query/analytic/live-source';
 import { getRawQueryVocab } from '../query/vocab';
 import { TimelineController } from './controllers/TimelineController';
+import { LiveKinematicsPublisher } from './controllers/LiveKinematics';
 
 export class Engine {
   private static readonly EMPTY_NORAD_SET: Set<number> = new Set();
@@ -63,6 +64,7 @@ export class Engine {
   private resizeObserver: ResizeObserver | null = null;
   /** Historical time-scrub / planetarium / return-to-present; owns the loaded catalog. */
   private timeline: TimelineController;
+  private liveKinematics: LiveKinematicsPublisher;
 
   constructor(canvas: HTMLCanvasElement) {
     // ── Renderer ──────────────────────────────────────────────────────────────
@@ -163,6 +165,7 @@ export class Engine {
       this.createTrackingSource(),
       { onCancelJoyrideLook: () => this.inputManager?.cancelJoyrideLook() },
     );
+    this.liveKinematics = new LiveKinematicsPublisher(this.createTrackingSource());
 
     // ── Clock ─────────────────────────────────────────────────────────────────
     this.clock = new THREE.Clock();
@@ -592,6 +595,7 @@ export class Engine {
 
     // Push sim-time to store at ~4Hz for UI (HUD, TimeScrubber)
     const wallNow = performance.now();
+    this.liveKinematics.tick(wallNow);
     if (wallNow - this.lastSimTimeUpdateAt > 250) {
       const store = useStore.getState();
       store.setSimTimeMs(simClock.now());
