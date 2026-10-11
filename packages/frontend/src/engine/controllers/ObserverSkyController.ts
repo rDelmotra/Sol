@@ -9,13 +9,14 @@ type ObserverLoc = GeodeticObserver;
 /** Eye height above the observer's feet, in Earth radii (~16 m). */
 const EYE_HEIGHT_ER = 0.0000025;
 /**
- * Target **horizontal** FOV for the immersive dome (Star Walk-style). Three.js `camera.fov` is vertical, so we derive the
- * vertical FOV from this target + the live aspect ratio (see {@link verticalFovForHorizontal}).
- * Kept moderate (not the full 90°): at 90° the cardinals 90° apart sit right at the
- * screen edges — the most `tan`-distorted zone — which makes the horizon markers
- * appear to taper/expand as you look around. A narrower span crops that periphery,
- * which is exactly why phone planetarium apps feel clean (the HUD compass strip
- * carries the wider directional context).
+ * Default horizontal FOV for the immersive dome (Star Walk style).
+ * Three.js `camera.fov` is vertical, so the vertical FOV is derived from this
+ * value and the live aspect ratio (see {@link verticalFovForHorizontal}).
+ * It is kept moderate, not the full 90°. At 90° the cardinals, which are 90°
+ * apart, sit at the screen edges where `tan` distortion is worst, and the
+ * horizon markers look like they taper and swell as you look around. A narrower
+ * span crops that edge zone, which is why phone planetarium apps feel clean.
+ * The HUD compass strip carries the wider directional context.
  */
 const DOME_HFOV_DEG = 65;
 /** Cap on the derived vertical FOV so very tall/portrait screens don't go fisheye. */
