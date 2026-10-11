@@ -105,10 +105,10 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | OMM to orbit-diagram elements | `packages/frontend/src/sky/orbit-elements.ts` |
 | Overlay UI | `packages/frontend/src/ui/` |
 | Cockpit HUD root: shell, layout numbers, formatters, keyboard map, tokens (shared surface, mounted by App) | `packages/frontend/src/ui/cockpit/` (`CockpitHud.tsx`, `layout.ts`, `format.ts`, `keys.ts`, `useCockpitKeys.ts`, `cockpit.css`) |
-| Cockpit primitives: the shared building blocks every other cockpit folder uses (glass pane, key/value rows, pane header, empty state, action row, error boundary, title, vignette and scan, native-button reset style). Nothing here imports a feature folder | `packages/frontend/src/ui/cockpit/primitives/` |
-| Cockpit side panes: object scan (identity, telemetry, actions, analysis) and the 3D orbit diagram | `packages/frontend/src/ui/cockpit/panes/` |
+| Cockpit primitives: the shared building blocks every other cockpit folder uses (glass pane, pane stack and pane body, key/value rows, pane header, empty state, action row, error boundary, title, vignette and scan, native-button reset style). Nothing here imports a feature folder | `packages/frontend/src/ui/cockpit/primitives/` |
+| Cockpit side panes, one file per pane (`IdentityPane.tsx`, `OrbitPane.tsx`, `CatalogPane.tsx`, `ObjectScanPane.tsx`, `TelemetryPane.tsx`, `ActionsPane.tsx`), the two stacks that only arrange them (`AnalysisPanes.tsx`, `FocusPanes.tsx`) and the 3D orbit diagram | `packages/frontend/src/ui/cockpit/panes/` |
 | Cockpit dock: mode controls, lens and location controls, location popover, round icon button, dock styles | `packages/frontend/src/ui/cockpit/dock/` |
-| Cockpit time console: clock row that unfolds into the scrubber, digits, field chips, momentum wheel, return button, mouse stepping | `packages/frontend/src/ui/cockpit/time/` |
+| Cockpit time console: clock row (`ClockRow.tsx`) that unfolds into the scrubber, readout lines (`ConsoleReadouts.tsx`), digits, field chips, momentum wheel with its gesture hook (`useMomentumDial.ts`), return button, mouse stepping (`useTimeStep.ts` over the pure `time-stepper.ts`) | `packages/frontend/src/ui/cockpit/time/` |
 | Cockpit ground view: compass strip and pass readout, with their pure helpers | `packages/frontend/src/ui/cockpit/ground/` |
 | Cockpit controls sheet: keyboard / gamepad diagram / mouse bindings | `packages/frontend/src/ui/cockpit/controls/` |
 | Cockpit on-screen layers: reticle, object disc, edge arcs, gear readout and sweep, corner telemetry, ask bar and waveform | `packages/frontend/src/ui/cockpit/hud/` |

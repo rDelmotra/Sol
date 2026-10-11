@@ -13,11 +13,11 @@ Backend: Express. Frontend: React, three.js, Zustand, Vite. Physics: SGP4.
 | Check | Result |
 |---|---|
 | `npm run typecheck` | clean |
-| `npm run test` | 1136 pass, 0 fail |
+| `npm run test` | 1142 pass, 0 fail |
 | Linter | none exists |
 | CI | none exists |
 
-Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 346, frontend 447, repo-level tests 11 (architecture 4, state files 7).
+Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 346, frontend 453, repo-level tests 11 (architecture 4, state files 7).
 
 ## Recent milestones (newest first)
 
