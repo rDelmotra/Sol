@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { KEY_BINDINGS, PAD_BINDINGS } from '../../../bindings/bindings';
+import type { AppState } from '../../../store/types';
 import { useStore } from '../../../store/useStore';
 import { arcPath, ribAngle, ribDelayMs } from './arc';
 import { GearReadout } from './GearReadout';
@@ -19,10 +20,30 @@ import {
   RIB_SPLAY_PX,
 } from '../layout';
 
-const SIDE = {
-  left: { label: 'ANALYSIS', shortcut: KEY_BINDINGS.toggleAnalysis.caps[0], padGlyph: PAD_BINDINGS.dpadLeft.glyph },
-  right: { label: 'FOCUS', shortcut: KEY_BINDINGS.toggleFocus.caps[0], padGlyph: PAD_BINDINGS.dpadRight.glyph },
-} as const;
+/** Everything that differs between the two ribs, so a side is pure data. */
+interface SideSpec {
+  label: string;
+  shortcut: string;
+  padGlyph: string;
+  /** Which pane stack this rib opens. */
+  selectOpen: (s: AppState) => boolean;
+  toggle: (s: AppState) => void;
+  /** Carries the speed gauge (sweep + readout). */
+  hasGauge: boolean;
+  /** Press nudge toward the screen edge, px. */
+  pressDx: number;
+}
+
+const SIDE: Record<'left' | 'right', SideSpec> = {
+  left: {
+    label: 'ANALYSIS', shortcut: KEY_BINDINGS.toggleAnalysis.caps[0], padGlyph: PAD_BINDINGS.dpadLeft.glyph,
+    selectOpen: (s) => s.analysisPanelOpen, toggle: (s) => s.toggleAnalysisPanel(), hasGauge: false, pressDx: -2,
+  },
+  right: {
+    label: 'FOCUS', shortcut: KEY_BINDINGS.toggleFocus.caps[0], padGlyph: PAD_BINDINGS.dpadRight.glyph,
+    selectOpen: (s) => s.focusPanelOpen, toggle: (s) => s.toggleFocusPanel(), hasGauge: true, pressDx: 2,
+  },
+};
 
 /**
  * Canopy rib on a screen edge: the way in to that side's panes. The click
@@ -32,21 +53,16 @@ const SIDE = {
  * Nothing moves on its own. The right rib carries the speed gauge.
  */
 export function EdgeArc({ side }: { side: 'left' | 'right' }) {
-  const open = useStore((s) => (side === 'left' ? s.analysisPanelOpen : s.focusPanelOpen));
+  const { label, shortcut, padGlyph, selectOpen, toggle, hasGauge, pressDx } = SIDE[side];
+  const open = useStore(selectOpen);
   const gamepadConnected = useStore((s) => s.gamepadConnected);
   const [near, setNear] = useState(false);
   const [press, setPress] = useState(false);
   const { cx, cy, start, end } = ARC_GEOM[side];
-  const { label, shortcut, padGlyph } = SIDE[side];
-  const hasGauge = side === 'right';
   const awake = near || open;
   const glowId = `hud-arc-glow-${side}`;
 
-  const onToggle = () => {
-    const s = useStore.getState();
-    if (side === 'left') s.toggleAnalysisPanel();
-    else s.toggleFocusPanel();
-  };
+  const onToggle = () => toggle(useStore.getState());
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -158,7 +174,7 @@ export function EdgeArc({ side }: { side: 'left' | 'right' }) {
           height: ARC_HIT_H,
           pointerEvents: 'auto',
           cursor: 'pointer',
-          transform: press ? `translateX(${side === 'left' ? -2 : 2}px)` : 'translateX(0)',
+          transform: press ? `translateX(${pressDx}px)` : 'translateX(0)',
           transition: 'transform 90ms ease-out',
         }}
       />
