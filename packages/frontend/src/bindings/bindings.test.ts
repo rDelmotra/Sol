@@ -22,7 +22,7 @@ import { hasModifier, isTextTarget, isTypingOrModified } from './key-guards';
 const keyIds = Object.keys(KEY_BINDINGS) as KeyBindingId[];
 const padIds = Object.keys(PAD_BINDINGS) as PadAction[];
 const mods = { metaKey: false, ctrlKey: false, altKey: false };
-const CLOSED = { controlsSheetOpen: false, askBarOpen: true, analysisPanelOpen: false, focusPanelOpen: false, scrubberMode: false };
+const CLOSED = { controlsSheetOpen: false, locationPopoverOpen: false, askBarOpen: true, analysisPanelOpen: false, focusPanelOpen: false, scrubberMode: false };
 
 describe('key bindings', () => {
   it('no two bindings share a key', () => {

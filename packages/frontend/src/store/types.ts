@@ -358,6 +358,8 @@ export interface HudSlice {
   askBarOpen: boolean;
   /** The gamepad controls sheet (`?` / pad START). The only tutorial surface (D8). */
   controlsSheetOpen: boolean;
+  /** The dock's location popover (pin button). Open state lives here so Esc can close it as one rung of keys.ts's ladder. */
+  locationPopoverOpen: boolean;
   toggleAnalysisPanel: () => void;
   toggleFocusPanel: () => void;
   closePanels: () => void;
@@ -365,6 +367,7 @@ export interface HudSlice {
   setAskBarOpen: (open: boolean) => void;
   toggleControlsSheet: () => void;
   setControlsSheetOpen: (open: boolean) => void;
+  setLocationPopoverOpen: (open: boolean) => void;
 }
 
 export interface DsoSlice {

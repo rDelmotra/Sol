@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import type { SkyLens } from '../../../store/types';
 import { useStore } from '../../../store/useStore';
 import { latLonStr, lensDisabled } from './dock-modes';
@@ -14,35 +14,27 @@ const LENSES: { lens: SkyLens; label: string }[] = [
 
 /**
  * Dock right: SKY LENS ALL · HORIZON · RADIO, the observer's coordinates and
- * the location pin. The pin toggles LocationPopover; Esc (before the cockpit's
- * own Esc handling) or a press outside closes it.
+ * the location pin. The pin toggles LocationPopover (open state is in the store);
+ * a press outside closes it, Esc closes it via keys.ts.
  */
 export function LensLocationControls() {
   const vantage = useStore((s) => s.vantage);
   const skyLens = useStore((s) => s.skyLens);
   const location = useStore((s) => s.observerLocation);
-  const [open, setOpen] = useState(false);
+  const open = useStore((s) => s.locationPopoverOpen);
+  const setOpen = useStore((s) => s.setLocationPopoverOpen);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      // Capture phase on window runs before the cockpit's bubble listener, so
-      // one Esc closes only the popover.
-      e.stopPropagation();
-      setOpen(false);
-    };
     const onDown = (e: PointerEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     };
-    window.addEventListener('keydown', onKey, true);
     window.addEventListener('pointerdown', onDown, true);
     return () => {
-      window.removeEventListener('keydown', onKey, true);
       window.removeEventListener('pointerdown', onDown, true);
     };
-  }, [open]);
+  }, [open, setOpen]);
 
   return (
     <div ref={wrapRef} style={{ ...DOCK_GROUP, position: 'relative' }}>
@@ -68,7 +60,7 @@ export function LensLocationControls() {
         type="button"
         aria-label="Location"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(!open)}
         style={{ appearance: 'none', background: 'none', border: 'none', padding: 2, cursor: 'pointer', lineHeight: 0 }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={location ? DOCK_BLUE : 'var(--hud-text-dim)'} strokeWidth="1.6">

@@ -65,6 +65,7 @@ const STATE_KEYS = [
   'liveSpeedKmS',
   'loadingError',
   'loadingPhase',
+  'locationPopoverOpen',
   'nextPasses',
   'objectCount',
   'observerHeadingRad',
@@ -115,6 +116,7 @@ const STATE_KEYS = [
   'setLiveKinematics',
   'setLoadingError',
   'setLoadingPhase',
+  'setLocationPopoverOpen',
   'setObserverHeadingRad',
   'setObserverLocation',
   'setObserverPlaceName',
@@ -261,11 +263,12 @@ const INITIAL_VALUES: Record<string, unknown> = {
   focusPanelOpen: false,
   askBarOpen: false,
   controlsSheetOpen: false,
+  locationPopoverOpen: false,
 };
 
 test('store exposes exactly today\'s keys (state + actions)', () => {
   assert.deepEqual(Object.keys(initial).sort(), [...STATE_KEYS].sort());
-  assert.equal(STATE_KEYS.length, 155);
+  assert.equal(STATE_KEYS.length, 157);
 });
 
 test('initial values of every non-function key', () => {
