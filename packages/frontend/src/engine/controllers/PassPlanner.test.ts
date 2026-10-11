@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
-import { computePassPlan } from './useNextPasses';
+import { computePassPlan, passPlanInputsChanged, passPlanInputsOf, PLAN_STALE_MS } from './PassPlanner';
 
 const EPOCH_ISO = '2026-07-10T00:00:00.000Z';
 const SAT = {
@@ -34,5 +34,26 @@ describe('computePassPlan', () => {
   it('says none-found when the propagation window is exceeded', () => {
     const plan = computePassPlan(SAT, 'ground', OBS, T0 + 400 * 86_400_000);
     assert.deepEqual(plan, { passes: [], status: 'none-found' });
+  });
+});
+
+describe('passPlanInputsChanged', () => {
+  const state = { selectedSatellite: SAT, observerLocation: OBS, vantage: 'ground' as const, simTimeMs: T0 };
+  const base = passPlanInputsOf(state);
+
+  it('computes the first time', () => {
+    assert.equal(passPlanInputsChanged(null, base), true);
+  });
+
+  it('ignores clock movement inside one bucket', () => {
+    const later = passPlanInputsOf({ ...state, simTimeMs: T0 + 1000 });
+    assert.equal(passPlanInputsChanged(base, later), false);
+  });
+
+  it('fires on a new bucket, selection, observer or vantage', () => {
+    assert.equal(passPlanInputsChanged(base, passPlanInputsOf({ ...state, simTimeMs: T0 + PLAN_STALE_MS })), true);
+    assert.equal(passPlanInputsChanged(base, passPlanInputsOf({ ...state, selectedSatellite: null })), true);
+    assert.equal(passPlanInputsChanged(base, passPlanInputsOf({ ...state, observerLocation: { ...OBS } })), true);
+    assert.equal(passPlanInputsChanged(base, passPlanInputsOf({ ...state, vantage: 'orbit' })), true);
   });
 });

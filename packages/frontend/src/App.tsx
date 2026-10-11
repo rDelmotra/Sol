@@ -1,7 +1,6 @@
 import { Suspense, lazy, useEffect, useRef } from 'react';
 import type { Engine } from './engine/Engine';
 import { LoadingScreen } from './ui/LoadingScreen';
-import { useNextPasses } from './ui/hooks/useNextPasses';
 
 // The cockpit HUD (state/DECISIONS.md D8) replaces the old overlay. Split out
 // of the first-paint chunk like the old overlay was.
@@ -11,7 +10,6 @@ const DevOverlay = lazy(() => import('./ui/DevOverlay').then((m) => ({ default: 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Engine | null>(null);
-  useNextPasses(); // pass plan for the arc + readout (store-only, no engine import)
 
   useEffect(() => {
     const canvas = canvasRef.current;

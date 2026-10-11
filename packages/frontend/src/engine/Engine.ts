@@ -31,6 +31,7 @@ import { createLiveAnalyticSource } from '../query/analytic/live-source';
 import { getRawQueryVocab } from '../query/vocab';
 import { TimelineController } from './controllers/TimelineController';
 import { LiveKinematicsPublisher } from './controllers/LiveKinematics';
+import { PassPlanner } from './controllers/PassPlanner';
 import { FlyController } from './controllers/FlyController';
 
 export class Engine {
@@ -67,6 +68,7 @@ export class Engine {
   /** Historical time-scrub / planetarium / return-to-present; owns the loaded catalog. */
   private timeline: TimelineController;
   private liveKinematics: LiveKinematicsPublisher;
+  private readonly passPlanner = new PassPlanner();
   /** Keyboard + gamepad free flight, pad actions, gamepad time scrub. */
   private fly: FlyController;
 
@@ -172,6 +174,7 @@ export class Engine {
     );
     this.liveKinematics = new LiveKinematicsPublisher(this.createTrackingSource());
     this.fly = new FlyController(this.camera, this.controls, this.nav);
+    this.passPlanner.start();
 
     // ── Clock ─────────────────────────────────────────────────────────────────
     this.clock = new THREE.Clock();
@@ -640,6 +643,7 @@ export class Engine {
     this.visualListPoller?.dispose();
     this.nav.dispose();
     this.fly.dispose();
+    this.passPlanner.dispose();
     this.trailUnsub?.();
     this.inputManager?.dispose();
     this.resizeObserver?.disconnect();

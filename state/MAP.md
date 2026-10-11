@@ -99,7 +99,7 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Observer-sky logic (no engine, store or UI) | `packages/frontend/src/sky/` |
 | Pass prediction (rise, peak, set, bearings) | `packages/frontend/src/sky/passes.ts` |
 | Pass arc sampling, Earth-fixed | `packages/frontend/src/sky/pass-arc.ts` |
-| Pass plan for the selected object (hook, mounted in App) | `packages/frontend/src/ui/hooks/useNextPasses.ts` |
+| Pass plan for the selected object: store subscription owned by the Engine, writes `setPassPlan` | `packages/frontend/src/engine/controllers/PassPlanner.ts` |
 | OMM to orbit-diagram elements | `packages/frontend/src/sky/orbit-elements.ts` |
 | Overlay UI | `packages/frontend/src/ui/` |
 | Cockpit HUD root: shell, layout numbers, formatters, keyboard map, tokens (shared surface, mounted by App) | `packages/frontend/src/ui/cockpit/` (`CockpitHud.tsx`, `layout.ts`, `format.ts`, `keys.ts`, `useCockpitKeys.ts`, `cockpit.css`) |
@@ -110,7 +110,7 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Cockpit ground view: compass strip and pass readout, with their pure helpers | `packages/frontend/src/ui/cockpit/ground/` |
 | Cockpit controls sheet: keyboard / gamepad diagram / mouse bindings | `packages/frontend/src/ui/cockpit/controls/` |
 | Cockpit on-screen layers: reticle, object disc, edge arcs, gear readout and sweep, corner telemetry, ask bar and waveform | `packages/frontend/src/ui/cockpit/hud/` |
-| UI hooks: GPS fix, pass plan, analytic ask, element size (ResizeObserver) | `packages/frontend/src/ui/hooks/` |
+| UI hooks: GPS fix, analytic ask, element size (ResizeObserver) | `packages/frontend/src/ui/hooks/` |
 | Observer location acquisition and cache policy | `packages/frontend/src/sky/observer-location.ts` |
 | GLSL shaders | `packages/frontend/src/shaders/` |
 
