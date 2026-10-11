@@ -22,7 +22,7 @@ import {
   ER_KM,
 } from '@orbitwatch/orbital-core';
 import { writeSourceToScene } from './scene/frames';
-import type { VisibilityMode, ColorBy, SatelliteFilterState } from '../store/useStore';
+import type { SkyLens, ColorBy, SatelliteFilterState } from '../store/useStore';
 
 const MAX_OBJECTS = 100_000;
 
@@ -116,6 +116,7 @@ export class SatelliteRenderer {
         uBaseColor: { value: new THREE.Vector3(1, 1, 1) },
         uT: { value: 0.0 },
         uSelectedIndex: { value: -1.0 },
+        uCandidateIndex: { value: -1.0 },
         uTimeSinceArrival: { value: -1.0 },
       },
       transparent: true,
@@ -134,7 +135,7 @@ export class SatelliteRenderer {
     count: number,
     observer: ObserverSceneAnchor | null,
     sunDir: THREE.Vector3,
-    visibilityMode: VisibilityMode,
+    skyLens: SkyLens,
     catalogData: EnrichedTLEObject[],
     filters: SatelliteFilterState,
     visualNoradIds: Set<number>
@@ -155,7 +156,7 @@ export class SatelliteRenderer {
     this.prevPosAttr.needsUpdate = true;
     this.currPosAttr.needsUpdate = true;
 
-    return this.applyVisibilityAndFilters(count, observer, sunDir, visibilityMode, catalogData, filters, visualNoradIds, false);
+    return this.applyVisibilityAndFilters(count, observer, sunDir, skyLens, catalogData, filters, visualNoradIds, false);
   }
 
   /** Write positions into both previous and current buffers (no interpolation tween). */
@@ -165,7 +166,7 @@ export class SatelliteRenderer {
     count: number,
     observer: ObserverSceneAnchor | null,
     sunDir: THREE.Vector3,
-    visibilityMode: VisibilityMode,
+    skyLens: SkyLens,
     catalogData: EnrichedTLEObject[],
     filters: SatelliteFilterState,
     visualNoradIds: Set<number>
@@ -187,7 +188,7 @@ export class SatelliteRenderer {
     this.prevPosAttr.needsUpdate = true;
     this.currPosAttr.needsUpdate = true;
 
-    return this.applyVisibilityAndFilters(count, observer, sunDir, visibilityMode, catalogData, filters, visualNoradIds, true);
+    return this.applyVisibilityAndFilters(count, observer, sunDir, skyLens, catalogData, filters, visualNoradIds, true);
   }
 
   setSatelliteSize(index: number, multiplier: number): void {
@@ -284,6 +285,11 @@ export class SatelliteRenderer {
     this.material.uniforms.uTimeSinceArrival.value = timeSinceArrival;
   }
 
+  /** Gamepad reticle's highlighted soft-lock candidate (amber); -1 = none. */
+  updateCandidateUniform(candidateIndex: number): void {
+    this.material.uniforms.uCandidateIndex.value = candidateIndex;
+  }
+
   /** Returns the GPU-equivalent interpolated world position for a single object. */
   getInterpolatedPosition(index: number, t: number): THREE.Vector3 {
     const prevArr = this.prevPosAttr.array as Float32Array;
@@ -300,7 +306,7 @@ export class SatelliteRenderer {
     count: number,
     observer: ObserverSceneAnchor | null,
     sunDir: THREE.Vector3,
-    visibilityMode: VisibilityMode,
+    skyLens: SkyLens,
     catalogData: EnrichedTLEObject[],
     filters: SatelliteFilterState,
     visualNoradIds: Set<number>,
@@ -406,7 +412,7 @@ export class SatelliteRenderer {
       if (isVisibleBase) {
         finalMult = this.multipliers[i];
 
-        if (visibilityMode === 'radio' && observerAvailable && hasZenith) {
+        if (skyLens === 'radio' && observerAvailable && hasZenith) {
           const i3 = i * 3;
           const satX = currArr[i3];
           const satY = currArr[i3 + 1];
@@ -437,7 +443,7 @@ export class SatelliteRenderer {
               }
             }
           }
-        } else if (visibilityMode === 'dome' && observerAvailable && hasZenith) {
+        } else if (skyLens === 'horizon' && observerAvailable && hasZenith) {
           // Sky-dome: everything above the horizon, naked-eye ones highlighted. The
           // per-object policy (horizon gate + highlight + fade) lives in the pure
           // evaluateDomeBrightness(); the renderer just supplies geometry + lighting.
@@ -503,10 +509,10 @@ export class SatelliteRenderer {
     filters: SatelliteFilterState,
     observer: ObserverSceneAnchor | null,
     sunDir: THREE.Vector3,
-    visibilityMode: VisibilityMode,
+    skyLens: SkyLens,
     visualNoradIds: Set<number>
   ): VisibleCounts {
-    return this.applyVisibilityAndFilters(catalogData.length, observer, sunDir, visibilityMode, catalogData, filters, visualNoradIds);
+    return this.applyVisibilityAndFilters(catalogData.length, observer, sunDir, skyLens, catalogData, filters, visualNoradIds);
   }
 
   dispose(): void {

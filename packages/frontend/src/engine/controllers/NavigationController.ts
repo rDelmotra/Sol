@@ -2,10 +2,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CameraAnimator, HOME_POSITION, HOME_TARGET } from './CameraAnimator';
 import { ObserverSkyController } from './ObserverSkyController';
-import { useStore, isObserverMode, type TrackingStyle, type VisibilityMode } from '../../store/useStore';
+import { useStore, type TrackingStyle } from '../../store/useStore';
 import { dsoIndexOf } from '../../data/dso-index';
 import type { TrackingSource } from './TrackingSource';
 import type { GeodeticObserver } from '../../data/types';
+import { UnfollowAnimator } from './UnfollowAnimator';
+import { LandingController } from './LandingController';
 
 interface NavigationCallbacks {
   /** Tell the input layer to drop any in-progress joyride free-look state. */
@@ -35,6 +37,10 @@ export class NavigationController {
   private useHardReset = false;
   private dragExitedFollowingFromInput = false;
   private cameraModeUnsub: (() => void) | null = null;
+  private readonly unfollowAnimator = new UnfollowAnimator();
+  private readonly landing: LandingController;
+  /** Camera pose when the ground rig was first entered; restored by the one exit path. */
+  private savedPose: { position: THREE.Vector3; target: THREE.Vector3 } | null = null;
 
   private readonly trackingRadialDir = new THREE.Vector3();
   private readonly trackingEndCamPos = new THREE.Vector3();
@@ -53,6 +59,7 @@ export class NavigationController {
     this.source = source;
     this.callbacks = callbacks;
     this.cameraController = new CameraAnimator(camera);
+    this.landing = new LandingController(camera);
     this.observerSky = new ObserverSkyController(camera, controls, (headingRad) => {
       useStore.getState().setObserverHeadingRad(headingRad);
     });
@@ -87,10 +94,10 @@ export class NavigationController {
           this.returnEndPos = null;
         }
 
-        // Still in dome/visual? Re-establish the observer-sky rig (re-pins the eye +
+        // Still on the ground? Re-establish the observer-sky rig (re-pins the eye +
         // its FOV) so it survives a joyride/fly-to round-trip.
-        if (isObserverMode(state.visibilityMode) && state.observerLocation) {
-          this.observerSky.enter(state.observerLocation, state.visibilityMode);
+        if (state.vantage === 'ground' && state.observerLocation) {
+          this.enterRig(state.observerLocation);
         }
       }
 
@@ -150,6 +157,12 @@ export class NavigationController {
     const selectedIdx = store.selectedIndex;
     const selectedDso = store.selectedDso;
 
+    // Something else changed the mode mid pull-back (e.g. reset) — drop it.
+    if (this.unfollowAnimator.isActive() && cameraMode !== 'following' && cameraMode !== 'flying') {
+      this.unfollowAnimator.cancel();
+    }
+    let tracked = false; // a tracking branch ran with live kinematics this frame
+
     if (cameraMode === 'free') {
       // Observer-sky rig (visual / dome modes): eye pinned to the observer, gaze
       // driven by drag. Delegated to ObserverSkyController, which re-anchors the
@@ -183,6 +196,7 @@ export class NavigationController {
           store.setCameraMode('following');
           this.arrivalTime = performance.now();
         }
+        tracked = true;
       }
 
     } else if (cameraMode === 'flying' && selectedDso !== null) {
@@ -209,6 +223,7 @@ export class NavigationController {
           store.setCameraMode('following');
           this.arrivalTime = performance.now();
         }
+        tracked = true;
       } else {
         // No ephemeris yet — stay in free until data arrives
         store.setCameraMode('free');
@@ -222,6 +237,7 @@ export class NavigationController {
         } else {
           this.cameraController.updateFollow(this.trackingPos, this.controls.target);
         }
+        tracked = true;
       }
 
     } else if (cameraMode === 'following' && selectedDso !== null) {
@@ -233,6 +249,7 @@ export class NavigationController {
         } else {
           this.cameraController.updateFollow(this.trackingPos, this.controls.target);
         }
+        tracked = true;
       }
 
     } else if (cameraMode === 'returning') {
@@ -242,6 +259,11 @@ export class NavigationController {
       if (done) {
         store.setCameraMode('free');
       }
+    }
+
+    // After the branch has moved the target, so the pull-back re-seats from this frame's target.
+    if (tracked && this.unfollowAnimator.apply(this.camera, this.controls.target, performance.now())) {
+      this.finishUnfollow();
     }
   }
 
@@ -351,8 +373,46 @@ export class NavigationController {
     this.flyToDso(dsoId, 'joyride');
   }
 
+  /**
+   * Drop tracking and go free from where the camera is (pad B). Inside
+   * OrbitControls' minDistance the camera first eases out (see
+   * {@link UnfollowAnimator}); otherwise it hands over at once.
+   * No-op unless following/flying, or mid pull-back.
+   */
+  unfollow(): void {
+    const store = useStore.getState();
+    if (store.cameraMode !== 'following' && store.cameraMode !== 'flying') return;
+    if (this.unfollowAnimator.isActive()) return;
+    const started = this.unfollowAnimator.start(
+      this.camera, this.controls.target, this.controls.minDistance, performance.now(),
+    );
+    if (!started) this.finishUnfollow();
+  }
+
+  private finishUnfollow(): void {
+    this.controls.enabled = true;
+    this.dragExitedFollowingFromInput = true; // keep the target where it is
+    useStore.getState().setCameraMode('free');
+  }
+
+  /** Land where the view centre meets the ground. See {@link LandingController}. */
+  landWhereLooking(): boolean {
+    return this.landing.landWhereLooking();
+  }
+
+  /** Take off: back to orbit. Same exit path as the ORBIT control (see exitObserverSky). */
+  takeOff(): void {
+    this.landing.takeOff();
+  }
+
+  /** L / pad D-pad down: land if in orbit, take off if on the ground. */
+  toggleLanding(): void {
+    this.landing.toggle();
+  }
+
   resetCamera(): void {
     const store = useStore.getState();
+    this.unfollowAnimator.cancel();
     this.useHardReset = true;
     if (store.cameraMode !== 'returning') {
       store.setCameraMode('returning');
@@ -364,12 +424,13 @@ export class NavigationController {
     }
   }
 
-  /** Enter the observer-sky rig for visual/dome mode (eye pinned + alt-az look). */
-  enterObserverSky(loc: GeodeticObserver, mode: VisibilityMode): void {
+  /** Enter the observer-sky rig for ground vantage (eye pinned + alt-az look). */
+  enterObserverSky(loc: GeodeticObserver): void {
     const store = useStore.getState();
+    this.savePoseOnce();
     if (store.cameraMode !== 'free') {
       // The cameraMode → 'free' transition re-establishes the rig (see the sub
-      // above), reading the now-current observer mode + location — so don't also
+      // above), reading the now-current vantage + location — so don't also
       // enter here, or it would double-fire.
       store.setCameraMode('free');
       return;
@@ -377,13 +438,42 @@ export class NavigationController {
     this.cameraController.cancel();
     this.arrivalTime = -1;
     this.returnEndPos = null;
-    this.observerSky.enter(loc, mode);
+    this.enterRig(loc);
   }
 
-  /** Leave the observer-sky rig (mode → non-observer) and return the camera home. */
+  /**
+   * Enter the ground rig. The sub path (return to 'free' on the ground) comes
+   * through here too, so the orbit pose is saved whichever way the rig starts.
+   * Only the first call saves.
+   */
+  private enterRig(loc: GeodeticObserver): void {
+    this.savePoseOnce();
+    this.observerSky.enter(loc);
+  }
+
+  /** Remember the orbit pose the first time the ground is entered (not on re-seeds). */
+  private savePoseOnce(): void {
+    if (this.savedPose) return;
+    this.savedPose = { position: this.camera.position.clone(), target: this.controls.target.clone() };
+  }
+
+  /**
+   * The ONE way off the ground (vantage → orbit, from the ORBIT control or take-off).
+   * Restores the orbit pose saved on landing; with none saved, glides home.
+   */
   exitObserverSky(): void {
     this.observerSky.exit();
-    this.resetCamera();
+    const pose = this.savedPose;
+    this.savedPose = null;
+    if (!pose) {
+      this.resetCamera();
+      return;
+    }
+    const store = useStore.getState();
+    if (store.cameraMode !== 'free') store.setCameraMode('free');
+    this.camera.position.copy(pose.position);
+    this.controls.target.copy(pose.target);
+    this.controls.enabled = true;
   }
 
   /** Forward a dome alt-az look delta (radians) from the input layer into the rig. */

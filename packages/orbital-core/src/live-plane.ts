@@ -83,6 +83,71 @@ export function lookAngles(s: StateEr, obs: ObserverFrame): { sinElevation: numb
   return { sinElevation, rangeKm: dist * ER_KM };
 }
 
+/** Where to look for a state, seen from an observer: elevation, compass bearing, range. */
+export interface AzElLook {
+  /** Degrees above the local horizon, [-90, 90]. */
+  elevationDeg: number;
+  /** Compass bearing, degrees, North→East, [0, 360). */
+  azimuthDeg: number;
+  rangeKm: number;
+}
+
+/**
+ * Elevation, azimuth and range for a state seen from an observer frame.
+ *
+ * Elevation comes from lookAngles (v·up/|v|), so the two can never disagree.
+ * Azimuth needs the observer's local compass axes, built in the observer's own
+ * frame (TEME from observerTeme, or ECEF from observerEcef — both have z on
+ * the polar axis):
+ *   east  = normalize(z × up) = normalize(−up.y, up.x, 0)
+ *   north = up × east
+ *   azimuth = atan2(v·east, v·north), wrapped to [0, 360)
+ * up is the WGS84 ellipsoid normal (observer.ts), so "north" is geodetic north.
+ *
+ * Poles: when up is exactly parallel to z, z × up is zero and every direction
+ * is south (or north). Azimuth has no meaning there; we pick east = +y so the
+ * result stays finite and deterministic. Near (not at) the pole the cross
+ * product is tiny but still points the right way, so it is used as is.
+ *
+ * Null when the state coincides with the observer (degenerate, as lookAngles).
+ */
+export function azimuthElevation(s: StateEr, obs: ObserverFrame): AzElLook | null {
+  const la = lookAngles(s, obs);
+  if (!la) return null;
+  const vx = s.r.x - obs.position.x;
+  const vy = s.r.y - obs.position.y;
+  const vz = s.r.z - obs.position.z;
+  const { up } = obs;
+
+  // east = normalize(z × up). z × up = (−up.y, up.x, 0).
+  let ex = -up.y;
+  let ey = up.x;
+  const eLen = Math.sqrt(ex * ex + ey * ey);
+  if (eLen === 0) {
+    ex = 0;
+    ey = 1;
+  } else {
+    ex /= eLen;
+    ey /= eLen;
+  }
+  // north = up × east (east.z = 0).
+  const nx = -up.z * ey;
+  const ny = up.z * ex;
+  const nz = up.x * ey - up.y * ex;
+
+  const vEast = vx * ex + vy * ey;
+  const vNorth = vx * nx + vy * ny + vz * nz;
+  let azimuthDeg = (Math.atan2(vEast, vNorth) * DEG + 360) % 360;
+  // A tiny negative angle can round to exactly 360; that bearing is north.
+  if (azimuthDeg >= 360) azimuthDeg = 0;
+
+  return {
+    elevationDeg: Math.asin(Math.max(-1, Math.min(1, la.sinElevation))) * DEG,
+    azimuthDeg,
+    rangeKm: la.rangeKm,
+  };
+}
+
 /** Straight-line distance, km, between two states' positions. */
 export function distanceKm(a: StateEr, b: StateEr): number {
   const dx = a.r.x - b.r.x;

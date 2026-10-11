@@ -19,13 +19,31 @@ Remove an item when it is fixed. None of these is scheduled unless the owner say
 - **Perceptor and Analytic IR redesign.** See D3. Marked now by 2 known violations in `tests/architecture.test.ts`
   (`services/analytic-prompt.ts` importing `analytic`) and by the hand-kept list in `packages/analytic/src/capability.ts`.
 
+## Cockpit port (deferred)
+
+- **No unfollow trigger for the UI.** Dock ORBIT leaves a joyride via `cameraMode` 'returning' (eases home). A store trigger slot for `NavigationController.unfollow` would let it stop in place instead.
+- **Place naming after landing.** `NavigationController.landWhereLooking` only sets lat/lon (and clears `observerPlaceName`). Naming the place is left to the UI.
+- **No pad look on the ground.** In the dome view pad buttons work, but the right stick does not turn the gaze (the spike had no binding either).
+- **Pass search runs on the main thread.** `packages/frontend/src/engine/controllers/PassPlanner.ts` runs a 24-hour `findPasses` (about a thousand SGP4 steps) on each selection, observer, vantage or 5-minute sim-time change. Move it to a worker.
+
+## Dead after the cockpit swap (D8) — remove in a follow-up
+
+The old overlay is deleted. These have no reader left in the UI. Check each before removing.
+
+- `packages/frontend/src/store/filterSlice.ts`: filter state that only FilterPanel set.
+- `packages/frontend/src/store/commandSlice.ts`: `injectSearchQuery` and its setter (SearchBar registered it).
+- `packages/frontend/src/store/types.ts`: hover state (`hoveredName`) and cluster state (`clusterItems`, `clusterScreenX`, `clusterScreenY`, `setCluster`, `clearCluster`). Tooltip and ClusterPopup read them. The engine may still write them.
+- `packages/frontend/src/query/`: the older keyword engine (parser, executor, aliases, vocab, tokenize). SearchBar was its caller. `vocab` is still imported by `packages/frontend/src/engine/Engine.ts`, and `types` by the store.
+- `packages/frontend/src/data/metadata-client.ts`: nothing imports it now.
+- `fuse.js` in `packages/frontend/package.json`: only SearchBar used it.
+
 ## Known weaknesses (left alone by decision D2)
 
 - **Filter fan-out.** Adding one filter group touches about 18 files. It needs a facet registry.
 - **Engine reads the store directly** about 95 times across 15 files.
 - **Test blind spots.** The architecture test has no rules for the catch-all `engine` zone, and cannot see `new URL()` worker edges.
 - **Untested critical code.** `World.ts`, `SatelliteRenderer.applyVisibilityAndFilters`, `routes/tle.ts`, cron, history, the Rust crate.
-- **Large files.** FilterPanel 767 lines, SatelliteRenderer 517, SatellitesLayer about 510, TimeScrubber 522, InfoCard 496,
+- **Large files.** SatelliteRenderer 517, SatellitesLayer about 510,
   and in the Perceptor area `execute` 950, `validate` 676, `analytic-prompt` 623, `compiler` 565.
 - **Duplicated physics in DSO convert.** `packages/backend/src/dso/normalize/convert.ts` has its own Julian date and precession/nutation.
 - **Duplicated constants.** `MS_PER_DAY` in `packages/analytic/src/validate.ts` and `packages/backend/src/routes/query.ts`.

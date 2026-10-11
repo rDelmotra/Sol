@@ -4,7 +4,8 @@ import type { SatelliteRenderer } from '../SatelliteRenderer';
 import type { DsoRenderer } from '../DsoRenderer';
 import type { GPUPicker } from '../GPUPicker';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
-import { useStore } from '../../store/useStore';
+import { useStore, isDomeView } from '../../store/useStore';
+import { RETICLE_RING_RADIUS_PX } from '../../constants/reticle';
 import { dsoIndexOf } from '../../data/dso-index';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
 import { sceneToSourceInto, type SourceVec } from '../scene/frames';
@@ -18,6 +19,8 @@ const CLUSTER_RADIUS_SQ = 0.0078 * 0.0078; // ~50 km in scene units, squared
 const HOVER_THROTTLE_MS = 100;
 /** Wheel zoom feel: FOV factor = exp(deltaY · k). Scroll up (deltaY<0) zooms in. */
 const WHEEL_ZOOM_K = 0.0014;
+/** Reticle soft-lock pick cadence (a GPU read-back stall, so throttled). ~10 Hz. */
+const RETICLE_PICK_INTERVAL_MS = 100;
 
 // ── InputManager ─────────────────────────────────────────────────────────────
 
@@ -44,6 +47,7 @@ export class InputManager {
   private joyrideLookPointerPos: { x: number; y: number } | null = null;
   private domeLookPointerPos: { x: number; y: number } | null = null;
   private lastHoverTime = 0;
+  private lastReticlePickAt = -Infinity;
 
   // Live pointers (by id) + last pinch separation — for two-finger dome zoom.
   private readonly activePointers = new Map<number, { x: number; y: number }>();
@@ -102,6 +106,33 @@ export class InputManager {
     this.firstPositionReceived = v;
   }
 
+  /**
+   * Per-frame from the Engine. While a gamepad is connected, GPU-picks the
+   * reticle circle ~10 Hz and publishes the hits as soft-lock candidates (the
+   * store skips unchanged lists). Without a pad it costs nothing and clears any
+   * leftover candidates once.
+   */
+  tickReticle(wallNowMs: number): void {
+    const store = useStore.getState();
+    if (!store.gamepadConnected) {
+      if (store.reticleCandidates.length > 0) store.setReticleCandidates([]);
+      return;
+    }
+    if (wallNowMs - this.lastReticlePickAt < RETICLE_PICK_INTERVAL_MS) return;
+    this.lastReticlePickAt = wallNowMs;
+    store.setReticleCandidates(this.pickAtReticle());
+  }
+
+  /** TLE indices inside the reticle ring at the canvas centre (DSOs ignored). */
+  pickAtReticle(): number[] {
+    if (!this.gpuPicker || !this.firstPositionReceived || this.catalogData.length === 0) return [];
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return [];
+    this.syncPickerUniforms();
+    const hits = this.gpuPicker.pickAreaRadius(rect.width / 2, rect.height / 2, rect.width, rect.height, RETICLE_RING_RADIUS_PX);
+    return hits.filter((i) => i < this.catalogData.length);
+  }
+
   /** Called by Engine's cameraModeUnsub when transitioning to 'free' or 'returning'. */
   cancelJoyrideLook(): void {
     this.joyrideLookPointerPos = null;
@@ -117,13 +148,9 @@ export class InputManager {
 
   // ── Private ─────────────────────────────────────────────────────────────
 
-  /** Dome lens active = free camera + dome mode + a known observer location. */
+  /** Dome lens active = free camera + ground vantage + a known observer location. */
   private isDomeActive(state: ReturnType<typeof useStore.getState>): boolean {
-    return (
-      state.cameraMode === 'free' &&
-      state.visibilityMode === 'dome' &&
-      state.observerLocation !== null
-    );
+    return isDomeView(state);
   }
 
   private syncPickerUniforms(): void {
@@ -162,7 +189,7 @@ export class InputManager {
     }
     // Sky-dome look: drag rotates the gaze (OrbitControls are disabled here). Also
     // record pointerDownPos so a tap still falls through to GPU pick/select below.
-    if (state.cameraMode === 'free' && state.visibilityMode === 'dome' && state.observerLocation) {
+    if (isDomeView(state)) {
       this.domeLookPointerPos = { x: e.clientX, y: e.clientY };
     }
     this.pointerDownPos = { x: e.clientX, y: e.clientY };
@@ -215,8 +242,7 @@ export class InputManager {
     }
 
     if (this.domeLookPointerPos) {
-      const domeActive =
-        mode === 'free' && state.visibilityMode === 'dome' && state.observerLocation !== null;
+      const domeActive = isDomeView(state);
       if (!domeActive) {
         this.domeLookPointerPos = null;
       } else {

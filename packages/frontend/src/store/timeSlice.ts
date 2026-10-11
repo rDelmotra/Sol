@@ -7,6 +7,8 @@ export const createTimeSlice: Slice<TimeSlice> = (set) => ({
   viewMode: 'live',
   wallClockMs: Date.now(),
   scrubberMode: false,
+  scrubField: 'day',
+  scrubFocusOnReset: false,
   setSimRate: (rate) =>
     set((state) => {
       simClock.setRate(rate);
@@ -20,7 +22,9 @@ export const createTimeSlice: Slice<TimeSlice> = (set) => ({
     }),
   setSimTimeMs: (ms) => set({ simTimeMs: ms }),
   setWallClockMs: (ms) => set({ wallClockMs: ms }),
-  setScrubberMode: (on) => set({ scrubberMode: on }),
+  setScrubberMode: (on) => set({ scrubberMode: on, scrubFocusOnReset: false }),
+  setScrubField: (field) => set({ scrubField: field, scrubFocusOnReset: false }),
+  setScrubFocusOnReset: (on) => set({ scrubFocusOnReset: on }),
   jumpToSimTime: (date) =>
     set((state) => {
       simClock.jumpTo(date);

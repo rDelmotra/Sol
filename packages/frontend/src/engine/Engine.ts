@@ -23,12 +23,16 @@ import { SatellitesLayer } from './world/layers/SatellitesLayer';
 import { ObserverMarkerLayer } from './world/layers/ObserverMarkerLayer';
 import { HorizonLayer } from './world/layers/HorizonLayer';
 import { DomeSkyLayer } from './world/layers/DomeSkyLayer';
+import { PassArcLayer } from './world/layers/PassArcLayer';
 import { registerEngineCommands, type EngineCommands } from './command/EngineCommands';
 import type { FrameContext } from './render/Layer';
 import { AnalyticRuntime } from './analytic/AnalyticRuntime';
 import { createLiveAnalyticSource } from '../query/analytic/live-source';
 import { getRawQueryVocab } from '../query/vocab';
 import { TimelineController } from './controllers/TimelineController';
+import { LiveKinematicsPublisher } from './controllers/LiveKinematics';
+import { PassPlanner } from './controllers/PassPlanner';
+import { FlyController } from './controllers/FlyController';
 
 export class Engine {
   private static readonly EMPTY_NORAD_SET: Set<number> = new Set();
@@ -63,6 +67,10 @@ export class Engine {
   private resizeObserver: ResizeObserver | null = null;
   /** Historical time-scrub / planetarium / return-to-present; owns the loaded catalog. */
   private timeline: TimelineController;
+  private liveKinematics: LiveKinematicsPublisher;
+  private readonly passPlanner = new PassPlanner();
+  /** Keyboard + gamepad free flight, pad actions, gamepad time scrub. */
+  private fly: FlyController;
 
   constructor(canvas: HTMLCanvasElement) {
     // ── Renderer ──────────────────────────────────────────────────────────────
@@ -106,6 +114,7 @@ export class Engine {
     // Parents to the Earth group (like the observer marker), so its scene-root
     // registration order is irrelevant; dome-only visibility toggled in update().
     this.world.register(this.horizonLayer);
+    this.world.register(new PassArcLayer(() => this.earthLayer.group)); // Earth-fixed, parents to the Earth group
     this.world.register(new StarfieldLayer());
     this.world.register(this.trailsLayer);
     this.world.register(this.dsoLayer);
@@ -163,6 +172,9 @@ export class Engine {
       this.createTrackingSource(),
       { onCancelJoyrideLook: () => this.inputManager?.cancelJoyrideLook() },
     );
+    this.liveKinematics = new LiveKinematicsPublisher(this.createTrackingSource());
+    this.fly = new FlyController(this.camera, this.controls, this.nav);
+    this.passPlanner.start();
 
     // ── Clock ─────────────────────────────────────────────────────────────────
     this.clock = new THREE.Clock();
@@ -291,7 +303,7 @@ export class Engine {
                 this.horizonLayer.setLocation(loc),
               );
             },
-            onEnterObserverSky: (loc, mode) => this.nav.enterObserverSky(loc, mode),
+            onEnterObserverSky: (loc) => this.nav.enterObserverSky(loc),
             onExitObserverSky: () => this.nav.exitObserverSky(),
             onTick: () => this.tickResidentSet(),
           }),
@@ -567,6 +579,7 @@ export class Engine {
     // Camera state machine runs FIRST so the frame carries this-frame camera
     // position/distance (Earth/DSO LOD + label projection) and the freshest
     // selection arrival time for the satellite glow.
+    this.fly.update(delta); // moves camera + target before controls.update() in nav
     this.nav.update(uT);
     const arrivalTime = this.nav.getArrivalTime();
     const selectionTimeSinceArrival = arrivalTime > 0
@@ -592,6 +605,8 @@ export class Engine {
 
     // Push sim-time to store at ~4Hz for UI (HUD, TimeScrubber)
     const wallNow = performance.now();
+    this.liveKinematics.tick(wallNow);
+    this.inputManager?.tickReticle(wallNow);
     if (wallNow - this.lastSimTimeUpdateAt > 250) {
       const store = useStore.getState();
       store.setSimTimeMs(simClock.now());
@@ -627,6 +642,8 @@ export class Engine {
     }
     this.visualListPoller?.dispose();
     this.nav.dispose();
+    this.fly.dispose();
+    this.passPlanner.dispose();
     this.trailUnsub?.();
     this.inputManager?.dispose();
     this.resizeObserver?.disconnect();

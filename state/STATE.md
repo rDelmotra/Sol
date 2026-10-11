@@ -1,6 +1,6 @@
 # STATE — what is true now
 
-As of commit `e3914f8` on branch `spike/god1`, 2026-10-10.
+As of commit `dd4351a` on branch `cockpit/port`, 2026-10-11.
 
 ## What Orbitwatch is
 
@@ -13,14 +13,18 @@ Backend: Express. Frontend: React, three.js, Zustand, Vite. Physics: SGP4.
 | Check | Result |
 |---|---|
 | `npm run typecheck` | clean |
-| `npm run test` | 900 pass, 0 fail |
+| `npm run test` | 1142 pass, 0 fail |
 | Linter | none exists |
 | CI | none exists |
 
-Test counts by package: contracts 12, orbital-core 104, analytic 201, backend 347, frontend 225, repo-level tests 11 (architecture 4, state files 7).
+Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 346, frontend 453, repo-level tests 11 (architecture 4, state files 7).
 
 ## Recent milestones (newest first)
 
+- Engine-side cleanup on `cockpit/port`: pass planning is an Engine-owned `PassPlanner` (no React hook); `NavigationController` delegates to `UnfollowAnimator` and `LandingController`; reticle candidate name is a selector, not stored; per-call buffers reused; gamepad choice is stable.
+- Input bindings declared once in `packages/frontend/src/bindings/bindings.ts`: keyboard, gamepad, controls-sheet rows and HUD hints all derive from it. `FlyController` is camera-only; pad HUD buttons and the D-pad scrub moved to `pad-commands.ts` and `gamepad-scrub.ts`, both unit-tested.
+- Cockpit HUD frame ported (`cockpit/port`): it replaces the old overlay. Shell, telemetry corners, reticle, edge arcs + speed gauge, side panes, dock, time console, ask bar, object disc, orbit diagram, pass readout + compass, controls sheet. The old `ui/CompassStrip.tsx` is gone.
+- Cockpit engine side ported (`cockpit/port`): live altitude/speed, gamepad reticle soft-lock, pass arc, free flight with gears (keyboard + gamepad), land / take off / unfollow.
 - Janitor pass: dead store state and a vacuous architecture rule removed, stale comments fixed.
 - Stale worker buffers are now extrapolated (position + velocity × time) in `live-source.ts`.
 - Earth model is WGS84, in one file: `packages/orbital-core/src/earth.ts`. Done 2026-10-09.
@@ -56,5 +60,6 @@ Test counts by package: contracts 12, orbital-core 104, analytic 201, backend 34
 - `spike/god1` — current working branch.
 - `main` — release branch, behind this one.
 - `spike/takram` — earlier Takram (tiled Earth) spike. Not merged.
-- `claude/ui-run-spike-c350c8` — rejected cockpit UI. Kept only to cherry-pick from.
+- `claude/ui-run-spike-c350c8` — cockpit UI spike. Visual reference for `cockpit/port` (see D8). Not merged.
+- `cockpit/port` — the cockpit HUD being rebuilt on top of `spike/god1`.
 - `experiment/nl-to-ir` — its history contains a leaked key. Do not push or merge it.

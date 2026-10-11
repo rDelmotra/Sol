@@ -40,3 +40,14 @@ The Earth model is WGS84. No WGS72 switch now or later.
 ## D7 — Claude-specific docs stay out of git (2026-10-10)
 `CLAUDE.md`, `PROJECT_MAP/` and similar tool files stay untracked.
 Tool-neutral project state lives in `state/` and is tracked.
+
+## D8 — The cockpit HUD becomes the UI (2026-10-11)
+Supersedes the 2026-09-27 rejection of `claude/ui-run-spike-c350c8`.
+- The cockpit HUD replaces the whole old overlay. SearchBar, FilterPanel, InfoCard, AnswerCard, HUD, ResetViewButton and the old TimeScrubber component go.
+- It is rebuilt on branch `cockpit/port` off `spike/god1`, not merged from the spike. Spike code is reused only after review.
+- Time scrubbing keeps god1's engine and store logic, including the loaded-day snap guard. Only the cockpit's clock-row control is new.
+- The tutorial keeps only the gamepad controls sheet (`?` / pad START). The spotlight tour is dropped.
+- Desktop width first. Small screens later.
+
+## D9 — The cockpit HUD always animates (2026-10-11)
+The motion is part of the approved look; the owner's own Mac has Reduce Motion on and the HUD went still.

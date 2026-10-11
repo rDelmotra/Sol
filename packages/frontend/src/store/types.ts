@@ -7,6 +7,8 @@ import type { VisualListSource, VisualListStatus } from '../data/visualList';
 import type { HistoryCoverage } from '../data/history-client';
 import type { QueryFilterPatch } from '../query/types';
 import type { AnalyticProgram, ExecuteOutcome, AnalyticResult } from '@orbitwatch/analytic';
+import type { Pass, PassStatus } from '../sky/passes';
+import type { TimeField } from '../time/time-fields';
 
 /**
  * The current analytic answer (P2) — what the AnswerCard renders. One at a time;
@@ -24,28 +26,33 @@ export interface AnalyticAnswer {
 export type LoadingPhase = 'fetching' | 'initializing' | 'propagating' | 'ready';
 export type CameraMode = 'free' | 'flying' | 'following' | 'returning';
 export type TrackingStyle = 'follow' | 'joyride';
-export type VisibilityMode = 'all' | 'radio' | 'dome';
+/** Where the camera is: flying in orbit, or standing on the ground looking up. */
+export type Vantage = 'orbit' | 'ground';
+
+/** How the observer's position filters the sky. Independent of vantage. */
+export type SkyLens =
+  | 'all'      // no observer gating — the whole catalog
+  | 'horizon'  // everything above the observer's horizon, naked-eye ones highlighted
+  | 'radio';   // above ~10° elevation, with range falloff
+
 /** Live = view-clock tracks wall-clock now; Review = scrubbed/playing away from now. */
 export type ViewMode = 'live' | 'review';
 
-/** Visibility modes that drive the observer-anchored sky camera (vs the globe view). */
-export function isObserverMode(mode: VisibilityMode): boolean {
-  return mode === 'dome';
-}
-
 /**
  * True only while the camera is actually in the dome observer view — standing on the
- * ground looking up: `free` camera + `dome` mode + a known observer location. Joyride
+ * ground looking up: `free` camera + ground vantage + a known observer location. Joyride
  * and fly-to flip `cameraMode` away from `free` (the observer rig exits), so this gates
  * the dome **visuals** (gradient sky, hidden Earth surface, compass) off and restores
  * the normal space view — keeping visuals in lockstep with the camera, no race.
  */
 export function isDomeView(s: {
   cameraMode: CameraMode;
-  visibilityMode: VisibilityMode;
+  vantage: Vantage;
   observerLocation: GeodeticObserver | null;
 }): boolean {
-  return s.cameraMode === 'free' && s.visibilityMode === 'dome' && s.observerLocation !== null;
+  // Deliberately ignores skyLens: on the ground you get sky, horizon and compass
+  // whichever lens is filtering satellites.
+  return s.cameraMode === 'free' && s.vantage === 'ground' && s.observerLocation !== null;
 }
 
 export interface VisualListState {
@@ -165,6 +172,13 @@ export interface InteractionSlice {
   selectedIndex: number | null;
   selectedSatellite: EnrichedTLEObject | null;
   selectedAltitude: number | null;
+  /**
+   * Live SGP4 state of the selection, pushed by the Engine at ~4 Hz, so it follows
+   * the scrubbed clock. Unlike `selectedAltitude` (a frozen spherical estimate taken
+   * at selection time). Null with no selection or outside the propagation window.
+   */
+  liveAltitudeKm: number | null;
+  liveSpeedKmS: number | null;
   showOrbitTrail: boolean;
   selectedDso: DsoObject | null;
   hoveredName: string | null;
@@ -175,12 +189,19 @@ export interface InteractionSlice {
   clusterScreenY: number;
   setCameraMode: (mode: CameraMode) => void;
   setTrackingStyle: (style: TrackingStyle) => void;
+  /**
+   * Coupled writes: every call clears the live altitude/speed readout (it belongs
+   * to the old object) and hides the orbit trail; a non-null index also clears
+   * selectedDso; null while following/flying also sets cameraMode 'returning'.
+   */
   setSelectedSatellite: (
     index: number | null,
     data: EnrichedTLEObject | null,
     altitude?: number | null,
   ) => void;
   setSelectedDso: (dso: DsoObject | null) => void;
+  /** Skips the write when both values are unchanged (runs ~4×/s). */
+  setLiveKinematics: (altitudeKm: number | null, speedKmS: number | null) => void;
   setShowOrbitTrail: (show: boolean) => void;
   setHover: (name: string | null, screenX?: number, screenY?: number) => void;
   setCluster: (items: { index: number; data: EnrichedTLEObject; altitude: number }[], screenX: number, screenY: number) => void;
@@ -189,12 +210,26 @@ export interface InteractionSlice {
 
 export interface ObserverSlice {
   observerLocation: GeodeticObserver | null;
-  visibilityMode: VisibilityMode;
+  /** City label for `observerLocation`, resolved later and async (may never arrive). */
+  observerPlaceName: string | null;
+  /** Upcoming passes of the selected object over the observer, soonest first.
+   *  Computed outside the store; empty unless passStatus is 'ok'. */
+  nextPasses: Pass[];
+  /** Why there is (or is not) a pass list. 'ok' iff nextPasses is non-empty. */
+  passStatus: PassStatus;
+  vantage: Vantage;
+  skyLens: SkyLens;
   /** Dome-mode gaze heading (radians, from North toward East); drives the HUD compass. */
   observerHeadingRad: number;
   visualList: VisualListState;
   setObserverLocation: (loc: GeodeticObserver | null) => void;
-  setVisibilityMode: (mode: VisibilityMode) => void;
+  setObserverPlaceName: (name: string | null) => void;
+  /** Both halves of the pass plan in ONE write, so list and status never disagree. */
+  setPassPlan: (passes: Pass[], status: PassStatus) => void;
+  /** Coupled write: going to the ground also rewrites skyLens 'all' to 'horizon' in the same set (see observerSlice). */
+  setVantage: (vantage: Vantage) => void;
+  /** Coupled write: on the ground 'all' is stored as 'horizon'; in orbit it sticks (see observerSlice). */
+  setSkyLens: (lens: SkyLens) => void;
   setObserverHeadingRad: (rad: number) => void;
   setVisualListState: (state: VisualListState) => void;
 }
@@ -257,10 +292,18 @@ export interface TimeSlice {
   wallClockMs: number;
   /** Whether the modal time-scrubber (Star Walk wheel) is open (dims the rest of the HUD). */
   scrubberMode: boolean;
+  /** Field the gamepad time-scrub edits (D-pad ◄► picks it, ▲▼ steps its value). */
+  scrubField: TimeField;
+  /** Scrub focus is parked on the return-to-present button instead of a field. */
+  scrubFocusOnReset: boolean;
   setSimRate: (rate: number) => void;
   setSimTimeMs: (ms: number) => void;
   setWallClockMs: (ms: number) => void;
+  /** Also clears scrubFocusOnReset. */
   setScrubberMode: (on: boolean) => void;
+  /** Also clears scrubFocusOnReset. */
+  setScrubField: (field: TimeField) => void;
+  setScrubFocusOnReset: (on: boolean) => void;
   jumpToSimTime: (date: Date) => void;
   /** Scrub the view-clock to an absolute instant (enters review). */
   reviewAt: (date: Date) => void;
@@ -286,6 +329,47 @@ export interface HistorySlice {
   setPlanetarium: (on: boolean) => void;
 }
 
+export interface FlightSlice {
+  /** Fly-camera speed gear (0-based index; the HUD shows it +1) and how many gears exist. */
+  cameraGear: number;
+  cameraGearCount: number;
+  /** Fly-camera speed for the current gear, metres per second. */
+  cameraSpeedMps: number;
+  gamepadConnected: boolean;
+  /** Gamepad reticle soft-lock: TLE indices inside the reticle circle this poll,
+   *  nearest the camera first (then nearest the crosshair), plus the highlighted
+   *  one (L3/R3 cycle, A locks). */
+  reticleCandidates: number[];
+  reticleCandidateIndex: number | null;
+  setCameraGearState: (gear: number, gearCount: number, speedMps: number) => void;
+  setGamepadConnected: (connected: boolean) => void;
+  /** Keeps the current highlight if still present, else picks the first. No write
+   *  when the indices equal the current list element-wise. The highlighted name
+   *  is not stored: read it with `selectReticleCandidateName`. */
+  setReticleCandidates: (indices: number[]) => void;
+  /** Step the highlight through reticleCandidates: -1 back, +1 forward (wraps). */
+  cycleReticleCandidate: (dir: number) => void;
+}
+
+/** Cockpit HUD surfaces. In the store so keyboard, buttons and gamepad share one truth. */
+export interface HudSlice {
+  analysisPanelOpen: boolean;
+  focusPanelOpen: boolean;
+  askBarOpen: boolean;
+  /** The gamepad controls sheet (`?` / pad START). The only tutorial surface (D8). */
+  controlsSheetOpen: boolean;
+  /** The dock's location popover (pin button). Open state lives here so Esc can close it as one rung of keys.ts's ladder. */
+  locationPopoverOpen: boolean;
+  toggleAnalysisPanel: () => void;
+  toggleFocusPanel: () => void;
+  closePanels: () => void;
+  toggleAskBar: () => void;
+  setAskBarOpen: (open: boolean) => void;
+  toggleControlsSheet: () => void;
+  setControlsSheetOpen: (open: boolean) => void;
+  setLocationPopoverOpen: (open: boolean) => void;
+}
+
 export interface DsoSlice {
   dsoObjects: DsoObject[];
   dsoEphemerisById: Record<string, DsoSnapshot>;
@@ -304,6 +388,8 @@ export type AppState = BootSlice &
   AnalyticSlice &
   TimeSlice &
   HistorySlice &
-  DsoSlice;
+  DsoSlice &
+  FlightSlice &
+  HudSlice;
 
 export type Slice<T> = StateCreator<AppState, [], [], T>;

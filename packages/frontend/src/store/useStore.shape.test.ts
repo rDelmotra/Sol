@@ -1,7 +1,7 @@
 import { test, mock, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
-import { useStore } from './useStore';
+import { useStore, isDomeView, selectReticleCandidateName } from './useStore';
 import { emptyFacetCounts } from '../data/types';
 import type { DsoObject } from '../data/dso-types';
 
@@ -22,25 +22,35 @@ const dso = (id: string) =>
     provider: 'horizons', freshnessState: 'fresh', searchAliases: [] }) as unknown as DsoObject;
 
 const STATE_KEYS = [
+  'analysisPanelOpen',
   'analyticAnswer',
   'analyticFilter',
   'applyQueryFilters',
+  'askBarOpen',
+  'cameraGear',
+  'cameraGearCount',
   'cameraMode',
+  'cameraSpeedMps',
   'catalogData',
   'categoryCounts',
   'clearAnalyticAnswer',
   'clearCluster',
   'clearQueryFilters',
+  'closePanels',
   'clusterItems',
   'clusterScreenX',
   'clusterScreenY',
   'colorBy',
+  'controlsSheetOpen',
   'countryFilter',
+  'cycleReticleCandidate',
   'dataTimestamp',
   'dsoEphemerisById',
   'dsoLabelPositions',
   'dsoObjects',
   'facetCounts',
+  'focusPanelOpen',
+  'gamepadConnected',
   'goLive',
   'historyCoverage',
   'historyDay',
@@ -51,20 +61,30 @@ const STATE_KEYS = [
   'injectSearchQuery',
   'jumpToSimTime',
   'launchFilter',
+  'liveAltitudeKm',
+  'liveSpeedKmS',
   'loadingError',
   'loadingPhase',
+  'locationPopoverOpen',
+  'nextPasses',
   'objectCount',
   'observerHeadingRad',
   'observerLocation',
+  'observerPlaceName',
   'ownerFilter',
+  'passStatus',
   'planetarium',
   'programFilter',
   'purposeFilters',
   'regimeCounts',
   'regimeFilters',
   'resetSimClock',
+  'reticleCandidateIndex',
+  'reticleCandidates',
   'returnToPresent',
   'reviewAt',
+  'scrubField',
+  'scrubFocusOnReset',
   'scrubPreview',
   'scrubberMode',
   'sectorFilters',
@@ -75,25 +95,36 @@ const STATE_KEYS = [
   'selectedSatellite',
   'setAnalyticAnswer',
   'setAnalyticFilter',
+  'setAskBarOpen',
+  'setCameraGearState',
   'setCameraMode',
   'setCatalogData',
   'setCatalogInfo',
   'setCluster',
   'setColorBy',
+  'setControlsSheetOpen',
   'setCountryFilter',
   'setDsoEphemeris',
   'setDsoLabelPositions',
   'setDsoObjects',
+  'setGamepadConnected',
   'setHistoryCoverage',
   'setHistoryDay',
   'setHistoryLoading',
   'setHover',
   'setInjectSearchQuery',
+  'setLiveKinematics',
   'setLoadingError',
   'setLoadingPhase',
+  'setLocationPopoverOpen',
   'setObserverHeadingRad',
   'setObserverLocation',
+  'setObserverPlaceName',
+  'setPassPlan',
   'setPlanetarium',
+  'setReticleCandidates',
+  'setScrubField',
+  'setScrubFocusOnReset',
   'setScrubberMode',
   'setSelectByIndex',
   'setSelectedDso',
@@ -101,6 +132,7 @@ const STATE_KEYS = [
   'setShowOrbitTrail',
   'setSimRate',
   'setSimTimeMs',
+  'setSkyLens',
   'setTrackingStyle',
   'setTriggerFlyTo',
   'setTriggerFlyToDso',
@@ -111,7 +143,7 @@ const STATE_KEYS = [
   'setTriggerRunAnalytic',
   'setTriggerScrubPreview',
   'setTriggerSimTimeJump',
-  'setVisibilityMode',
+  'setVantage',
   'setVisibleCounts',
   'setVisibleFacetCounts',
   'setVisualListState',
@@ -119,7 +151,12 @@ const STATE_KEYS = [
   'showOrbitTrail',
   'simRate',
   'simTimeMs',
+  'skyLens',
   'statusFilters',
+  'toggleAnalysisPanel',
+  'toggleAskBar',
+  'toggleControlsSheet',
+  'toggleFocusPanel',
   'togglePurposeFilter',
   'toggleRegimeFilter',
   'toggleSectorFilter',
@@ -136,8 +173,8 @@ const STATE_KEYS = [
   'triggerScrubPreview',
   'triggerSimTimeJump',
   'typeFilters',
+  'vantage',
   'viewMode',
-  'visibilityMode',
   'visibleFacetCounts',
   'visibleRegimeCounts',
   'visualList',
@@ -167,6 +204,8 @@ const INITIAL_VALUES: Record<string, unknown> = {
   selectedIndex: null,
   selectedSatellite: null,
   selectedAltitude: null,
+  liveAltitudeKm: null,
+  liveSpeedKmS: null,
   showOrbitTrail: false,
   dsoObjects: [],
   dsoEphemerisById: {},
@@ -179,7 +218,11 @@ const INITIAL_VALUES: Record<string, unknown> = {
   clusterScreenX: 0,
   clusterScreenY: 0,
   observerLocation: null,
-  visibilityMode: 'all',
+  observerPlaceName: null,
+  nextPasses: [],
+  passStatus: 'no-selection',
+  vantage: 'orbit',
+  skyLens: 'all',
   observerHeadingRad: 0,
   visualList: { status: 'loading', version: null, source: null, stale: false, count: 0, updatedAt: null, message: null },
   regimeFilters: allOn(REGS),
@@ -204,15 +247,28 @@ const INITIAL_VALUES: Record<string, unknown> = {
   simRate: 1,
   viewMode: 'live',
   scrubberMode: false,
+  scrubField: 'day',
+  scrubFocusOnReset: false,
   historyCoverage: null,
   historyDay: null,
   historyLoading: false,
   planetarium: false,
+  cameraGear: 5,
+  cameraGearCount: 10,
+  cameraSpeedMps: 1_000_000,
+  gamepadConnected: false,
+  reticleCandidates: [],
+  reticleCandidateIndex: null,
+  analysisPanelOpen: false,
+  focusPanelOpen: false,
+  askBarOpen: false,
+  controlsSheetOpen: false,
+  locationPopoverOpen: false,
 };
 
 test('store exposes exactly today\'s keys (state + actions)', () => {
   assert.deepEqual(Object.keys(initial).sort(), [...STATE_KEYS].sort());
-  assert.equal(STATE_KEYS.length, 120);
+  assert.equal(STATE_KEYS.length, 157);
 });
 
 test('initial values of every non-function key', () => {
@@ -443,6 +499,133 @@ test('setHistoryCoverage stores the coverage object (null clears it)', () => {
   assert.equal(useStore.getState().historyCoverage, cov);
   s.setHistoryCoverage(null);
   assert.equal(useStore.getState().historyCoverage, null);
+});
+
+test('setVantage(ground) turns lens all into horizon; other lenses survive', () => {
+  const s = useStore.getState();
+  s.setVantage('ground');
+  assert.equal(useStore.getState().skyLens, 'horizon');
+  s.setSkyLens('radio');
+  assert.equal(useStore.getState().skyLens, 'radio');
+  s.setVantage('orbit');
+  s.setVantage('ground');
+  assert.equal(useStore.getState().skyLens, 'radio');
+});
+
+test('setSkyLens(all) on the ground becomes horizon; in orbit it sticks', () => {
+  const s = useStore.getState();
+  s.setVantage('ground');
+  s.setSkyLens('all');
+  assert.equal(useStore.getState().skyLens, 'horizon');
+  s.setVantage('orbit');
+  assert.equal(useStore.getState().skyLens, 'horizon'); // leaving the ground keeps the lens
+  s.setSkyLens('all');
+  assert.equal(useStore.getState().skyLens, 'all');
+});
+
+test('isDomeView needs free camera + ground vantage + an observer, whatever the lens', () => {
+  const loc = { lat: 0, lon: 0, alt: 0 };
+  assert.equal(isDomeView({ cameraMode: 'free', vantage: 'ground', observerLocation: loc }), true);
+  assert.equal(isDomeView({ cameraMode: 'free', vantage: 'orbit', observerLocation: loc }), false);
+  assert.equal(isDomeView({ cameraMode: 'following', vantage: 'ground', observerLocation: loc }), false);
+  assert.equal(isDomeView({ cameraMode: 'free', vantage: 'ground', observerLocation: null }), false);
+});
+
+test('setLiveKinematics skips no-op writes; setSelectedSatellite clears the readout', () => {
+  const s = useStore.getState();
+  let writes = 0;
+  const unsub = useStore.subscribe(() => { writes++; });
+  s.setLiveKinematics(400, 7.6);
+  s.setLiveKinematics(400, 7.6);
+  assert.equal(writes, 1);
+  s.setLiveKinematics(null, null);
+  s.setLiveKinematics(null, null);
+  assert.equal(writes, 2);
+  unsub();
+  s.setLiveKinematics(410, 7.5);
+  s.setSelectedSatellite(2, sat(2));
+  assert.equal(useStore.getState().liveAltitudeKm, null);
+  assert.equal(useStore.getState().liveSpeedKmS, null);
+});
+
+test('setPassPlan writes list and status together', () => {
+  const pass = { aosMs: 1 } as never;
+  useStore.getState().setPassPlan([pass], 'ok');
+  const n = useStore.getState();
+  assert.deepEqual(n.nextPasses, [pass]);
+  assert.equal(n.passStatus, 'ok');
+});
+
+test('setCameraGearState writes gear, gear count and speed', () => {
+  useStore.getState().setCameraGearState(3, 8, 5000);
+  const n = useStore.getState();
+  assert.equal(n.cameraGear, 3);
+  assert.equal(n.cameraGearCount, 8);
+  assert.equal(n.cameraSpeedMps, 5000);
+});
+
+test('setReticleCandidates keeps a present highlight, else takes the first; equal list = no write', () => {
+  useStore.getState().setCatalogData([sat(10), sat(11), sat(12)]);
+  const s = useStore.getState();
+  s.setReticleCandidates([1, 2]);
+  assert.equal(useStore.getState().reticleCandidateIndex, 1);
+  assert.equal(selectReticleCandidateName(useStore.getState()), 'SAT-11');
+  s.cycleReticleCandidate(1);
+  assert.equal(useStore.getState().reticleCandidateIndex, 2);
+  s.setReticleCandidates([0, 2]);
+  assert.equal(useStore.getState().reticleCandidateIndex, 2); // still present → kept
+  s.setReticleCandidates([0, 1]);
+  assert.equal(useStore.getState().reticleCandidateIndex, 0); // gone → first
+  let writes = 0;
+  const unsub = useStore.subscribe(() => { writes++; });
+  s.setReticleCandidates([0, 1]);
+  unsub();
+  assert.equal(writes, 0);
+  s.setReticleCandidates([]);
+  assert.equal(useStore.getState().reticleCandidateIndex, null);
+  assert.equal(selectReticleCandidateName(useStore.getState()), null);
+});
+
+test('cycleReticleCandidate wraps both ways and is a no-op with no candidates', () => {
+  useStore.getState().setCatalogData([sat(10), sat(11), sat(12)]);
+  const s = useStore.getState();
+  s.cycleReticleCandidate(1);
+  assert.equal(useStore.getState().reticleCandidateIndex, null);
+  s.setReticleCandidates([0, 1, 2]);
+  s.cycleReticleCandidate(-1);
+  assert.equal(useStore.getState().reticleCandidateIndex, 2);
+  assert.equal(selectReticleCandidateName(useStore.getState()), 'SAT-12');
+  s.cycleReticleCandidate(1);
+  assert.equal(useStore.getState().reticleCandidateIndex, 0);
+});
+
+test('HUD panel toggles; closePanels shuts both side panels only', () => {
+  const s = useStore.getState();
+  s.toggleAnalysisPanel();
+  s.toggleFocusPanel();
+  s.toggleAskBar();
+  s.toggleControlsSheet();
+  s.closePanels();
+  const n = useStore.getState();
+  assert.equal(n.analysisPanelOpen, false);
+  assert.equal(n.focusPanelOpen, false);
+  assert.equal(n.askBarOpen, true);
+  assert.equal(n.controlsSheetOpen, true);
+  s.setAskBarOpen(false);
+  s.setControlsSheetOpen(false);
+  assert.equal(useStore.getState().askBarOpen, false);
+  assert.equal(useStore.getState().controlsSheetOpen, false);
+});
+
+test('setScrubField and setScrubberMode clear scrubFocusOnReset', () => {
+  const s = useStore.getState();
+  s.setScrubFocusOnReset(true);
+  s.setScrubField('hour');
+  assert.equal(useStore.getState().scrubField, 'hour');
+  assert.equal(useStore.getState().scrubFocusOnReset, false);
+  s.setScrubFocusOnReset(true);
+  s.setScrubberMode(true);
+  assert.equal(useStore.getState().scrubFocusOnReset, false);
 });
 
 test('setDsoEphemeris adds per-id snapshots', () => {

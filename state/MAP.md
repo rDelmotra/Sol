@@ -23,7 +23,8 @@ Import rules between and inside packages live in `tests/architecture.test.ts`. R
 |---|---|
 | `packages/orbital-core/src/units.ts` | `ER_KM` and unit constants |
 | `packages/orbital-core/src/earth.ts` | WGS84 shape, geodetic conversions, umbra radius |
-| `packages/orbital-core/src/live-plane.ts` | Derived quantities (altitude, speed, sub-point, eclipse, elevation, range). Used by frontend and backend alike. |
+| `packages/orbital-core/src/live-plane.ts` | Derived quantities (altitude, speed, sub-point, eclipse, elevation, azimuth, range). Used by frontend and backend alike. |
+| `packages/orbital-core/src/elements.ts` | Mean-element quantities: semi-major axis, two-body orbit shape for diagrams |
 | `packages/orbital-core/src/visibility.ts` | Naked-eye visibility gate and sky brightness policy |
 | `packages/orbital-core/src/illumination.ts` | Eclipse and observer darkness |
 | `packages/orbital-core/src/observer.ts` | Observer position in ECEF and TEME |
@@ -68,18 +69,51 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Layer registry and failure isolation | `packages/frontend/src/engine/world/World.ts` |
 | Layer contract | `packages/frontend/src/engine/render/Layer.ts` |
 | Camera, timeline, tracking controllers | `packages/frontend/src/engine/controllers/` |
+| Free flight, camera only; hands HUD and time buttons to the two below | `packages/frontend/src/engine/controllers/FlyController.ts` |
+| Flight physics (gears, inertia, surface clamp), pure | `packages/frontend/src/engine/controllers/flight-model.ts` |
+| Every key, pad button and chord declared once (id, keys, pad trigger, label, hint glyph, which side handles it). Leaf zone: engine and UI both read it. Also the shared "typing or modified" key guard | `packages/frontend/src/bindings/` (`bindings.ts`, `key-guards.ts`) |
+| Keyboard and gamepad to named flight actions (derived from the bindings table) | `packages/frontend/src/engine/input/flight-input.ts` |
+| Gamepad HUD buttons (lock, START, L3/R3, SELECT) to store calls, pure | `packages/frontend/src/engine/input/pad-commands.ts` |
+| D-pad: panes, land, time-scrub field focus and step/hold, pure | `packages/frontend/src/engine/input/gamepad-scrub.ts` |
+| Gamepad time-scrub auto-repeat, pure | `packages/frontend/src/engine/input/scrub-repeat.ts` |
+| Reticle area-pick circle test and ranking, pure | `packages/frontend/src/engine/input/reticle-pick.ts` |
+| Follow to free pull-back (eases the camera out of follow range), pure step and plan | `packages/frontend/src/engine/controllers/UnfollowAnimator.ts` |
+| Land where you look / take off: ground pick plus the vantage, location and place-name store writes | `packages/frontend/src/engine/controllers/LandingController.ts` |
+| Live altitude and speed of the locked object (~4 Hz) | `packages/frontend/src/engine/controllers/LiveKinematics.ts` |
+| Land where you look: view ray to WGS84 lat/lon | `packages/frontend/src/engine/scene/ground-pick.ts` |
+| Selected object's next pass drawn across the sky | `packages/frontend/src/engine/world/layers/PassArcLayer.ts` |
 | Analytic runtime in the engine | `packages/frontend/src/engine/analytic/AnalyticRuntime.ts` |
 | Typed command surface | `packages/frontend/src/engine/command/EngineCommands.ts` |
 | Scene-axis adapter (TEME to Y-up) | `packages/frontend/src/engine/scene/frames.ts` |
 | Satellite point cloud | `packages/frontend/src/engine/SatelliteRenderer.ts` |
 | Earth globe | `packages/frontend/src/engine/EarthRenderer.ts` |
 | Workers and their message types | `packages/frontend/src/workers/` |
-| Store (10 slices, one composed hook) | `packages/frontend/src/store/` |
+| Store (12 slices, one composed hook) | `packages/frontend/src/store/` |
+| Vantage + sky lens, observer place name, pass plan | `packages/frontend/src/store/observerSlice.ts` |
+| Numbers the engine, store and UI must agree on: reticle box and ring radius, flight gear table and default. Leaf zone: imports nothing from the app | `packages/frontend/src/constants/` (`reticle.ts`, `flight-gears.ts`) |
+| Cockpit flight state (speed gears, gamepad, reticle candidates) | `packages/frontend/src/store/flightSlice.ts` |
+| Cockpit HUD open/closed state (panels, ask bar, controls sheet) | `packages/frontend/src/store/hudSlice.ts` |
 | Data clients (pure fetch, no store) | `packages/frontend/src/data/` |
 | Live query data source | `packages/frontend/src/query/analytic/live-source.ts` |
 | Older keyword query engine | `packages/frontend/src/query/` |
 | Simulation clock | `packages/frontend/src/time/SimClock.ts` |
+| Calendar time fields (gamepad time scrub) | `packages/frontend/src/time/time-fields.ts` |
+| Observer-sky logic (no engine, store or UI) | `packages/frontend/src/sky/` |
+| Pass prediction (rise, peak, set, bearings) | `packages/frontend/src/sky/passes.ts` |
+| Pass arc sampling, Earth-fixed | `packages/frontend/src/sky/pass-arc.ts` |
+| Pass plan for the selected object: store subscription owned by the Engine, writes `setPassPlan` | `packages/frontend/src/engine/controllers/PassPlanner.ts` |
+| OMM to orbit-diagram elements | `packages/frontend/src/sky/orbit-elements.ts` |
 | Overlay UI | `packages/frontend/src/ui/` |
+| Cockpit HUD root: shell, layout numbers, formatters, keyboard map, tokens (shared surface, mounted by App) | `packages/frontend/src/ui/cockpit/` (`CockpitHud.tsx`, `layout.ts`, `format.ts`, `keys.ts`, `useCockpitKeys.ts`, `cockpit.css`) |
+| Cockpit primitives: the shared building blocks every other cockpit folder uses (glass pane, pane stack and pane body, key/value rows, pane header, empty state, action row, error boundary, title, vignette and scan, native-button reset style). Nothing here imports a feature folder | `packages/frontend/src/ui/cockpit/primitives/` |
+| Cockpit side panes, one file per pane (`IdentityPane.tsx`, `OrbitPane.tsx`, `CatalogPane.tsx`, `ObjectScanPane.tsx`, `TelemetryPane.tsx`, `ActionsPane.tsx`), the two stacks that only arrange them (`AnalysisPanes.tsx`, `FocusPanes.tsx`) and the 3D orbit diagram | `packages/frontend/src/ui/cockpit/panes/` |
+| Cockpit dock: mode controls, lens and location controls, location popover, round icon button, dock styles | `packages/frontend/src/ui/cockpit/dock/` |
+| Cockpit time console: clock row (`ClockRow.tsx`) that unfolds into the scrubber, readout lines (`ConsoleReadouts.tsx`), digits, field chips, momentum wheel with its gesture hook (`useMomentumDial.ts`), return button, mouse stepping (`useTimeStep.ts` over the pure `time-stepper.ts`) | `packages/frontend/src/ui/cockpit/time/` |
+| Cockpit ground view: compass strip and pass readout, with their pure helpers | `packages/frontend/src/ui/cockpit/ground/` |
+| Cockpit controls sheet: keyboard / gamepad diagram / mouse bindings | `packages/frontend/src/ui/cockpit/controls/` |
+| Cockpit on-screen layers: reticle, object disc, edge arcs, gear readout and sweep, corner telemetry, ask bar and waveform | `packages/frontend/src/ui/cockpit/hud/` |
+| UI hooks: GPS fix, analytic ask, element size (ResizeObserver) | `packages/frontend/src/ui/hooks/` |
+| Observer location acquisition and cache policy | `packages/frontend/src/sky/observer-location.ts` |
 | GLSL shaders | `packages/frontend/src/shaders/` |
 
 Rules that hold even without reading the architecture test:

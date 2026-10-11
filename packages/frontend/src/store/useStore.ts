@@ -10,15 +10,19 @@ import { createAnalyticSlice } from './analyticSlice';
 import { createTimeSlice } from './timeSlice';
 import { createHistorySlice } from './historySlice';
 import { createDsoSlice } from './dsoSlice';
+import { createFlightSlice } from './flightSlice';
+import { createHudSlice } from './hudSlice';
 
 // Public surface: importers keep using `store/useStore`; types + helpers live in ./types.
-export { isObserverMode, isDomeView } from './types';
+export { isDomeView } from './types';
+export { selectReticleCandidateName } from './flightSlice';
 export type {
   AnalyticAnswer,
   LoadingPhase,
   CameraMode,
   TrackingStyle,
-  VisibilityMode,
+  Vantage,
+  SkyLens,
   ViewMode,
   VisualListState,
   ColorBy,
@@ -41,4 +45,6 @@ export const useStore = create<AppState>()((...a) => ({
   ...createTimeSlice(...a),
   ...createHistorySlice(...a),
   ...createDsoSlice(...a),
+  ...createFlightSlice(...a),
+  ...createHudSlice(...a),
 }));

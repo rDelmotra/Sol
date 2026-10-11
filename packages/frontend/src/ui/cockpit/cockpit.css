@@ -1,0 +1,106 @@
+/* ============ Cockpit HUD tokens + keyframes ============
+ * Ported from the spike's cockpit-hud.css (claude/ui-run-spike-c350c8). Only
+ * what cannot live inline: the custom properties the components read and the
+ * @keyframes they animate. Layout numbers live in ./layout.ts.
+ * Dropped from the spike: hud-drift (unused) and the spotlight-tour keyframes
+ * (the tour is gone, state/DECISIONS.md D8). */
+:root {
+  --hud-sky: oklch(0.14 0.02 250);
+  --hud-sky-deep: oklch(0.08 0.015 250);
+  --hud-arc: oklch(0.98 0.005 240);
+  --hud-arc-dim: oklch(0.82 0.01 240 / 0.35);
+  --hud-arc-glow: oklch(0.9 0.06 220 / 0.55);
+  --hud-glass: oklch(0.98 0.01 240 / 0.04);
+  --hud-glass-edge: oklch(0.98 0.01 240 / 0.14);
+  --hud-text: oklch(0.94 0.01 240);
+  --hud-text-dim: oklch(0.94 0.01 240 / 0.55);
+  /* Hairlines and faint text on the controls sheet. */
+  --hud-rule: oklch(0.98 0.01 240 / 0.08);
+  --hud-rule-faint: oklch(0.98 0.01 240 / 0.06);
+  --hud-text-faint: oklch(0.94 0.01 240 / 0.3);
+  /* Deep glass behind the gamepad diagram's body. */
+  --hud-glass-panel: oklch(0.11 0.02 250 / 0.82);
+  /* Pane depth: a cool inner glow plus a soft drop shadow (GlassPane, dock, pass readout). */
+  --hud-glow-tint: oklch(0.85 0.14 220 / 0.06);
+  --hud-inner-glow: 0 0 40px var(--hud-glow-tint) inset;
+  --hud-drop-shadow: 0 20px 60px oklch(0.05 0 0 / 0.4);
+  --hud-warn: oklch(0.82 0.14 55);
+  --hud-good: oklch(0.82 0.14 165);
+  /* Compass strip (ground view): north red-orange, ticks and labels cool white. */
+  --hud-north: #ff6b4a;
+  --hud-compass-tick: rgba(143, 227, 255, 0.85);
+  --hud-compass-label: rgba(220, 244, 255, 0.95);
+  --font-hud-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-hud-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Reticle brackets: slow breathing. */
+@keyframes hud-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+/* Ask-bar waveform bars. */
+@keyframes hud-breathe {
+  0%, 100% { transform: scaleY(0.35); opacity: 0.55; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+/* Side panes fan in from their edge; the start offset is set inline per side. */
+@keyframes hud-pane-in {
+  from { opacity: 0; transform: translateX(var(--hud-pane-from, -16px)); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+/* OBJECT SCAN sweep line. */
+@keyframes hud-scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+/* Controls sheet backdrop fade-in. */
+@keyframes hud-scrim-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ---- Time console (top-left clock row unfolds into the scrubber) ---- */
+@keyframes hud-console-in {
+  from { opacity: 0; transform: translateY(-6px) scaleY(0.94); }
+  to   { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+@keyframes hud-rail-in {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+@keyframes hud-chip-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes hud-return-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.82 0.14 55 / 0); }
+  50%      { box-shadow: 0 0 0 5px oklch(0.82 0.14 55 / 0.28); }
+}
+
+/* ---- Gear sweep (speed gauge on the right rib). One-shot, restarted by remount. ---- */
+@keyframes hud-gear-flare {
+  0%   { stroke-width: 3.2; filter: brightness(1); }
+  25%  { stroke-width: 7; filter: brightness(1.9); }
+  100% { stroke-width: 3.2; filter: brightness(1); }
+}
+@keyframes hud-gear-glow {
+  0%   { text-shadow: 0 0 0 oklch(0.82 0.14 55 / 0); }
+  30%  { text-shadow: 0 0 12px oklch(0.82 0.14 55 / 0.8); }
+  100% { text-shadow: 0 0 0 oklch(0.82 0.14 55 / 0); }
+}
+
+/* ---- Edge arcs (canopy ribs) ---- */
+/* The hit target is an edge-flush rectangle, so the focus ring belongs to it.
+ * :focus-visible, so a mouse click does not ring. */
+.hud-edge-hit { outline: none; }
+.hud-edge-hit:focus-visible {
+  outline: 1px solid var(--hud-arc-glow);
+  outline-offset: -3px;
+  border-radius: 3px;
+}
+/* Each rib slides radially outward on approach; per-rib delay is inline. */
+.hud-rib {
+  transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1), stroke 200ms ease;
+}

@@ -6,6 +6,8 @@ export const createInteractionSlice: Slice<InteractionSlice> = (set) => ({
   selectedIndex: null,
   selectedSatellite: null,
   selectedAltitude: null,
+  liveAltitudeKm: null,
+  liveSpeedKmS: null,
   showOrbitTrail: false,
   selectedDso: null,
   hoveredName: null,
@@ -21,6 +23,10 @@ export const createInteractionSlice: Slice<InteractionSlice> = (set) => ({
       selectedIndex: index,
       selectedSatellite: data,
       selectedAltitude: altitude ?? null,
+      // Drop the previous object's live readout; the Engine refills it within
+      // ~250 ms, and a stale number is worse than a dash meanwhile.
+      liveAltitudeKm: null,
+      liveSpeedKmS: null,
       showOrbitTrail: false,
       // Clear DSO selection when selecting a TLE object
       ...(index !== null ? { selectedDso: null } : {}),
@@ -41,6 +47,13 @@ export const createInteractionSlice: Slice<InteractionSlice> = (set) => ({
         ? { cameraMode: 'returning' as CameraMode }
         : {}),
     })),
+  // Runs ~4×/s and every write re-renders the HUD, so an unchanged push is free.
+  setLiveKinematics: (altitudeKm, speedKmS) =>
+    set((state) =>
+      state.liveAltitudeKm === altitudeKm && state.liveSpeedKmS === speedKmS
+        ? state
+        : { liveAltitudeKm: altitudeKm, liveSpeedKmS: speedKmS },
+    ),
   setShowOrbitTrail: (show) => set({ showOrbitTrail: show }),
   setHover: (name, screenX, screenY) =>
     set({

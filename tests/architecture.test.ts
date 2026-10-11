@@ -139,10 +139,28 @@ const RULES: Rule[] = [
     forbidden: only('time'),
   },
   {
+    id: 'fe-bindings-is-leaf',
+    why: 'bindings/ is the one table of keys and pad buttons that the engine and the UI both read: it imports nothing from the app.',
+    applies: from('frontend', 'bindings'),
+    forbidden: only('bindings'),
+  },
+  {
+    id: 'fe-constants-is-leaf',
+    why: 'constants/ holds numbers the engine, store and UI must agree on (reticle geometry, flight gears): it imports nothing from the app, only package leaves.',
+    applies: from('frontend', 'constants'),
+    forbidden: only('constants'),
+  },
+  {
     id: 'fe-query-no-app',
     why: 'query/ is logic over data + orbital: it must not reach into the engine, store or UI.',
     applies: from('frontend', 'query'),
     forbidden: (e) => isEngine(e.toZone) || ['store', 'ui', 'workers', 'pkg:three'].includes(e.toZone),
+  },
+  {
+    id: 'fe-sky-is-logic',
+    why: 'sky/ is observer-sky logic (passes, orbit shape adapters): it never imports the engine, store, UI, query or workers.',
+    applies: from('frontend', 'sky'),
+    forbidden: (e) => isEngine(e.toZone) || ['store', 'ui', 'query', 'workers', 'pkg:three'].includes(e.toZone),
   },
   {
     id: 'fe-data-no-app',
