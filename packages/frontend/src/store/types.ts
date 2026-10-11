@@ -325,7 +325,7 @@ export interface HistorySlice {
 }
 
 export interface FlightSlice {
-  /** Fly-camera speed gear (1-based) and how many gears exist. */
+  /** Fly-camera speed gear (0-based index; the HUD shows it +1) and how many gears exist. */
   cameraGear: number;
   cameraGearCount: number;
   /** Fly-camera speed for the current gear, metres per second. */
