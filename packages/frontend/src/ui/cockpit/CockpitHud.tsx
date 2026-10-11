@@ -6,6 +6,7 @@ import { EdgeArc } from './EdgeArc';
 import { FocusPanes } from './FocusPanes';
 import { HudErrorBoundary } from './HudErrorBoundary';
 import { HudTitle } from './HudTitle';
+import { ObjectDisc } from './ObjectDisc';
 import { Reticle } from './Reticle';
 import { TimeConsole } from './TimeConsole';
 import { TelemetryBL } from './TelemetryBL';
@@ -37,6 +38,10 @@ export default function CockpitHud() {
 
       <HudErrorBoundary region="reticle">
         <Reticle />
+      </HudErrorBoundary>
+
+      <HudErrorBoundary region="object disc">
+        <ObjectDisc />
       </HudErrorBoundary>
 
       <HudErrorBoundary region="edge arcs">
