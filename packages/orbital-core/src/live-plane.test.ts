@@ -12,12 +12,16 @@ import {
   altitudeKm,
   subpoint,
   lookAngles,
+  azimuthElevation,
   distanceKm,
   LIVE_PLANE_FIELDS,
   type StateEr,
 } from './live-plane.js';
-import { ER_KM } from './units.js';
-import { observerTeme } from './observer.js';
+import { ER_KM, RAD } from './units.js';
+import { observerTeme, observerEcef, type ObserverFrame } from './observer.js';
+import { ecefToTeme } from './rotation.js';
+import { gmst } from './time.js';
+import type { Vec3 } from './vec.js';
 import { sunDirection } from './sun.js';
 
 const NOW = Date.parse('2026-07-10T12:00:00Z');
@@ -181,5 +185,90 @@ describe('live-plane: sun/observer caching does not change results across repeat
     const darkFirst = plane.observerDark(g, NOW);
     const darkSecond = plane.observerDark(g, NOW);
     assert.equal(darkFirst, darkSecond);
+  });
+});
+
+describe('live-plane: azimuthElevation', () => {
+  // A target at observer + offset (offset in the same frame as the observer).
+  const at = (obs: ObserverFrame, d: Vec3): StateEr => ({
+    r: { x: obs.position.x + d.x, y: obs.position.y + d.y, z: obs.position.z + d.z },
+    v: { x: 0, y: 0, z: 0 },
+  });
+  const near = (a: number, b: number, tol: number, what: string) =>
+    assert.ok(Math.abs(a - b) <= tol, `${what}: ${a} vs ${b}`);
+
+  // Equatorial observer at lat 0, lon 0, ECEF: up = +x, east = +y, north = +z.
+  const eq = observerEcef({ latDeg: 0, lonDeg: 0 });
+  const d = 0.05; // ER, ~320 km
+
+  it('equator: due north, east, south, west at 45° elevation', () => {
+    const cases: Array<[Vec3, number]> = [
+      [{ x: d, y: 0, z: d }, 0],
+      [{ x: d, y: d, z: 0 }, 90],
+      [{ x: d, y: 0, z: -d }, 180],
+      [{ x: d, y: -d, z: 0 }, 270],
+    ];
+    for (const [off, az] of cases) {
+      const look = azimuthElevation(at(eq, off), eq)!;
+      near(look.azimuthDeg, az, 1e-9, `azimuth for expected ${az}`);
+      near(look.elevationDeg, 45, 1e-9, 'elevation');
+      near(look.rangeKm, Math.SQRT2 * d * ER_KM, 1e-6, 'range');
+    }
+  });
+
+  it('equator: straight overhead is 90° elevation', () => {
+    const look = azimuthElevation(at(eq, { x: d, y: 0, z: 0 }), eq)!;
+    near(look.elevationDeg, 90, 1e-9, 'elevation');
+    near(look.rangeKm, d * ER_KM, 1e-6, 'range');
+  });
+
+  it('mid-latitude TEME: independent geodetic north/east axes give 0° and 90°', () => {
+    const g = { latDeg: 40, lonDeg: -105 };
+    const obs = observerTeme(g, NOW);
+    const theta = gmst(NOW);
+    const lat = g.latDeg * RAD;
+    const lon = g.lonDeg * RAD;
+    // Textbook local axes in ECEF, rotated into TEME.
+    const north = ecefToTeme({ x: -Math.sin(lat) * Math.cos(lon), y: -Math.sin(lat) * Math.sin(lon), z: Math.cos(lat) }, theta);
+    const east = ecefToTeme({ x: -Math.sin(lon), y: Math.cos(lon), z: 0 }, theta);
+    const up = obs.up;
+    const comb = (a: Vec3, ka: number, b: Vec3, kb: number): Vec3 =>
+      ({ x: a.x * ka + b.x * kb, y: a.y * ka + b.y * kb, z: a.z * ka + b.z * kb });
+
+    const n = azimuthElevation(at(obs, comb(north, d, up, 0)), obs)!;
+    // Due north may land on 0 or just under 360; compare on the circle.
+    near(((n.azimuthDeg + 180) % 360) - 180, 0, 1e-9, 'north azimuth');
+    near(n.elevationDeg, 0, 1e-9, 'north elevation');
+
+    const e = azimuthElevation(at(obs, comb(east, d, up, d)), obs)!;
+    near(e.azimuthDeg, 90, 1e-9, 'east azimuth');
+    near(e.elevationDeg, 45, 1e-9, 'east elevation');
+
+    const sw = azimuthElevation(at(obs, comb(north, -d, east, -d)), obs)!;
+    near(sw.azimuthDeg, 225, 1e-9, 'south-west azimuth');
+  });
+
+  it('elevation agrees with lookAngles().sinElevation, range with lookAngles().rangeKm', () => {
+    const obs = observerTeme({ latDeg: -33.9, lonDeg: 18.4, altKm: 0.1 }, NOW);
+    const s: StateEr = { r: { x: 0.3, y: -1.05, z: 0.4 }, v: { x: 0, y: 0, z: 0 } };
+    const la = lookAngles(s, obs)!;
+    const ae = azimuthElevation(s, obs)!;
+    near(Math.sin(ae.elevationDeg * RAD), la.sinElevation, 1e-12, 'sinElevation');
+    assert.equal(ae.rangeKm, la.rangeKm);
+    assert.ok(ae.azimuthDeg >= 0 && ae.azimuthDeg < 360);
+  });
+
+  it('poles: finite azimuth and correct elevation, including an exactly polar up', () => {
+    const geodeticPole = observerEcef({ latDeg: 90, lonDeg: 0 });
+    const exactPole: ObserverFrame = { position: { x: 0, y: 0, z: 1 }, up: { x: 0, y: 0, z: 1 } };
+    for (const obs of [geodeticPole, exactPole]) {
+      const look = azimuthElevation(at(obs, { x: d, y: 0, z: d }), obs)!;
+      assert.ok(Number.isFinite(look.azimuthDeg) && look.azimuthDeg >= 0 && look.azimuthDeg < 360);
+      near(look.elevationDeg, 45, 1e-6, 'elevation');
+    }
+  });
+
+  it('null when the state coincides with the observer', () => {
+    assert.equal(azimuthElevation(at(eq, { x: 0, y: 0, z: 0 }), eq), null);
   });
 });
