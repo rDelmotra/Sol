@@ -69,6 +69,14 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Layer registry and failure isolation | `packages/frontend/src/engine/world/World.ts` |
 | Layer contract | `packages/frontend/src/engine/render/Layer.ts` |
 | Camera, timeline, tracking controllers | `packages/frontend/src/engine/controllers/` |
+| Free flight glue (keyboard, gamepad, pad time scrub) | `packages/frontend/src/engine/controllers/FlyController.ts` |
+| Flight physics (gears, inertia, surface clamp), pure | `packages/frontend/src/engine/controllers/flight-model.ts` |
+| Keyboard and gamepad to named flight actions | `packages/frontend/src/engine/input/flight-input.ts` |
+| Gamepad time-scrub auto-repeat, pure | `packages/frontend/src/engine/input/scrub-repeat.ts` |
+| Reticle area-pick circle test and ranking, pure | `packages/frontend/src/engine/input/reticle-pick.ts` |
+| Live altitude and speed of the locked object (~4 Hz) | `packages/frontend/src/engine/controllers/LiveKinematics.ts` |
+| Land where you look: view ray to WGS84 lat/lon | `packages/frontend/src/engine/scene/ground-pick.ts` |
+| Selected object's next pass drawn across the sky | `packages/frontend/src/engine/world/layers/PassArcLayer.ts` |
 | Analytic runtime in the engine | `packages/frontend/src/engine/analytic/AnalyticRuntime.ts` |
 | Typed command surface | `packages/frontend/src/engine/command/EngineCommands.ts` |
 | Scene-axis adapter (TEME to Y-up) | `packages/frontend/src/engine/scene/frames.ts` |
@@ -78,7 +86,7 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Store (12 slices, one composed hook) | `packages/frontend/src/store/` |
 | Vantage + sky lens, observer place name, pass plan | `packages/frontend/src/store/observerSlice.ts` |
 | Cockpit flight state (speed gears, gamepad, reticle candidates) | `packages/frontend/src/store/flightSlice.ts` |
-| Cockpit HUD open/closed state (panels, ask bar, controls sheet) | `packages/frontend/src/store/hudSlice.ts` |
+| Cockpit HUD open/closed state (panels, ask bar, controls sheet), reticle ring radius | `packages/frontend/src/store/hudSlice.ts` |
 | Data clients (pure fetch, no store) | `packages/frontend/src/data/` |
 | Live query data source | `packages/frontend/src/query/analytic/live-source.ts` |
 | Older keyword query engine | `packages/frontend/src/query/` |
@@ -86,6 +94,8 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Calendar time fields (gamepad time scrub) | `packages/frontend/src/time/time-fields.ts` |
 | Observer-sky logic (no engine, store or UI) | `packages/frontend/src/sky/` |
 | Pass prediction (rise, peak, set, bearings) | `packages/frontend/src/sky/passes.ts` |
+| Pass arc sampling, Earth-fixed | `packages/frontend/src/sky/pass-arc.ts` |
+| Pass plan for the selected object (hook, mounted in App) | `packages/frontend/src/ui/hooks/useNextPasses.ts` |
 | OMM to orbit-diagram elements | `packages/frontend/src/sky/orbit-elements.ts` |
 | Overlay UI | `packages/frontend/src/ui/` |
 | Observer location acquisition and cache policy | `packages/frontend/src/ui/observer-location.ts` |

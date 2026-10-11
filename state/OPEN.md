@@ -21,6 +21,9 @@ Remove an item when it is fixed. None of these is scheduled unless the owner say
 
 ## Cockpit port (deferred)
 
+- **Cockpit UI not ported yet.** The engine publishes `liveAltitudeKm`/`liveSpeedKmS`, reticle candidates, gear state and the pass plan; no HUD reads them yet. The HUD ring must use `RETICLE_RING_RADIUS_PX` from `packages/frontend/src/store/hudSlice.ts`.
+- **Place naming after landing.** `NavigationController.landWhereLooking` only sets lat/lon (and clears `observerPlaceName`). Naming the place is left to the UI.
+- **No pad look on the ground.** In the dome view pad buttons work, but the right stick does not turn the gaze (the spike had no binding either).
 - **Pass search runs on the main thread.** `packages/frontend/src/ui/hooks/useNextPasses.ts` runs a 24-hour `findPasses` (about a thousand SGP4 steps) on each selection, observer, vantage or 5-minute sim-time change. Move it to a worker.
 
 ## Known weaknesses (left alone by decision D2)
