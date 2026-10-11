@@ -145,6 +145,12 @@ const RULES: Rule[] = [
     forbidden: (e) => isEngine(e.toZone) || ['store', 'ui', 'workers', 'pkg:three'].includes(e.toZone),
   },
   {
+    id: 'fe-sky-is-logic',
+    why: 'sky/ is observer-sky logic (passes, orbit shape adapters): it never imports the engine, store, UI, query or workers.',
+    applies: from('frontend', 'sky'),
+    forbidden: (e) => isEngine(e.toZone) || ['store', 'ui', 'query', 'workers', 'pkg:three'].includes(e.toZone),
+  },
+  {
     id: 'fe-data-no-app',
     why: 'data/ fetches and shapes data; it never imports the engine, UI or query tiers, and returns data instead of writing the store.',
     applies: from('frontend', 'data'),
