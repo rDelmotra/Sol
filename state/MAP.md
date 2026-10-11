@@ -88,8 +88,9 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Workers and their message types | `packages/frontend/src/workers/` |
 | Store (12 slices, one composed hook) | `packages/frontend/src/store/` |
 | Vantage + sky lens, observer place name, pass plan | `packages/frontend/src/store/observerSlice.ts` |
+| Numbers the engine, store and UI must agree on: reticle box and ring radius, flight gear table and default. Leaf zone: imports nothing from the app | `packages/frontend/src/constants/` (`reticle.ts`, `flight-gears.ts`) |
 | Cockpit flight state (speed gears, gamepad, reticle candidates) | `packages/frontend/src/store/flightSlice.ts` |
-| Cockpit HUD open/closed state (panels, ask bar, controls sheet), reticle ring radius | `packages/frontend/src/store/hudSlice.ts` |
+| Cockpit HUD open/closed state (panels, ask bar, controls sheet) | `packages/frontend/src/store/hudSlice.ts` |
 | Data clients (pure fetch, no store) | `packages/frontend/src/data/` |
 | Live query data source | `packages/frontend/src/query/analytic/live-source.ts` |
 | Older keyword query engine | `packages/frontend/src/query/` |
@@ -104,7 +105,7 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Cockpit HUD root: shell, layout numbers, formatters, keyboard map, tokens (shared surface, mounted by App) | `packages/frontend/src/ui/cockpit/` (`CockpitHud.tsx`, `layout.ts`, `format.ts`, `keys.ts`, `useCockpitKeys.ts`, `cockpit.css`) |
 | Cockpit primitives: the shared building blocks every other cockpit folder uses (glass pane, key/value rows, pane header, empty state, action row, error boundary, title, vignette and scan, native-button reset style). Nothing here imports a feature folder | `packages/frontend/src/ui/cockpit/primitives/` |
 | Cockpit side panes: object scan (identity, telemetry, actions, analysis) and the 3D orbit diagram | `packages/frontend/src/ui/cockpit/panes/` |
-| Cockpit dock: mode controls, lens and location controls, location popover, dock styles | `packages/frontend/src/ui/cockpit/dock/` |
+| Cockpit dock: mode controls, lens and location controls, location popover, round icon button, dock styles | `packages/frontend/src/ui/cockpit/dock/` |
 | Cockpit time console: clock row that unfolds into the scrubber, digits, field chips, momentum wheel, return button, mouse stepping | `packages/frontend/src/ui/cockpit/time/` |
 | Cockpit ground view: compass strip and pass readout, with their pure helpers | `packages/frontend/src/ui/cockpit/ground/` |
 | Cockpit controls sheet: keyboard / gamepad diagram / mouse bindings | `packages/frontend/src/ui/cockpit/controls/` |
