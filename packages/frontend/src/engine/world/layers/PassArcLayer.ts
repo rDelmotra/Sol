@@ -15,6 +15,19 @@ const BRIGHT_COLOR = new THREE.Color(0x9fe0ff);
 /** Same hue dimmed for the 0–10° fringe: "same path, not worth watching yet". */
 const DIM_COLOR = new THREE.Color(0x9fe0ff).multiplyScalar(0.5);
 
+type State = ReturnType<typeof useStore.getState>;
+
+/** The store fields (and picked pass) the last sync was made from. */
+interface SeenInputs {
+  sat: State['selectedSatellite'];
+  observer: State['observerLocation'];
+  status: State['passStatus'];
+  passes: State['nextPasses'];
+  cameraMode: State['cameraMode'];
+  vantage: State['vantage'];
+  pass: Pass | null;
+}
+
 /** What the arc is drawn for. Rebuilt only when this changes. */
 interface ArcTarget {
   key: string;
@@ -42,6 +55,8 @@ export class PassArcLayer implements Layer {
 
   private unsub: (() => void) | null = null;
   private currentKey: string | null = null;
+  /** Inputs of the last sync; see needsSync. */
+  private seen: SeenInputs | null = null;
   private visible = false;
 
   /** Vertex data. The dashed line wears a second wrapper over the same attributes
@@ -61,6 +76,7 @@ export class PassArcLayer implements Layer {
   init(_ctx: LayerContext): void {
     this.sync(useStore.getState());
     this.unsub = useStore.subscribe((state) => {
+      if (!this.needsSync(state)) return;
       try {
         this.sync(state);
       } catch (err) {
@@ -71,7 +87,35 @@ export class PassArcLayer implements Layer {
     });
   }
 
-  private sync(state: ReturnType<typeof useStore.getState>): void {
+  /**
+   * The store notifies on every write, including the 4 Hz clock. Sync only when a
+   * field the arc reads changed. The clock matters only through which pass is
+   * current, so a clock-only write is skipped while the same pass stays current.
+   */
+  private needsSync(state: State): boolean {
+    const seen = this.seen;
+    const unchanged =
+      seen !== null &&
+      seen.sat === state.selectedSatellite &&
+      seen.observer === state.observerLocation &&
+      seen.status === state.passStatus &&
+      seen.passes === state.nextPasses &&
+      seen.cameraMode === state.cameraMode &&
+      seen.vantage === state.vantage &&
+      seen.pass === pickCurrentPass(state.nextPasses, state.simTimeMs);
+    return !unchanged;
+  }
+
+  private sync(state: State): void {
+    this.seen = {
+      sat: state.selectedSatellite,
+      observer: state.observerLocation,
+      status: state.passStatus,
+      passes: state.nextPasses,
+      cameraMode: state.cameraMode,
+      vantage: state.vantage,
+      pass: pickCurrentPass(state.nextPasses, state.simTimeMs),
+    };
     const target = this.targetFor(state);
     if ((target?.key ?? null) !== this.currentKey) {
       this.clear();
@@ -83,7 +127,7 @@ export class PassArcLayer implements Layer {
     if (this.dashedLine) this.dashedLine.visible = this.visible;
   }
 
-  private targetFor(state: ReturnType<typeof useStore.getState>): ArcTarget | null {
+  private targetFor(state: State): ArcTarget | null {
     const sat = state.selectedSatellite;
     const observer = state.observerLocation;
     if (!sat || !observer || state.passStatus !== 'ok') return null;
