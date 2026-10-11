@@ -1,4 +1,5 @@
 import './cockpit.css';
+import { EdgeArc } from './EdgeArc';
 import { HudErrorBoundary } from './HudErrorBoundary';
 import { HudTitle } from './HudTitle';
 import { Reticle } from './Reticle';
@@ -31,6 +32,11 @@ export default function CockpitHud() {
 
       <HudErrorBoundary region="reticle">
         <Reticle />
+      </HudErrorBoundary>
+
+      <HudErrorBoundary region="edge arcs">
+        <EdgeArc side="left" />
+        <EdgeArc side="right" />
       </HudErrorBoundary>
 
       {/* Slot: time console (top-left, 24/24). Built in a separate step. */}

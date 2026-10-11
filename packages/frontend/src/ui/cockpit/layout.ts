@@ -42,3 +42,39 @@ export const RETICLE_LABEL_GAP = 20;
 export function ringRadiusInViewBox(ringPx: number, boxPx: number): number {
   return (ringPx * RETICLE_VIEWBOX) / boxPx;
 }
+
+// ── Edge arcs (canopy ribs) ──────────────────────────────────────────────────
+// Each arc lives in a 60×360 container centred on its screen edge, drawn in a
+// 380×360 svg. Angles in degrees, SVG convention (0 = +x, clockwise).
+
+/** Rib curve radius, svg px. */
+export const ARC_R = 320;
+/** Tick marks across the rib. */
+export const RIB_COUNT = 9;
+/** How far each tick slides outward on approach, px. */
+export const RIB_SPLAY_PX = 7;
+/** Per-tick delay of the splay, rippling out from the centre tick, ms. */
+export const RIB_RIPPLE_MS = 25;
+/** Circle centre and angular span per side, in the arc svg's px. */
+export const ARC_GEOM = {
+  left: { cx: 360, cy: 180, start: 162.5, end: 197.5 },
+  right: { cx: 20, cy: 180, start: -17.5, end: 17.5 },
+} as const;
+export const ARC_BOX_W = 60;
+export const ARC_BOX_H = 360;
+export const ARC_SVG_W = 380;
+/** Edge-flush click strip: x 0, top 80 inside the arc box, 56×200. */
+export const ARC_HIT_TOP = 80;
+export const ARC_HIT_W = 56;
+export const ARC_HIT_H = 200;
+/** Arc placard inset from the screen edge. */
+export const ARC_LABEL_INSET = 12;
+
+// ── Gear sweep (speed gauge on the right rib) ───────────────────────────────
+/** The gauge rides this far outside the rib. */
+export const GEAR_SWEEP_OFFSET = 16;
+/** Dark gap between segments, degrees. */
+export const GEAR_SEG_GAP_DEG = 0.55;
+/** Gear readout: right inset, and its top below the arc box's centre, px. */
+export const GEAR_READOUT_RIGHT = 6;
+export const GEAR_READOUT_BELOW_CENTRE = 104;
