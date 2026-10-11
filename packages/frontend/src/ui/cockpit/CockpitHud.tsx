@@ -1,5 +1,7 @@
 import './cockpit.css';
+import { AnalysisPanes } from './AnalysisPanes';
 import { EdgeArc } from './EdgeArc';
+import { FocusPanes } from './FocusPanes';
 import { HudErrorBoundary } from './HudErrorBoundary';
 import { HudTitle } from './HudTitle';
 import { Reticle } from './Reticle';
@@ -37,6 +39,13 @@ export default function CockpitHud() {
       <HudErrorBoundary region="edge arcs">
         <EdgeArc side="left" />
         <EdgeArc side="right" />
+      </HudErrorBoundary>
+
+      <HudErrorBoundary region="analysis panes">
+        <AnalysisPanes />
+      </HudErrorBoundary>
+      <HudErrorBoundary region="focus panes">
+        <FocusPanes />
       </HudErrorBoundary>
 
       {/* Slot: time console (top-left, 24/24). Built in a separate step. */}

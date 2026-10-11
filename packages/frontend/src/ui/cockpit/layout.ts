@@ -78,3 +78,15 @@ export const GEAR_SEG_GAP_DEG = 0.55;
 /** Gear readout: right inset, and its top below the arc box's centre, px. */
 export const GEAR_READOUT_RIGHT = 6;
 export const GEAR_READOUT_BELOW_CENTRE = 104;
+
+// ── Side panes ───────────────────────────────────────────────────────────────
+/** Distance of both pane stacks from their screen edge. */
+export const PANE_EDGE_INSET = 80;
+/** Gap between cards in a stack. */
+export const PANE_GAP = 12;
+export const LEFT_PANE_W = 280;
+export const RIGHT_PANE_W = 300;
+/** Fan-in delay step between cards, ms (0 / 60 / 120). */
+export const PANE_STAGGER_MS = 60;
+/** OBJECT SCAN's orbit diagram slot height. */
+export const ORBIT_DIAGRAM_H = 128;
