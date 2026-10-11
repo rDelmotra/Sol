@@ -1,3 +1,4 @@
+import { DEFAULT_GEAR, GEARS_MPS, GEAR_COUNT } from '../constants/flight-gears';
 import type { FlightSlice, Slice } from './types';
 
 function sameIndices(a: number[], b: number[]): boolean {
@@ -7,9 +8,9 @@ function sameIndices(a: number[], b: number[]): boolean {
 }
 
 export const createFlightSlice: Slice<FlightSlice> = (set) => ({
-  cameraGear: 5,
-  cameraGearCount: 10,
-  cameraSpeedMps: 1_000_000,
+  cameraGear: DEFAULT_GEAR,
+  cameraGearCount: GEAR_COUNT,
+  cameraSpeedMps: GEARS_MPS[DEFAULT_GEAR],
   gamepadConnected: false,
   reticleCandidates: [],
   reticleCandidateIndex: null,

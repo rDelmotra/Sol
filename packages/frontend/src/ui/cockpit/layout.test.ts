@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { RETICLE_BOX_PX, RETICLE_RING_RADIUS_PX } from '../../store/hudSlice';
+import { RETICLE_BOX_PX, RETICLE_RING_RADIUS_PX } from '../../constants/reticle';
 import { DOCK_GAP, DOCK_H, RETICLE_VIEWBOX, STATUS_BOTTOM, ringRadiusInViewBox } from './layout';
 
 describe('cockpit layout', () => {

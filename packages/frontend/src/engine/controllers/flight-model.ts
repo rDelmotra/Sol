@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { DEFAULT_GEAR, EARTH_RADIUS_M, GEARS_MPS, GEAR_COUNT } from '../../constants/flight-gears';
 
 /**
  * Free-flight physics, pure: no DOM, no store, no camera object. FlyController
@@ -20,11 +21,9 @@ export const FLIGHT = {
   rightStickScale: 0.5,
   /** Right-stick free-look rate while following/joyriding, rad/s. */
   followLookSpeed: 1.6,
-  /** Metric speed gears (m/s), half-decade steps. */
-  gearsMps: [3_000, 10_000, 30_000, 100_000, 300_000, 1_000_000, 3_000_000, 10_000_000, 30_000_000, 100_000_000],
-  /** 0-based default: 1,000 km/s, a brisk cruise. */
-  defaultGear: 5,
-  earthRadiusM: 6_371_000,
+  gearsMps: GEARS_MPS,
+  defaultGear: DEFAULT_GEAR,
+  earthRadiusM: EARTH_RADIUS_M,
   /** Hard surface clamp, scene units (Earth radius = 1). */
   minRadius: 1.05,
   /** Altitude (ER) over which speed and turn rate ramp up to full. */
@@ -37,7 +36,7 @@ export const FLIGHT = {
   maxPitchDot: 0.998,
 } as const;
 
-export const GEAR_COUNT = FLIGHT.gearsMps.length;
+export { GEAR_COUNT };
 
 /** Deadzone + sign-preserving exponent curve for one stick axis. */
 export function curve(v: number): number {

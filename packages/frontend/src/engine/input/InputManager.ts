@@ -5,7 +5,7 @@ import type { DsoRenderer } from '../DsoRenderer';
 import type { GPUPicker } from '../GPUPicker';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { useStore, isDomeView } from '../../store/useStore';
-import { RETICLE_RING_RADIUS_PX } from '../../store/hudSlice';
+import { RETICLE_RING_RADIUS_PX } from '../../constants/reticle';
 import { dsoIndexOf } from '../../data/dso-index';
 import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
 import { sceneToSourceInto, type SourceVec } from '../scene/frames';

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
-import { RETICLE_BOX_PX, RETICLE_RING_RADIUS_PX } from '../../../store/hudSlice';
+import { RETICLE_BOX_PX, RETICLE_RING_RADIUS_PX } from '../../../constants/reticle';
 import { altitudeReading, elementOrbit, groupInt, kindCode } from '../format';
 import {
   RETICLE_BRACKETS,

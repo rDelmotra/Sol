@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { ER_KM } from '@orbitwatch/orbital-core';
 import * as THREE from 'three';
 import {
   FLIGHT,
@@ -22,9 +23,16 @@ describe('flight-model gears and scales', () => {
     assert.equal(shiftGear(FLIGHT.defaultGear, 1), FLIGHT.defaultGear + 1);
   });
 
-  it('default gear is 1,000 km/s', () => {
-    assert.equal(FLIGHT.gearsMps[FLIGHT.defaultGear], 1_000_000);
-    assert.ok(Math.abs(gearUnitsPerSec(FLIGHT.defaultGear) - 1_000_000 / 6_371_000) < 1e-12);
+  it('gears are strictly increasing', () => {
+    for (let i = 1; i < FLIGHT.gearsMps.length; i++) assert.ok(FLIGHT.gearsMps[i] > FLIGHT.gearsMps[i - 1]);
+    assert.equal(GEAR_COUNT, FLIGHT.gearsMps.length);
+    assert.ok(FLIGHT.defaultGear >= 0 && FLIGHT.defaultGear < GEAR_COUNT);
+  });
+
+  it('a gear in scene units per second is its m/s over the Earth radius in metres', () => {
+    for (let g = 0; g < GEAR_COUNT; g++) {
+      assert.ok(Math.abs(gearUnitsPerSec(g) - FLIGHT.gearsMps[g] / (ER_KM * 1000)) < 1e-12);
+    }
   });
 
   it('slows near the surface and is full speed above the ramp', () => {

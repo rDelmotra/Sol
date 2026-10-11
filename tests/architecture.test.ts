@@ -145,6 +145,12 @@ const RULES: Rule[] = [
     forbidden: only('bindings'),
   },
   {
+    id: 'fe-constants-is-leaf',
+    why: 'constants/ holds numbers the engine, store and UI must agree on (reticle geometry, flight gears): it imports nothing from the app, only package leaves.',
+    applies: from('frontend', 'constants'),
+    forbidden: only('constants'),
+  },
+  {
     id: 'fe-query-no-app',
     why: 'query/ is logic over data + orbital: it must not reach into the engine, store or UI.',
     applies: from('frontend', 'query'),

@@ -20,7 +20,7 @@ export const ASK_BAR_RESERVE = 72;
 export const STATUS_BOTTOM = DOCK_H + DOCK_GAP + ASK_BAR_RESERVE;
 
 // ── Reticle ──────────────────────────────────────────────────────────────────
-// The box size and ring radius come from store/hudSlice.ts (RETICLE_BOX_PX,
+// The box size and ring radius come from constants/reticle.ts (RETICLE_BOX_PX,
 // RETICLE_RING_RADIUS_PX), shared with the engine's pick. The drawing is
 // authored in a 180-unit viewBox and scaled to the box.
 
