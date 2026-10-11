@@ -2,6 +2,7 @@ import './cockpit.css';
 import { AskBar } from './AskBar';
 import { AnalysisPanes } from './AnalysisPanes';
 import { CompassStrip } from './CompassStrip';
+import { ControlsSheet } from './ControlsSheet';
 import { Dock } from './Dock';
 import { EdgeArc } from './EdgeArc';
 import { FocusPanes } from './FocusPanes';
@@ -80,6 +81,10 @@ export default function CockpitHud() {
 
       <HudErrorBoundary region="dock">
         <Dock />
+      </HudErrorBoundary>
+
+      <HudErrorBoundary region="controls sheet">
+        <ControlsSheet />
       </HudErrorBoundary>
     </div>
   );

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import { isDomeView, useStore } from '../../store/useStore';
+import { useElementSize } from './useElementSize';
 import {
   PRIMARY_ANGLES,
   SECONDARY_ANGLES,
@@ -13,21 +14,6 @@ import {
   type Pt,
 } from './disc';
 
-/** The HUD layer's own size, so the ring scales with the HUD like everything else. */
-function useBoxSize(ref: React.RefObject<HTMLDivElement | null>) {
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const read = () => setSize({ w: el.clientWidth, h: el.clientHeight });
-    read();
-    const ro = new ResizeObserver(read);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [ref]);
-  return size;
-}
-
 /**
  * The object disc: a ring of readouts around screen centre for the locked
  * object. Bright arcs on the right carry the primary facts; dim arcs on the
@@ -40,7 +26,7 @@ export function ObjectDisc() {
   const hasLock = useStore((s) => s.selectedSatellite !== null);
   const dome = useStore((s) => isDomeView(s));
   const boxRef = useRef<HTMLDivElement>(null);
-  const { w, h } = useBoxSize(boxRef);
+  const { w, h } = useElementSize(boxRef);
   const show = ready && hasLock && !dome;
 
   return (

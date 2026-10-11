@@ -45,6 +45,12 @@
   100% { transform: translateY(100%); }
 }
 
+/* Controls sheet backdrop fade-in. */
+@keyframes hud-scrim-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* ---- Time console (top-left clock row unfolds into the scrubber) ---- */
 @keyframes hud-console-in {
   from { opacity: 0; transform: translateY(-6px) scaleY(0.94); }
@@ -92,6 +98,7 @@
 @media (prefers-reduced-motion: reduce) {
   /* Infinite loops (reticle pulse, scan sweep, waveform) stop. */
   .hud-loop { animation: none !important; }
+  .hud-scrim { animation: none !important; }
   .hud-gear-seg, .hud-gear-value { animation: none !important; }
   .hud-rib { transition: none; }
   .hud-edge-arc, .hud-edge-arc * { animation: none !important; }
