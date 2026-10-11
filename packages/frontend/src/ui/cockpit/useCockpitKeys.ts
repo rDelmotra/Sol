@@ -18,6 +18,10 @@ export function useCockpitKeys(): void {
         case 'closeAsk': s.setAskBarOpen(false); break;
         case 'closePanels': s.closePanels(); break;
         case 'closeScrubber': s.setScrubberMode(false); break;
+        default: {
+          const _never: never = cmd;
+          return _never;
+        }
       }
     };
     window.addEventListener('keydown', down);

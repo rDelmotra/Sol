@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { KEY_BINDINGS, PAD_BINDINGS, type KeyBindingId, type PadAction } from '../../../bindings/bindings';
 import { ALL_ROWS, KEYBOARD_ROWS, MOUSE_ROWS, entryActive, partActive, partLook } from './controls-sheet';
 
 const PARTS = ['l1', 'r1', 'l2', 'r2', 'lstick', 'rstick', 'dpad', 'face', 'touchpad', 'select', 'start'];
@@ -35,5 +36,30 @@ describe('highlight both ways', () => {
     assert.equal(partLook('r1', 'l1').opacity, 0.45);
     assert.equal(partLook('r1', null).opacity, 0.95);
     assert.equal(partLook('r1', []).opacity, 0.95);
+  });
+});
+
+describe('rows come from the bindings table', () => {
+  const caps = ALL_ROWS.flatMap((r) => r.keycaps);
+  const padText = ALL_ROWS.map((r) => r.pad).join('|');
+
+  it('every key binding shows its keycaps on a row', () => {
+    for (const id of Object.keys(KEY_BINDINGS) as KeyBindingId[]) {
+      for (const cap of KEY_BINDINGS[id].caps) assert.ok(caps.includes(cap), `${id}: no row shows ${cap}`);
+    }
+  });
+
+  it('every pad action shows on a row (SELECT hold shares the tap row)', () => {
+    for (const id of Object.keys(PAD_BINDINGS) as PadAction[]) {
+      const b = PAD_BINDINGS[id];
+      assert.ok(caps.includes(b.glyph) || padText.includes(b.glyph), `${id}: no row shows ${b.glyph}`);
+    }
+  });
+
+  it('row text is the table text', () => {
+    const land = KEYBOARD_ROWS.find((r) => r.keycaps.join() === KEY_BINDINGS.land.caps.join())!;
+    assert.equal(land.label, KEY_BINDINGS.land.label);
+    assert.equal(land.pad, PAD_BINDINGS.dpadDown.text);
+    assert.deepEqual(land.partIds, PAD_BINDINGS.dpadDown.parts);
   });
 });

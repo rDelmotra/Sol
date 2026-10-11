@@ -1,11 +1,12 @@
+import { keyHint } from '../../../bindings/bindings';
 import { useStore } from '../../../store/useStore';
 import { ActionRow } from '../primitives/ActionRow';
 import { GlassPane } from '../primitives/GlassPane';
 import { PaneHeader } from '../primitives/PaneHeader';
 
 /**
- * ACTIONS card. APPROACH [G] flies to and follows the lock (FOLLOWING · ON while
- * tracking), JOYRIDE [J], ORBIT TRAIL (click only, no key), CLEAR drops the
+ * ACTIONS card. APPROACH flies to and follows the lock (FOLLOWING · ON while
+ * tracking), JOYRIDE, ORBIT TRAIL (click only, no key), CLEAR drops the
  * lock and flies home. Calls go through the store's trigger slots; ui/ never
  * imports the engine.
  */
@@ -22,14 +23,14 @@ export function ActionsPane({ delay }: { delay: number }) {
       <div style={{ padding: '4px 12px 8px' }}>
         <ActionRow
           label={tracking ? 'FOLLOWING' : 'APPROACH'}
-          hint={tracking ? 'ON' : '[G]'}
+          hint={tracking ? 'ON' : keyHint('flyTo')}
           active={tracking}
           disabled={noLock}
           onClick={() => selectedIndex !== null && useStore.getState().triggerFlyTo?.(selectedIndex)}
         />
         <ActionRow
           label="JOYRIDE"
-          hint="[J]"
+          hint={keyHint('joyride')}
           disabled={noLock}
           onClick={() => selectedIndex !== null && useStore.getState().triggerJoyride?.(selectedIndex)}
         />

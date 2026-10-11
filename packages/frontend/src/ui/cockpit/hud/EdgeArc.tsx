@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { KEY_BINDINGS, PAD_BINDINGS } from '../../../bindings/bindings';
 import { useStore } from '../../../store/useStore';
 import { arcPath, ribAngle, ribDelayMs } from './arc';
 import { GearReadout } from './GearReadout';
@@ -19,8 +20,8 @@ import {
 } from '../layout';
 
 const SIDE = {
-  left: { label: 'ANALYSIS', shortcut: 'Q', padGlyph: '◄' },
-  right: { label: 'FOCUS', shortcut: 'E', padGlyph: '►' },
+  left: { label: 'ANALYSIS', shortcut: KEY_BINDINGS.toggleAnalysis.caps[0], padGlyph: PAD_BINDINGS.dpadLeft.glyph },
+  right: { label: 'FOCUS', shortcut: KEY_BINDINGS.toggleFocus.caps[0], padGlyph: PAD_BINDINGS.dpadRight.glyph },
 } as const;
 
 /**

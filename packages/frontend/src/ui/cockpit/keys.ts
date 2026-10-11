@@ -1,18 +1,24 @@
 /**
  * Cockpit HUD keyboard map, as a pure decision: keydown + open surfaces → one
  * command. useCockpitKeys.ts applies it. Flight keys (WASD, [ ], G, J, C, L)
- * belong to the engine's FlyController and are not handled here.
+ * belong to the engine's FlyController and are not handled here. Which key is
+ * which is declared in bindings/bindings.ts (KEY_BINDINGS); this file only
+ * decides what each HUD key does given what is open:
  *
- *   Q / E      toggle the ANALYSIS / FOCUS panes
- *   Space      open the ask bar, unless focus is on a control (a button,
- *              link or field must keep its own Space)
- *   ? or /     toggle the controls sheet
- *   Esc        closes ONE thing: controls sheet, else ask bar, else panes,
- *              else the time scrubber (time stays where it was put)
+ *   toggleAnalysis / toggleFocus   the ANALYSIS / FOCUS panes
+ *   openAsk                        the ask bar, unless focus is on a control
+ *                                  (a button, link or field keeps its own Space)
+ *   toggleSheet                    the controls sheet
+ *   closeTop (Esc)                 closes ONE thing: controls sheet, else ask
+ *                                  bar, else panes, else the time scrubber
+ *                                  (time stays where it was put)
  *
  * Never handled: keys with Cmd / Ctrl / Alt (browser and OS shortcuts), keys
  * typed into a text field, and Tab (keyboard focus must keep working).
  */
+
+import { hudKeyAction } from '../../bindings/bindings';
+import { isTypingOrModified } from '../../bindings/key-guards';
 
 export type CockpitKeyCommand =
   | 'toggleAnalysis'
@@ -44,16 +50,10 @@ export interface OpenSurfaces {
 
 interface TargetLike {
   tagName?: string;
-  isContentEditable?: boolean;
   getAttribute?: (name: string) => string | null;
 }
 
-const TEXT_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
 const CONTROL_TAGS = new Set(['BUTTON', 'A', 'SUMMARY']);
-
-function isTextField(t: TargetLike | null): boolean {
-  return !!t && (TEXT_TAGS.has(t.tagName ?? '') || t.isContentEditable === true);
-}
 
 /** A focused control that Space would activate. */
 function isControl(t: TargetLike | null): boolean {
@@ -64,12 +64,12 @@ function isControl(t: TargetLike | null): boolean {
 }
 
 export function cockpitKeyCommand(e: KeyLike, s: OpenSurfaces): CockpitKeyCommand | null {
-  if (e.metaKey || e.ctrlKey || e.altKey) return null;
+  if (isTypingOrModified(e)) return null;
   const t = (e.target ?? null) as TargetLike | null;
-  if (isTextField(t)) return null;
-  const k = e.key;
+  const action = hudKeyAction(e.key);
+  if (!action) return null;
 
-  if (k === 'Escape') {
+  if (action === 'closeTop') {
     if (s.controlsSheetOpen) return 'closeSheet';
     if (s.askBarOpen) return 'closeAsk';
     if (s.analysisPanelOpen || s.focusPanelOpen) return 'closePanels';
@@ -77,12 +77,6 @@ export function cockpitKeyCommand(e: KeyLike, s: OpenSurfaces): CockpitKeyComman
     return null;
   }
   if (e.repeat) return null; // holding a toggle key must not flicker it
-  if (k === '?' || k === '/') return 'toggleSheet';
-  if (k === 'q' || k === 'Q') return 'toggleAnalysis';
-  if (k === 'e' || k === 'E') return 'toggleFocus';
-  if (k === ' ') {
-    if (e.defaultPrevented || isControl(t)) return null;
-    return 'openAsk';
-  }
-  return null;
+  if (action === 'openAsk' && (e.defaultPrevented || isControl(t))) return null;
+  return action;
 }

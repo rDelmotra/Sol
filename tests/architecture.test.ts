@@ -139,6 +139,12 @@ const RULES: Rule[] = [
     forbidden: only('time'),
   },
   {
+    id: 'fe-bindings-is-leaf',
+    why: 'bindings/ is the one table of keys and pad buttons that the engine and the UI both read: it imports nothing from the app.',
+    applies: from('frontend', 'bindings'),
+    forbidden: only('bindings'),
+  },
+  {
     id: 'fe-query-no-app',
     why: 'query/ is logic over data + orbital: it must not reach into the engine, store or UI.',
     applies: from('frontend', 'query'),

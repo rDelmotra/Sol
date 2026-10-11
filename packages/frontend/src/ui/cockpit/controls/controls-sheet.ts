@@ -2,19 +2,23 @@
  * Controls-sheet data and gamepad-diagram looks, pure (no React, no store);
  * tested in controls-sheet.test.ts.
  *
- * The rows list the REAL bindings. Source of truth (ui/ may not import the
- * engine, so keep these in step by hand):
- *   keyboard   engine/input/flight-input.ts  KEY_ACTIONS, MOVE_KEYS, LOOK_KEYS
- *   pad        engine/input/flight-input.ts  EDGE_ACTIONS, PadMapper.step
- *              engine/controllers/FlyController.ts  applyPad / applyDpad
- *   panes/ask  ui/cockpit/keys.ts
- *   mouse      three OrbitControls defaults + engine/input/InputManager.ts
- * The spike's table was wrong (Tab cycles nothing; D-pad does not cycle
- * contacts; L1/R1 are gears, not panes; there is no throttle R/F).
+ * The keyboard, meta and pad rows are GENERATED from bindings/bindings.ts (the
+ * one table the engine and the HUD keys also read): keycaps, pad text and
+ * diagram parts come from there, so a rebind shows up here with no edit. This
+ * file only chooses which bindings share a row (ROW_SPECS) and holds the mouse
+ * rows, which are three OrbitControls defaults (see engine/input/InputManager.ts)
+ * and not in the table.
  */
 
-export type GamepadPartId =
-  | 'l1' | 'r1' | 'l2' | 'r2' | 'lstick' | 'rstick' | 'dpad' | 'face' | 'touchpad' | 'select' | 'start';
+import {
+  KEY_BINDINGS,
+  PAD_BINDINGS,
+  type GamepadPart,
+  type KeyBindingId,
+  type PadAction,
+} from '../../../bindings/bindings';
+
+export type GamepadPartId = GamepadPart;
 
 /** What the diagram can be told to light: one part, several, or none. */
 export type ActivePart = GamepadPartId | readonly GamepadPartId[] | null;
@@ -28,22 +32,61 @@ export interface ControlEntry {
   partIds: GamepadPartId[];
 }
 
-export const KEYBOARD_ROWS: ControlEntry[] = [
-  { keycaps: ['W', 'A', 'S', 'D', 'R', 'F'], label: 'Move / strafe / up-down', pad: 'L-STICK · L2 R2', partIds: ['lstick', 'l2', 'r2'] },
-  { keycaps: ['↑', '↓', '←', '→'], label: 'Look around', pad: 'R-STICK', partIds: ['rstick'] },
-  { keycaps: ['[', ']'], label: 'Speed gear − / +', pad: 'L1 / R1', partIds: ['l1', 'r1'] },
-  { keycaps: ['G'], label: 'Fly to selected', pad: '□', partIds: ['face'] },
-  { keycaps: ['J'], label: 'Joyride selected', pad: '△', partIds: ['face'] },
-  { keycaps: ['L'], label: 'Land / take off', pad: 'D-PAD ▼', partIds: ['dpad'] },
-  { keycaps: ['C'], label: 'Reset camera', pad: '', partIds: [] },
-  { keycaps: ['Q', 'E'], label: 'Analysis / Focus pane', pad: 'D-PAD ◄ ►', partIds: ['dpad'] },
-  { keycaps: ['SPACE'], label: 'Ask catalog', pad: 'L3 + R3', partIds: ['lstick', 'rstick'] },
+/** One sheet row: the bindings it shows. Text not given here comes from the table. */
+interface RowSpec {
+  /** Keyboard bindings; omitted for pad-only rows, whose keycaps are the pad glyphs. */
+  keys?: readonly KeyBindingId[];
+  /** Gamepad twins. */
+  pads?: readonly PadAction[];
+  /** Overrides the label (needed when a row joins several bindings). */
+  label?: string;
+  /** Overrides the pad column (needed when the joined text reads better as one phrase). */
+  padText?: string;
+}
+
+function buildRow(spec: RowSpec): ControlEntry {
+  const pads = (spec.pads ?? []).map((p) => PAD_BINDINGS[p]);
+  const keys = (spec.keys ?? []).map((k) => KEY_BINDINGS[k]);
+  const padOnly = spec.keys === undefined;
+  const parts = [...keys.flatMap((k) => k.analogPad?.parts ?? []), ...pads.flatMap((p) => p.parts)];
+  return {
+    keycaps: padOnly ? pads.map((p) => p.glyph) : keys.flatMap((k) => [...k.caps]),
+    label: spec.label ?? (padOnly ? pads[0].label : keys[0].label),
+    pad: padOnly
+      ? ''
+      : spec.padText ?? keys[0].analogPad?.text ?? pads.map((p) => p.text ?? p.glyph).join(' / '),
+    partIds: [...new Set(parts)],
+  };
+}
+
+const KEYBOARD_SPECS: RowSpec[] = [
+  { keys: ['move'] },
+  { keys: ['look'] },
+  { keys: ['gearDown', 'gearUp'], pads: ['gearDown', 'gearUp'], label: 'Speed gear − / +' },
+  { keys: ['flyTo'], pads: ['flyTo'] },
+  { keys: ['joyride'], pads: ['joyride'] },
+  { keys: ['land'], pads: ['dpadDown'] },
+  { keys: ['reset'] },
+  { keys: ['toggleAnalysis', 'toggleFocus'], pads: ['dpadLeft', 'dpadRight'], label: 'Analysis / Focus pane', padText: 'D-PAD ◄ ►' },
+  { keys: ['openAsk'], pads: ['askBar'] },
 ];
 
-export const META_ROWS: ControlEntry[] = [
-  { keycaps: ['?'], label: 'Toggle controls', pad: 'START', partIds: ['start'] },
-  { keycaps: ['ESC'], label: 'Close top surface', pad: '', partIds: [] },
+const META_SPECS: RowSpec[] = [
+  { keys: ['toggleSheet'], pads: ['start'] },
+  { keys: ['closeTop'] },
 ];
+
+/** Pad-only actions: no key or mouse twin. The keycap column shows the pad control itself. */
+const PAD_ONLY_SPECS: RowSpec[] = [
+  { pads: ['lock'] },
+  { pads: ['unfollow'] },
+  { pads: ['selectTap'] },
+  { pads: ['cyclePrev', 'cycleNext'], label: 'Cycle contacts' },
+];
+
+export const KEYBOARD_ROWS: ControlEntry[] = KEYBOARD_SPECS.map(buildRow);
+
+export const META_ROWS: ControlEntry[] = META_SPECS.map(buildRow);
 
 export const MOUSE_ROWS: ControlEntry[] = [
   { keycaps: ['LMB'], label: 'Select target', pad: '✕', partIds: ['face'] },
@@ -52,13 +95,7 @@ export const MOUSE_ROWS: ControlEntry[] = [
   { keycaps: ['SCROLL'], label: 'Zoom', pad: '', partIds: [] },
 ];
 
-/** Pad-only actions: no key or mouse twin. The keycap column shows the pad control itself. */
-export const PAD_ONLY_ROWS: ControlEntry[] = [
-  { keycaps: ['✕'], label: 'Lock candidate', pad: '', partIds: ['face'] },
-  { keycaps: ['◯'], label: 'Release follow', pad: '', partIds: ['face'] },
-  { keycaps: ['SELECT'], label: 'Time console (tap)', pad: '', partIds: ['select'] },
-  { keycaps: ['L3', 'R3'], label: 'Cycle contacts', pad: '', partIds: ['lstick', 'rstick'] },
-];
+export const PAD_ONLY_ROWS: ControlEntry[] = PAD_ONLY_SPECS.map(buildRow);
 
 export const ALL_ROWS: ControlEntry[] = [...KEYBOARD_ROWS, ...META_ROWS, ...MOUSE_ROWS, ...PAD_ONLY_ROWS];
 

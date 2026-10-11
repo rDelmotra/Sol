@@ -1,26 +1,31 @@
+import {
+  BTN,
+  LOOK_KEYS,
+  MOVE_KEYS,
+  PAD_EDGE_ACTIONS,
+  flightKeyAction,
+  padButton,
+  type FlightKeyAction,
+  type PadAction,
+} from '../../bindings/bindings';
+import { hasModifier, isTypingOrModified } from '../../bindings/key-guards';
 import { FLIGHT, curve, triggerLinear, type MoveIntent } from '../controllers/flight-model';
+
+export { BTN };
+export type { PadAction };
 
 /**
  * Keyboard + gamepad → named flight actions. No camera, no store: FlyController
- * decides what each action does. The pad side is a pure per-frame mapper over a
- * plain snapshot, so edge detection, the L3+R3 chord and the Select tap/hold are
- * unit-tested without a real Gamepad.
+ * decides what each action does. Which key / button means what is declared once
+ * in bindings/bindings.ts; this file only turns raw input into those actions.
+ * The pad side is a pure per-frame mapper over a plain snapshot, so edge
+ * detection, the L3+R3 chord and the Select tap/hold are unit-tested without a
+ * real Gamepad.
  */
 
 // ── Keyboard ─────────────────────────────────────────────────────────────────
 
-export type KeyAction = 'gearDown' | 'gearUp' | 'flyTo' | 'joyride' | 'reset' | 'land';
-
-const KEY_ACTIONS: Record<string, KeyAction> = {
-  '[': 'gearDown',
-  ']': 'gearUp',
-  g: 'flyTo',
-  j: 'joyride',
-  c: 'reset',
-  l: 'land',
-};
-const MOVE_KEYS = new Set(['w', 'a', 's', 'd', 'r', 'f']);
-const LOOK_KEYS = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+export type KeyAction = FlightKeyAction;
 
 /** What a keydown means for flight: an action, a held move/look key, or nothing. */
 export function classifyKey(e: {
@@ -30,14 +35,10 @@ export function classifyKey(e: {
   altKey: boolean;
   target: unknown;
 }): { action: KeyAction } | { hold: string; look: boolean } | null {
-  // Browser/OS shortcuts (Cmd+C, Ctrl+R, Alt+…) are never flight input.
-  if (e.metaKey || e.ctrlKey || e.altKey) return null;
-  const t = e.target as { tagName?: string; isContentEditable?: boolean } | null;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) {
-    return null;
-  }
+  // Browser/OS shortcuts (Cmd+C, Ctrl+R, Alt+…) and typing are never flight input.
+  if (isTypingOrModified(e)) return null;
   const k = e.key.toLowerCase();
-  const action = KEY_ACTIONS[k];
+  const action = flightKeyAction(k);
   if (action) return { action };
   if (MOVE_KEYS.has(k)) return { hold: k, look: false };
   if (LOOK_KEYS.has(k)) return { hold: k, look: true };
@@ -80,7 +81,7 @@ export class KeyboardFlightInput {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    if (e.metaKey || e.ctrlKey || e.altKey) {
+    if (hasModifier(e)) {
       this.clear();
       return;
     }
@@ -121,22 +122,10 @@ export class KeyboardFlightInput {
 
 // ── Gamepad ──────────────────────────────────────────────────────────────────
 
-/** Standard-mapping button indices. */
-export const BTN = {
-  A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, SELECT: 8, START: 9, L3: 10, R3: 11,
-  DPAD_U: 12, DPAD_D: 13, DPAD_L: 14, DPAD_R: 15,
-} as const;
-
 /** L3 or R3 alone waits this long for the other stick before firing solo. */
 export const CHORD_WINDOW_MS = 120;
 /** Holding Select this long (while scrubbing) closes the scrubber. */
 export const SELECT_HOLD_MS = 550;
-
-export type PadAction =
-  | 'lock' | 'unfollow' | 'flyTo' | 'joyride' | 'gearDown' | 'gearUp'
-  | 'dpadLeft' | 'dpadRight' | 'dpadDown' | 'start'
-  | 'cyclePrev' | 'cycleNext' | 'askBar'
-  | 'selectHold' | 'selectTap';
 
 /** One frame of pad state, decoupled from the browser Gamepad object. */
 export interface PadSnapshot {
@@ -166,18 +155,12 @@ export function snapshotOf(gp: Gamepad): PadSnapshot {
   };
 }
 
-const EDGE_ACTIONS: [number, PadAction][] = [
-  [BTN.A, 'lock'],
-  [BTN.B, 'unfollow'],
-  [BTN.X, 'flyTo'],
-  [BTN.Y, 'joyride'],
-  [BTN.LB, 'gearDown'],
-  [BTN.RB, 'gearUp'],
-  [BTN.DPAD_L, 'dpadLeft'],
-  [BTN.DPAD_R, 'dpadRight'],
-  [BTN.DPAD_D, 'dpadDown'],
-  [BTN.START, 'start'],
-];
+const EDGE_ACTIONS = PAD_EDGE_ACTIONS;
+/** Stick and Select buttons, from the bindings table. */
+const L3 = padButton('cyclePrev');
+const R3 = padButton('cycleNext');
+const SELECT = padButton('selectTap');
+const START = padButton('start');
 
 /** Per-frame gamepad mapper: edges, chord and Select timing. Pure. */
 export class PadMapper {
@@ -197,11 +180,11 @@ export class PadMapper {
 
     let anyButtonPress = false;
     for (let i = 0; i < s.pressed.length; i++) {
-      if (i !== BTN.START && edge(i)) anyButtonPress = true;
+      if (i !== START && edge(i)) anyButtonPress = true;
     }
 
-    this.stepChord(down(BTN.L3), down(BTN.R3), edge(BTN.L3), edge(BTN.R3), dtMs, actions);
-    this.stepSelect(down(BTN.SELECT), dtMs, actions);
+    this.stepChord(down(L3), down(R3), edge(L3), edge(R3), dtMs, actions);
+    this.stepSelect(down(SELECT), dtMs, actions);
 
     this.prev = s.pressed.slice();
     const ax = (i: number) => s.axes[i] ?? 0;
@@ -260,7 +243,7 @@ export class PadMapper {
 
   /** Select: 'selectHold' once at SELECT_HOLD_MS; 'selectTap' on release unless the hold was consumed. */
   private stepSelect(sel: boolean, dtMs: number, out: PadAction[]): void {
-    const wasDown = this.prev[BTN.SELECT] ?? false;
+    const wasDown = this.prev[SELECT] ?? false;
     if (sel) {
       if (!wasDown) {
         this.selectHeldMs = 0;

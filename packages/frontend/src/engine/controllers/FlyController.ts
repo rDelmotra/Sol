@@ -124,6 +124,10 @@ export class FlyController {
       case 'joyride': this.joyrideSelected(store); break;
       case 'reset': this.nav.resetCamera(); break;
       case 'land': this.nav.toggleLanding(); break;
+      default: {
+        const _never: never = a;
+        return _never;
+      }
     }
   }
 
