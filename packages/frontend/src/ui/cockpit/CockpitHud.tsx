@@ -6,6 +6,7 @@ import { FocusPanes } from './FocusPanes';
 import { HudErrorBoundary } from './HudErrorBoundary';
 import { HudTitle } from './HudTitle';
 import { Reticle } from './Reticle';
+import { TimeConsole } from './TimeConsole';
 import { TelemetryBL } from './TelemetryBL';
 import { TelemetryTR } from './TelemetryTR';
 import { VignetteAndScan } from './VignetteAndScan';
@@ -49,7 +50,9 @@ export default function CockpitHud() {
         <FocusPanes />
       </HudErrorBoundary>
 
-      {/* Slot: time console (top-left, 24/24). Built in a separate step. */}
+      <HudErrorBoundary region="time console">
+        <TimeConsole />
+      </HudErrorBoundary>
 
       <HudErrorBoundary region="telemetry">
         <TelemetryTR />
