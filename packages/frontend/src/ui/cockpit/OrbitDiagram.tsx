@@ -21,8 +21,7 @@ const FRAME_MS = 33;
  * slowly turning (7°/s). Geometry is computed once per object; the spin is
  * driven by one requestAnimationFrame loop that writes SVG attributes through
  * refs, so React never re-renders at animation rate. The marker follows the sim
- * clock, read from the store inside the loop (no subscription). With
- * prefers-reduced-motion the picture holds still and the marker does not pulse.
+ * clock, read from the store inside the loop (no subscription).
  */
 export function OrbitDiagram({ object }: { object: EnrichedTLEObject }) {
   const prep = useMemo(() => {
@@ -68,16 +67,8 @@ function Diagram({ prep }: { prep: NonNullable<ReturnType<typeof prepareOrbit>> 
   const com = useRef<SVGGElement>(null);
   const markerBack = useRef<SVGGElement>(null);
   const markerFront = useRef<SVGGElement>(null);
-  const reduced = useRef(false);
 
   useLayoutEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const onMq = () => {
-      reduced.current = mq.matches;
-    };
-    onMq();
-    mq.addEventListener('change', onMq);
-
     let spin = SPIN_START_RAD;
     let drawnSpin = NaN;
     let drawnTime = NaN;
@@ -117,7 +108,7 @@ function Diagram({ prep }: { prep: NonNullable<ReturnType<typeof prepareOrbit>> 
       acc += now - last;
       last = now;
       if (acc >= FRAME_MS) {
-        if (!reduced.current) spin += ((SPIN_DEG_PER_S * Math.PI) / 180) * (acc / 1000);
+        spin += ((SPIN_DEG_PER_S * Math.PI) / 180) * (acc / 1000);
         acc = 0;
         draw();
       }
@@ -127,7 +118,6 @@ function Diagram({ prep }: { prep: NonNullable<ReturnType<typeof prepareOrbit>> 
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
-      mq.removeEventListener('change', onMq);
     };
   }, [prep]);
 
@@ -194,18 +184,17 @@ function Diagram({ prep }: { prep: NonNullable<ReturnType<typeof prepareOrbit>> 
   );
 }
 
-/** Object marker at the group's origin; the loop moves the group. Pulses via SMIL unless reduced motion. */
+/** Object marker at the group's origin; the loop moves the group. Pulses via SMIL. */
 function Marker({ gRef, dim }: { gRef: React.RefObject<SVGGElement>; dim?: boolean }) {
-  const pulse = useRef(!window.matchMedia('(prefers-reduced-motion: reduce)').matches).current;
   return (
     <g ref={gRef} display="none" opacity={dim ? 0.5 : 1}>
       <circle r={4} fill="var(--hud-arc)" opacity={0.3}>
-        {pulse && <animate attributeName="r" values="3;7;3" dur="1.6s" repeatCount="indefinite" />}
-        {pulse && <animate attributeName="opacity" values="0.5;0.05;0.5" dur="1.6s" repeatCount="indefinite" />}
+        <animate attributeName="r" values="3;7;3" dur="1.6s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.5;0.05;0.5" dur="1.6s" repeatCount="indefinite" />
       </circle>
       <circle r={4} fill="none" stroke="var(--hud-arc)" strokeWidth={0.5} opacity={0.8} />
       <circle r={2} fill="#fff">
-        {pulse && <animate attributeName="opacity" values="1;0.65;1" dur="1.6s" repeatCount="indefinite" />}
+        <animate attributeName="opacity" values="1;0.65;1" dur="1.6s" repeatCount="indefinite" />
       </circle>
     </g>
   );

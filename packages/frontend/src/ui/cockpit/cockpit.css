@@ -94,12 +94,3 @@
 .hud-rib {
   transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1), stroke 200ms ease;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  /* Infinite loops (reticle pulse, scan sweep, waveform) stop. */
-  .hud-loop { animation: none !important; }
-  .hud-scrim { animation: none !important; }
-  .hud-gear-seg, .hud-gear-value { animation: none !important; }
-  .hud-rib { transition: none; }
-  .hud-edge-arc, .hud-edge-arc * { animation: none !important; }
-}

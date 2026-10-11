@@ -31,7 +31,6 @@ export function Waveform({ active, onClick }: { active: boolean; onClick: () => 
       {bars.map((b, i) => (
         <span
           key={i}
-          className="hud-loop"
           style={{
             display: 'inline-block',
             width: 2,

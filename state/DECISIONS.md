@@ -48,3 +48,6 @@ Supersedes the 2026-09-27 rejection of `claude/ui-run-spike-c350c8`.
 - Time scrubbing keeps god1's engine and store logic, including the loaded-day snap guard. Only the cockpit's clock-row control is new.
 - The tutorial keeps only the gamepad controls sheet (`?` / pad START). The spotlight tour is dropped.
 - Desktop width first. Small screens later.
+
+## D9 — The cockpit HUD always animates (2026-10-11)
+The motion is part of the approved look; the owner's own Mac has Reduce Motion on and the HUD went still.

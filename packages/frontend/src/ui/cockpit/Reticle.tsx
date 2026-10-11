@@ -45,7 +45,6 @@ export function Reticle() {
         </svg>
       </div>
       <svg
-        className="hud-loop"
         width={RETICLE_BOX_PX}
         height={RETICLE_BOX_PX}
         viewBox={`0 0 ${RETICLE_VIEWBOX} ${RETICLE_VIEWBOX}`}

@@ -45,7 +45,6 @@ export function FocusPanes() {
               <div style={{ position: 'relative', margin: '0 auto', height: ORBIT_DIAGRAM_H, width: '100%' }}>
                 <OrbitDiagram object={selected} />
                 <div
-                  className="hud-loop"
                   style={{
                     position: 'absolute',
                     inset: 0,

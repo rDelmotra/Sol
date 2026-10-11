@@ -175,7 +175,6 @@ function PadLive() {
   return (
     <span style={{ fontSize: 8, fontFamily: 'var(--font-hud-mono)', color: 'var(--hud-good)', display: 'flex', alignItems: 'center', gap: 4 }}>
       <span
-        className="hud-loop"
         style={{
           width: 5,
           height: 5,
