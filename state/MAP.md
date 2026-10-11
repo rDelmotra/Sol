@@ -23,7 +23,8 @@ Import rules between and inside packages live in `tests/architecture.test.ts`. R
 |---|---|
 | `packages/orbital-core/src/units.ts` | `ER_KM` and unit constants |
 | `packages/orbital-core/src/earth.ts` | WGS84 shape, geodetic conversions, umbra radius |
-| `packages/orbital-core/src/live-plane.ts` | Derived quantities (altitude, speed, sub-point, eclipse, elevation, range). Used by frontend and backend alike. |
+| `packages/orbital-core/src/live-plane.ts` | Derived quantities (altitude, speed, sub-point, eclipse, elevation, azimuth, range). Used by frontend and backend alike. |
+| `packages/orbital-core/src/elements.ts` | Mean-element quantities: semi-major axis, two-body orbit shape for diagrams |
 | `packages/orbital-core/src/visibility.ts` | Naked-eye visibility gate and sky brightness policy |
 | `packages/orbital-core/src/illumination.ts` | Eclipse and observer darkness |
 | `packages/orbital-core/src/observer.ts` | Observer position in ECEF and TEME |
@@ -79,7 +80,12 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Live query data source | `packages/frontend/src/query/analytic/live-source.ts` |
 | Older keyword query engine | `packages/frontend/src/query/` |
 | Simulation clock | `packages/frontend/src/time/SimClock.ts` |
+| Calendar time fields (gamepad time scrub) | `packages/frontend/src/time/time-fields.ts` |
+| Observer-sky logic (no engine, store or UI) | `packages/frontend/src/sky/` |
+| Pass prediction (rise, peak, set, bearings) | `packages/frontend/src/sky/passes.ts` |
+| OMM to orbit-diagram elements | `packages/frontend/src/sky/orbit-elements.ts` |
 | Overlay UI | `packages/frontend/src/ui/` |
+| Observer location acquisition and cache policy | `packages/frontend/src/ui/observer-location.ts` |
 | GLSL shaders | `packages/frontend/src/shaders/` |
 
 Rules that hold even without reading the architecture test:
