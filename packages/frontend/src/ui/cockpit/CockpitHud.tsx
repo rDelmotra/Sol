@@ -1,20 +1,20 @@
 import './cockpit.css';
-import { AskBar } from './AskBar';
-import { AnalysisPanes } from './AnalysisPanes';
-import { CompassStrip } from './CompassStrip';
-import { ControlsSheet } from './ControlsSheet';
-import { Dock } from './Dock';
-import { EdgeArc } from './EdgeArc';
-import { FocusPanes } from './FocusPanes';
-import { HudErrorBoundary } from './HudErrorBoundary';
-import { HudTitle } from './HudTitle';
-import { ObjectDisc } from './ObjectDisc';
-import { PassReadout } from './PassReadout';
-import { Reticle } from './Reticle';
-import { TimeConsole } from './TimeConsole';
-import { TelemetryBL } from './TelemetryBL';
-import { TelemetryTR } from './TelemetryTR';
-import { VignetteAndScan } from './VignetteAndScan';
+import { AskBar } from './hud/AskBar';
+import { AnalysisPanes } from './panes/AnalysisPanes';
+import { CompassStrip } from './ground/CompassStrip';
+import { ControlsSheet } from './controls/ControlsSheet';
+import { Dock } from './dock/Dock';
+import { EdgeArc } from './hud/EdgeArc';
+import { FocusPanes } from './panes/FocusPanes';
+import { HudErrorBoundary } from './primitives/HudErrorBoundary';
+import { HudTitle } from './primitives/HudTitle';
+import { ObjectDisc } from './hud/ObjectDisc';
+import { PassReadout } from './ground/PassReadout';
+import { Reticle } from './hud/Reticle';
+import { TimeConsole } from './time/TimeConsole';
+import { TelemetryBL } from './hud/TelemetryBL';
+import { TelemetryTR } from './hud/TelemetryTR';
+import { VignetteAndScan } from './primitives/VignetteAndScan';
 import { useCockpitKeys } from './useCockpitKeys';
 
 /**

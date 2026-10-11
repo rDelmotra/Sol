@@ -98,32 +98,16 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Pass plan for the selected object (hook, mounted in App) | `packages/frontend/src/ui/hooks/useNextPasses.ts` |
 | OMM to orbit-diagram elements | `packages/frontend/src/sky/orbit-elements.ts` |
 | Overlay UI | `packages/frontend/src/ui/` |
-| Cockpit HUD (one component per file, mounted by App) | `packages/frontend/src/ui/cockpit/` |
-| Cockpit layout numbers (px, golden geometry) | `packages/frontend/src/ui/cockpit/layout.ts` |
-| Cockpit readout formatters and honest altitude/speed rules | `packages/frontend/src/ui/cockpit/format.ts` |
-| Cockpit keyboard map, pure | `packages/frontend/src/ui/cockpit/keys.ts` |
-| Cockpit tokens and keyframes | `packages/frontend/src/ui/cockpit/cockpit.css` |
-| Cockpit time console (clock row that unfolds into the scrubber) | `packages/frontend/src/ui/cockpit/TimeConsole.tsx` |
-| Time console parts: digit group, field chips, momentum wheel, return button | `packages/frontend/src/ui/cockpit/TimeDigit.tsx`, `TimeFieldChips.tsx`, `TimeWheel.tsx`, `ReturnToPresentButton.tsx` |
-| Time console mouse stepping (preview now, commit after 220 ms) | `packages/frontend/src/ui/cockpit/useTimeStep.ts` |
-| Time console pure helpers (digits, delta, calendar-correct wheel stepping) | `packages/frontend/src/ui/cockpit/time-console.ts` |
-| Cockpit ask bar (input, caption) and its waveform | `packages/frontend/src/ui/cockpit/AskBar.tsx`, `Waveform.tsx` |
-| Ask bar pure helpers (bar geometry, caption text) | `packages/frontend/src/ui/cockpit/ask-bar.ts` |
-| Cockpit native-button reset style | `packages/frontend/src/ui/cockpit/hudStyles.ts` |
-| Cockpit object disc (sector ring and nine fields around the lock) | `packages/frontend/src/ui/cockpit/ObjectDisc.tsx` |
-| Object disc geometry and field text, pure | `packages/frontend/src/ui/cockpit/disc.ts` |
-| Element size hook (ResizeObserver) for HUD layers | `packages/frontend/src/ui/cockpit/useElementSize.ts` |
-| Orbit diagram in OBJECT SCAN (3D, spins by writing SVG attributes from one rAF loop) | `packages/frontend/src/ui/cockpit/OrbitDiagram.tsx` |
-| Orbit diagram geometry (once per object, once per frame), pure | `packages/frontend/src/ui/cockpit/orbit-diagram.ts` |
-| Cockpit pass readout (top 66, says why when empty) | `packages/frontend/src/ui/cockpit/PassReadout.tsx` |
-| Pass readout text: one 10 degree threshold, LOW band, clipped ends, pure | `packages/frontend/src/ui/cockpit/pass-readout.ts` |
-| Cockpit compass strip (ground view only) | `packages/frontend/src/ui/cockpit/CompassStrip.tsx` |
-| Compass geometry and rise / set bearings, pure | `packages/frontend/src/ui/cockpit/compass.ts` |
-| Controls sheet (keyboard / gamepad diagram / mouse, opens on `controlsSheetOpen`) | `packages/frontend/src/ui/cockpit/ControlsSheet.tsx` |
-| Gamepad diagram art | `packages/frontend/src/ui/cockpit/GamepadDiagram.tsx` |
-| Controls sheet rows (the real bindings) and diagram part looks, pure | `packages/frontend/src/ui/cockpit/controls-sheet.ts` |
-| GPS fix hook for the dock's location pin | `packages/frontend/src/ui/hooks/useObserverLocation.ts` |
-| Observer location acquisition and cache policy | `packages/frontend/src/ui/observer-location.ts` |
+| Cockpit HUD root: shell, layout numbers, formatters, keyboard map, tokens (shared surface, mounted by App) | `packages/frontend/src/ui/cockpit/` (`CockpitHud.tsx`, `layout.ts`, `format.ts`, `keys.ts`, `useCockpitKeys.ts`, `cockpit.css`) |
+| Cockpit primitives: the shared building blocks every other cockpit folder uses (glass pane, key/value rows, pane header, empty state, action row, error boundary, title, vignette and scan, native-button reset style). Nothing here imports a feature folder | `packages/frontend/src/ui/cockpit/primitives/` |
+| Cockpit side panes: object scan (identity, telemetry, actions, analysis) and the 3D orbit diagram | `packages/frontend/src/ui/cockpit/panes/` |
+| Cockpit dock: mode controls, lens and location controls, location popover, dock styles | `packages/frontend/src/ui/cockpit/dock/` |
+| Cockpit time console: clock row that unfolds into the scrubber, digits, field chips, momentum wheel, return button, mouse stepping | `packages/frontend/src/ui/cockpit/time/` |
+| Cockpit ground view: compass strip and pass readout, with their pure helpers | `packages/frontend/src/ui/cockpit/ground/` |
+| Cockpit controls sheet: keyboard / gamepad diagram / mouse bindings | `packages/frontend/src/ui/cockpit/controls/` |
+| Cockpit on-screen layers: reticle, object disc, edge arcs, gear readout and sweep, corner telemetry, ask bar and waveform | `packages/frontend/src/ui/cockpit/hud/` |
+| UI hooks: GPS fix, pass plan, analytic ask, element size (ResizeObserver) | `packages/frontend/src/ui/hooks/` |
+| Observer location acquisition and cache policy | `packages/frontend/src/sky/observer-location.ts` |
 | GLSL shaders | `packages/frontend/src/shaders/` |
 
 Rules that hold even without reading the architecture test:

@@ -3,7 +3,7 @@
 // publishing the accepted fix to the store. Policy stays in the tested core.
 import { useCallback, useState } from 'react';
 import { useStore } from '../../store/useStore';
-import { acquireObserverLocation, defaultLocationStore } from '../observer-location';
+import { acquireObserverLocation, defaultLocationStore } from '../../sky/observer-location';
 
 function geolocateOnce(options: PositionOptions): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
