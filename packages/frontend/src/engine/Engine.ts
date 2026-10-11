@@ -23,6 +23,7 @@ import { SatellitesLayer } from './world/layers/SatellitesLayer';
 import { ObserverMarkerLayer } from './world/layers/ObserverMarkerLayer';
 import { HorizonLayer } from './world/layers/HorizonLayer';
 import { DomeSkyLayer } from './world/layers/DomeSkyLayer';
+import { PassArcLayer } from './world/layers/PassArcLayer';
 import { registerEngineCommands, type EngineCommands } from './command/EngineCommands';
 import type { FrameContext } from './render/Layer';
 import { AnalyticRuntime } from './analytic/AnalyticRuntime';
@@ -108,6 +109,7 @@ export class Engine {
     // Parents to the Earth group (like the observer marker), so its scene-root
     // registration order is irrelevant; dome-only visibility toggled in update().
     this.world.register(this.horizonLayer);
+    this.world.register(new PassArcLayer(() => this.earthLayer.group)); // Earth-fixed, parents to the Earth group
     this.world.register(new StarfieldLayer());
     this.world.register(this.trailsLayer);
     this.world.register(this.dsoLayer);

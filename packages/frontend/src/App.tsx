@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useRef } from 'react';
 import type { Engine } from './engine/Engine';
 import { LoadingScreen } from './ui/LoadingScreen';
 import { useStore } from './store/useStore';
+import { useNextPasses } from './ui/hooks/useNextPasses';
 
 // Post-`ready` overlay UI — none of it renders until loadingPhase === 'ready',
 // so it's split out of the first-paint chunk and streamed in at mount. Named
@@ -108,6 +109,7 @@ function HudDimGroup({ children }: { children: React.ReactNode }) {
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Engine | null>(null);
+  useNextPasses(); // pass plan for the arc + readout (store-only, no engine import)
 
   useEffect(() => {
     const canvas = canvasRef.current;

@@ -19,6 +19,10 @@ Remove an item when it is fixed. None of these is scheduled unless the owner say
 - **Perceptor and Analytic IR redesign.** See D3. Marked now by 2 known violations in `tests/architecture.test.ts`
   (`services/analytic-prompt.ts` importing `analytic`) and by the hand-kept list in `packages/analytic/src/capability.ts`.
 
+## Cockpit port (deferred)
+
+- **Pass search runs on the main thread.** `packages/frontend/src/ui/hooks/useNextPasses.ts` runs a 24-hour `findPasses` (about a thousand SGP4 steps) on each selection, observer, vantage or 5-minute sim-time change. Move it to a worker.
+
 ## Known weaknesses (left alone by decision D2)
 
 - **Filter fan-out.** Adding one filter group touches about 18 files. It needs a facet registry.
