@@ -5,7 +5,7 @@ import { ActionsPane } from './ActionsPane';
 import { ObjectScanPane } from './ObjectScanPane';
 import { TelemetryPane } from './TelemetryPane';
 
-/** Right stack (E): OBJECT SCAN (orbit diagram + scan sweep), TELEMETRY, ACTIONS. */
+/** Right stack (E): OBJECT SCAN (orbit diagram), TELEMETRY, ACTIONS. */
 export function FocusPanes() {
   const open = useStore((s) => s.focusPanelOpen);
   const selected = useStore((s) => s.selectedSatellite);
