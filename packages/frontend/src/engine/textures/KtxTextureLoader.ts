@@ -45,6 +45,9 @@ export class KtxTextureLoader {
     colorSpace: THREE.ColorSpace,
     onLoad: (tex: THREE.Texture) => void,
   ): void {
+    // Loads can be deferred (see EarthRenderer's gate); a load after dispose() would
+    // spin up a fresh transcoder worker pool nobody frees.
+    if (this.disposed) return;
     this.pending++;
     this.loader.load(
       path,
