@@ -31,6 +31,17 @@ describe('createApp', () => {
     assert.equal(body.status, 'ok');
   });
 
+  it('GET /health reports disk usage of the data volume', async () => {
+    const res = await fetch(`${base}/health`);
+    const body = await res.json() as {
+      disk: { usedBytes: number; totalBytes: number; percent: number; level: string } | null;
+    };
+    assert.ok(body.disk, 'expected a disk block (statfs works on the dev machine)');
+    assert.ok(body.disk!.totalBytes > 0);
+    assert.ok(body.disk!.percent >= 0 && body.disk!.percent <= 100);
+    assert.ok(['ok', 'warn', 'critical'].includes(body.disk!.level));
+  });
+
   it('mounts the injected query router under /api/query', async () => {
     const res = await fetch(`${base}/api/query/stub-ping`);
     assert.equal(res.status, 200);

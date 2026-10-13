@@ -10,11 +10,21 @@ import {
   isHistoryReady,
 } from './history/index.js';
 import { logger } from './utils/logger.js';
+import { logDiskUsage } from './utils/disk-usage.js';
 
 export interface BootStep {
   name: string;
   run: () => void | Promise<void>;
 }
+
+const reportDisk: BootStep = {
+  name: 'disk-usage',
+  async run() {
+    // Visibility only: log how full the data volume is (WARN >= 75%, ERROR >= 90%).
+    // Never throws, never deletes.
+    await logDiskUsage('boot');
+  },
+};
 
 const warmEnrichment: BootStep = {
   name: 'enrichment',
@@ -95,6 +105,7 @@ const analyticSnapshot: BootStep = {
 };
 
 export const BOOT_STEPS: readonly BootStep[] = [
+  reportDisk,
   warmEnrichment,
   initHistoryDb,
   tleFreshness,

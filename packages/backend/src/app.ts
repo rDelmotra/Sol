@@ -18,6 +18,7 @@ import { readVersion } from './cache/file-cache.js';
 import { readDsoManifest } from './dso/snapshot/index.js';
 import { historyRouter } from './history/index.js';
 import { frontendDistDir } from './utils/paths.js';
+import { readDiskUsage } from './utils/disk-usage.js';
 import { isProd as isProdEnv, corsOrigin as corsOriginEnv } from './utils/config.js';
 
 export interface AppDeps {
@@ -97,11 +98,13 @@ export function createApp(deps: AppDeps = {}): Express {
   app.get('/health', async (_req, res) => {
     const version = readVersion();
     const dsoManifest = await readDsoManifest();
+    const disk = await readDiskUsage(); // data volume; null if the platform can't say
     res.json({
       status: 'ok',
       lastUpdate: version?.version ?? null,
       objectCount: version?.count ?? 0,
       uptime: Math.floor(process.uptime()),
+      disk,
       ...summarizeDsoHealth(dsoManifest),
     });
   });

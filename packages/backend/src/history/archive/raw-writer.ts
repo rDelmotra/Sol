@@ -4,6 +4,7 @@ import zlib from 'node:zlib';
 import { historyArchiveDir } from '../../utils/paths.js';
 import type { RawGpRecord } from '../ingest/sink.js';
 import { logger } from '../../utils/logger.js';
+import { logDiskUsage } from '../../utils/disk-usage.js';
 
 // ============================================================
 // Raw GP archive — the "source of truth" layer.
@@ -54,4 +55,7 @@ export async function writeRawArchive(records: RawGpRecord[], source: string): P
     `History raw archive written: ${path.basename(finalPath)} ` +
       `(${records.length} records, ${(gz.length / 1_048_576).toFixed(2)} MB gz)`,
   );
+
+  // Visibility only (WARN >= 75%, ERROR >= 90%); never deletes, never throws.
+  await logDiskUsage('after raw archive write', dir);
 }
