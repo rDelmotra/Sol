@@ -176,7 +176,6 @@ function PadLive() {
           background: 'var(--hud-good)',
           display: 'inline-block',
           boxShadow: '0 0 6px var(--hud-good)',
-          animation: 'hud-pulse 2s ease infinite',
         }}
       />
       GAMEPAD LIVE

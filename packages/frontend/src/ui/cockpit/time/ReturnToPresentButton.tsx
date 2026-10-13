@@ -1,9 +1,5 @@
-import { useEffect, useState } from 'react';
 import { useStore } from '../../../store/useStore';
 import { BUTTON_RESET } from '../primitives/hud-styles';
-
-/** How long the ↺ pulses after you first leave the live edge, ms. */
-const PULSE_MS = 2600;
 
 function ReturnIcon() {
   return (
@@ -16,16 +12,11 @@ function ReturnIcon() {
 
 /**
  * ↺ return to present. Mounted only while displaced, even with the console
- * closed. Pulses for its first 2.6 s (the one moment the user needs to learn it
- * exists). When the pad's D-pad is parked on it (scrubFocusOnReset) it fills solid.
+ * closed. A static amber ring marks it as the way back (no pulse). When the
+ * pad's D-pad is parked on it (scrubFocusOnReset) it fills solid.
  */
 export function ReturnToPresentButton() {
   const focusOnReset = useStore((s) => s.scrubFocusOnReset);
-  const [pulse, setPulse] = useState(true);
-  useEffect(() => {
-    const id = setTimeout(() => setPulse(false), PULSE_MS);
-    return () => clearTimeout(id);
-  }, []);
 
   return (
     <button
@@ -43,9 +34,8 @@ export function ReturnToPresentButton() {
         color: focusOnReset ? 'var(--hud-sky-deep)' : 'var(--hud-warn)',
         background: focusOnReset ? 'var(--hud-warn)' : 'transparent',
         border: '1px solid oklch(0.82 0.14 55 / 0.45)',
-        boxShadow: focusOnReset ? '0 0 10px 2px oklch(0.82 0.14 55 / 0.65)' : 'none',
+        boxShadow: focusOnReset ? '0 0 10px 2px oklch(0.82 0.14 55 / 0.65)' : '0 0 0 3px oklch(0.82 0.14 55 / 0.28)',
         transition: 'background 140ms ease, box-shadow 140ms ease, color 140ms ease',
-        animation: pulse && !focusOnReset ? 'hud-return-pulse 1.15s ease-in-out infinite' : 'none',
       }}
     >
       <ReturnIcon />

@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
-import { WAVE_ACTIVE_MS, WAVE_IDLE_MS, waveBars } from './ask-bar';
+import { waveBars } from './ask-bar';
 import { BUTTON_RESET } from '../primitives/hud-styles';
 
 /**
- * The ask bar's 48-bar pill. Breathes slowly when idle, fast and cyan→amber
- * while asking or compiling. A button: clicking it opens (or, open, cancels) the bar.
+ * The ask bar's 48-bar pill. Static: fixed envelope heights, dim when idle,
+ * cyan→amber while asking or compiling (colour is the only "alive" cue; nothing
+ * moves). A button: clicking it opens (or, open, cancels) the bar.
  */
 export function Waveform({ active, onClick }: { active: boolean; onClick: () => void }) {
   const bars = useMemo(() => waveBars(), []);
@@ -37,8 +38,6 @@ export function Waveform({ active, onClick }: { active: boolean; onClick: () => 
             height: b.height,
             borderRadius: 2,
             background: active ? 'linear-gradient(180deg, oklch(0.9 0.14 210), oklch(0.85 0.14 55))' : 'var(--hud-arc-dim)',
-            transformOrigin: 'center',
-            animation: `hud-breathe ${active ? WAVE_ACTIVE_MS : WAVE_IDLE_MS}ms ease-in-out ${b.delayMs}ms infinite`,
           }}
         />
       ))}

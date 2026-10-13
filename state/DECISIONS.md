@@ -51,3 +51,10 @@ Supersedes the 2026-09-27 rejection of `claude/ui-run-spike-c350c8`.
 
 ## D9 — The cockpit HUD always animates (2026-10-11)
 The motion is part of the approved look; the owner's own Mac has Reduce Motion on and the HUD went still.
+
+## D10 — The idle HUD is still (2026-10-14)
+Looping animations are removed to stop idle GPU and CPU heat. One-shot transitions stay (pane fan-in, time console, chips, gear flare and glow, edge arcs).
+Supersedes D9's "always animates" for looping motion. The Reduce Motion override (D9) stays moot.
+- Waveform bars are fixed. Colour (cyan to amber) shows active or compiling.
+- Reticle, object scan and pad-live dot do not move.
+- The return-to-present button has a static amber ring.

@@ -10,11 +10,11 @@ describe('ask bar helpers', () => {
     assert.ok(Math.abs(bars[24].height - 18) < 1e-9);
     assert.ok(bars[24].height > bars[40].height);
   });
-  it('delays cycle under 900 ms', () => {
+  it('bars are plain fixed heights: symmetric, no motion fields', () => {
     const bars = waveBars();
-    assert.equal(bars[1].delayMs, 40);
-    assert.equal(bars[23].delayMs, (23 * 40) % 900);
-    assert.ok(bars.every((b) => b.delayMs < 900));
+    assert.deepEqual(Object.keys(bars[0]), ['height']);
+    assert.ok(Math.abs(bars[12].height - bars[36].height) < 1e-9);
+    assert.ok(bars.every((b) => b.height >= 4 && b.height <= 18));
   });
   it('caption follows the answer state', () => {
     assert.deepEqual(askCaption(null), { text: ASK_HINT, error: false });
