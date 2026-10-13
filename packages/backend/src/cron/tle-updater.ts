@@ -4,7 +4,13 @@ import { fetchCelesTrakTLEs } from '../services/celestrak.js';
 import { classifyObject, classifyObjectType } from '../services/classifier.js';
 import { getInlineFacets } from '../enrichment/store.js';
 import { buildOmm } from '../utils/omm.js';
-import { writeCache, readCache, isCacheFresh } from '../cache/file-cache.js';
+import {
+  writeCache,
+  readCache,
+  cacheAgeMs,
+  shouldSkipRefresh,
+  type UpdateTrigger,
+} from '../cache/file-cache.js';
 import { primeTlePayload } from '../cache/tle-payload-cache.js';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import {
@@ -169,17 +175,20 @@ function buildFromCelesTrak(gpElements: CelesTrakGPElement[]): EnrichedTLEObject
 /**
  * Run one full update cycle: try Space-Track first, fall back to CelesTrak.
  *
- * The cycle is skipped entirely if the cache is still fresh (< 24 h old).
- * This makes the function safe to call at startup AND from the cron job
- * without any separate rate-limit bookkeeping.
+ * Skip policy (see shouldSkipRefresh):
+ *  - 'boot': skipped while the cache is inside the 24 h TTL.
+ *  - 'cron': skipped only if the cache is under 1 h old. The daily run must
+ *    always refresh; the old 24 h guard skipped every other day because the
+ *    previous write is 23h59m old at the next 02:00:00 tick.
+ * The minimum-age guard keeps a restart loop or double trigger from
+ * hammering Space-Track.
  */
-export async function runUpdateCycle(): Promise<void> {
-  // Guard: skip if cache is still within TTL.
-  // This prevents hammering Space-Track if the process restarts repeatedly
-  // or the cron fires unexpectedly.
-  if (isCacheFresh()) {
+export async function runUpdateCycle(trigger: UpdateTrigger = 'boot'): Promise<void> {
+  const ageMs = cacheAgeMs();
+  if (shouldSkipRefresh(ageMs, trigger)) {
     const v = readCache();
-    logger.info(`Cache is fresh — skipping fetch (${v?.length ?? 0} objects cached)`);
+    const ageMin = Math.round((ageMs ?? 0) / 60_000);
+    logger.info(`Cache is fresh for ${trigger} (${ageMin} min old) — skipping fetch (${v?.length ?? 0} objects cached)`);
     return;
   }
 
@@ -258,12 +267,12 @@ export async function runUpdateCycle(): Promise<void> {
 export function scheduleTLEUpdater(runNow: boolean): void {
   if (runNow) {
     logger.info('Cache missing or stale at startup — triggering immediate fetch');
-    runUpdateCycle().catch((err) => logger.error('Startup fetch error:', err));
+    runUpdateCycle('boot').catch((err) => logger.error('Startup fetch error:', err));
   }
 
   const job = cron.schedule(CRON_SCHEDULE, () => {
     logger.info(`Cron triggered (${CRON_SCHEDULE})`);
-    runUpdateCycle().catch((err) => logger.error('Cron cycle error:', err));
+    runUpdateCycle('cron').catch((err) => logger.error('Cron cycle error:', err));
   });
 
   logger.info(`TLE updater scheduled: ${CRON_SCHEDULE} (daily at 02:00 UTC)`);

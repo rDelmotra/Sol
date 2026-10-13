@@ -19,9 +19,16 @@ import { logger } from '../utils/logger.js';
 // is acceptable for orbital data at this scale.
 // On startup the server checks the file mtime; if it is < CACHE_TTL_MS old
 // the cache is considered fresh and no fetch is triggered.
+// The daily cron uses a much shorter guard (CRON_MIN_AGE_MS) so it always
+// refreshes; see shouldSkipRefresh.
 // ============================================================
 
 export const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+// A scheduled (cron) refresh only skips when the cache is younger than this.
+// It makes the cron safe against double-triggers and restart loops without
+// letting the 24 h boot TTL swallow the daily run (cache written 02:00:13 is
+// 23h59m48s old at the next 02:00:00 cron).
+export const CRON_MIN_AGE_MS = 60 * 60 * 1000; // 1 hour
 export const VISUAL_CACHE_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 export interface VisualNoradCache {
@@ -64,12 +71,38 @@ function normalizeNoradIds(values: unknown[]): number[] {
 // Read helpers
 // ============================================================
 
+/** Age of the TLE cache file in ms (from mtime), or null if it does not exist. */
+export function cacheAgeMs(now: number = Date.now()): number | null {
+  const p = tleCachePath();
+  if (!fs.existsSync(p)) return null;
+  return now - fs.statSync(p).mtimeMs;
+}
+
+/** Why an update cycle is running: 'boot' = process start, 'cron' = the daily schedule. */
+export type UpdateTrigger = 'boot' | 'cron';
+
+/**
+ * Pure policy: should an update cycle skip the fetch?
+ *  - no cache (age null)  -> never skip
+ *  - boot                 -> skip while the cache is inside the 24 h TTL
+ *  - cron                 -> skip only if the cache is under CRON_MIN_AGE_MS
+ *                            (a restart loop or double trigger must not hammer Space-Track,
+ *                             but a normal daily run must always refresh)
+ */
+export function shouldSkipRefresh(
+  ageMs: number | null,
+  trigger: UpdateTrigger,
+  ttlMs: number = CACHE_TTL_MS,
+  cronMinAgeMs: number = CRON_MIN_AGE_MS,
+): boolean {
+  if (ageMs === null) return false;
+  return ageMs < (trigger === 'cron' ? cronMinAgeMs : ttlMs);
+}
+
 /** Returns true if the cache file exists AND its mtime is within the TTL. */
 export function isCacheFresh(): boolean {
-  const p = tleCachePath();
-  if (!fs.existsSync(p)) return false;
-  const mtime = fs.statSync(p).mtimeMs;
-  return Date.now() - mtime < CACHE_TTL_MS;
+  const age = cacheAgeMs();
+  return age !== null && age < CACHE_TTL_MS;
 }
 
 /**
