@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   defaultChildren,
+  isEntryPoint,
   superviseChildren,
   type ChildHandle,
   type ChildSpec,
@@ -202,5 +203,13 @@ describe('defaultChildren', () => {
       { name: 'api', script: '/app/packages/backend/dist/index.js' },
       { name: 'dso-worker', script: '/app/packages/backend/dist/dso-worker.js' },
     ]);
+  });
+});
+
+describe('isEntryPoint', () => {
+  it('is false when argv[1] is another file or missing', () => {
+    assert.equal(isEntryPoint('/tmp/some-other-file.js'), false);
+    assert.equal(isEntryPoint(undefined as unknown as string), false);
+    assert.equal(isEntryPoint(''), false);
   });
 });

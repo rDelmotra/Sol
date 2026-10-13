@@ -19,8 +19,9 @@
 // ============================================================
 
 import { spawn as nodeSpawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { logger } from './utils/logger.js';
 
 export interface ChildSpec {
@@ -202,7 +203,14 @@ function main(): void {
   process.on('SIGINT', () => sup.shutdown('SIGINT'));
 }
 
-// Run only when this file is the program (node dist/supervisor.js), not when imported by tests.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main();
+/** True when this file is the program (node dist/supervisor.js), not an import. Follows symlinks. */
+export function isEntryPoint(entry: string | undefined = process.argv[1]): boolean {
+  if (!entry) return false;
+  try {
+    return fs.realpathSync(entry) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
 }
+
+if (isEntryPoint()) main();
