@@ -4,6 +4,7 @@ Remove an item when it is fixed. None of these is scheduled unless the owner say
 
 ## Needs the owner
 
+- Change the Railway start command to `node packages/backend/dist/supervisor.js` when ready. It replaces `sh -c "node packages/backend/dist/index.js & node packages/backend/dist/dso-worker.js & wait"`. The supervisor restarts the container if either the API or the DSO worker dies. (`npm run start:prod -w @orbitwatch/backend` runs the same file.)
 - Rotate the Gemini key. It was rejected as leaked, so every Ask fails.
 - Rotate the key found in the history of `experiment/nl-to-ir`.
 - DSO validity window: `DEFAULT_VALID_PAST_WINDOW_SEC` is 10 days. Should it be "since launch"?
