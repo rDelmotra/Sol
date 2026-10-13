@@ -13,14 +13,15 @@ Backend: Express. Frontend: React, three.js, Zustand, Vite. Physics: SGP4.
 | Check | Result |
 |---|---|
 | `npm run typecheck` | clean |
-| `npm run test` | 1142 pass, 0 fail |
+| `npm run test` | 1184 pass, 0 fail |
 | Linter | none exists |
 | CI | none exists |
 
-Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 346, frontend 453, repo-level tests 11 (architecture 4, state files 7).
+Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 387, frontend 453, repo-level tests 12 (architecture 4, state files 8).
 
 ## Recent milestones (newest first)
 
+- SRE hardening on `sre/hardening`: the daily 02:00 cron now always refreshes (it skips only if the cache is under 1 hour old; boot keeps the 24 h rule); `packages/backend/src/supervisor.ts` runs the API and the DSO worker and exits if either dies (Railway start command not changed yet, see OPEN.md); disk usage is logged at boot and after each raw archive write (warn at 75%, error at 90%) and is in `GET /health`; non-breaking security updates for prod dependencies (axios 1.20, express 4.22.3, compression 1.8.2, express-rate-limit 8.7.1). `node-cron` stays at 3.0.3 on purpose: the audit fix would downgrade it to 3.0.1, which needs `uuid` without declaring it. Two moderate advisories remain (`uuid`, `node-cron`); node-cron calls `uuid.v4()` without a buffer, which the advisory does not cover. Findings report: `state/SRE_FINDINGS.md`.
 - Engine-side cleanup on `cockpit/port`: pass planning is an Engine-owned `PassPlanner` (no React hook); `NavigationController` delegates to `UnfollowAnimator` and `LandingController`; reticle candidate name is a selector, not stored; per-call buffers reused; gamepad choice is stable.
 - Input bindings declared once in `packages/frontend/src/bindings/bindings.ts`: keyboard, gamepad, controls-sheet rows and HUD hints all derive from it. `FlyController` is camera-only; pad HUD buttons and the D-pad scrub moved to `pad-commands.ts` and `gamepad-scrub.ts`, both unit-tested.
 - Cockpit HUD frame ported (`cockpit/port`): it replaces the old overlay. Shell, telemetry corners, reticle, edge arcs + speed gauge, side panes, dock, time console, ask bar, object disc, orbit diagram, pass readout + compass, controls sheet. The old `ui/CompassStrip.tsx` is gone.

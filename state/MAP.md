@@ -47,6 +47,8 @@ Import rules between and inside packages live in `tests/architecture.test.ts`. R
 | App and routes table | `packages/backend/src/app.ts` |
 | Boot tasks | `packages/backend/src/boot.ts` |
 | Entry point | `packages/backend/src/index.ts` |
+| Production process supervisor: runs the API and the DSO worker, exits non-zero if either dies (`npm run start:prod -w @orbitwatch/backend`) | `packages/backend/src/supervisor.ts` |
+| Data-volume disk check: boot log, log after each raw archive write, `GET /health` | `packages/backend/src/utils/disk-usage.ts` |
 | Env access | `packages/backend/src/utils/config.ts` |
 | All filesystem paths | `packages/backend/src/utils/paths.ts` |
 | HTTP routes | `packages/backend/src/routes/` |
@@ -147,7 +149,7 @@ Rules that hold even without reading the architecture test:
 | `POST /api/query/ask` | Question to answer, routed client or server |
 | `GET /api/query/vocab` | Entity vocabulary |
 | `GET /api/history/coverage`, `/api/history/at` | Historical catalog. 503 when `DATABASE_URL` is unset. |
-| `GET /health` | Uptime and counts |
+| `GET /health` | Uptime, counts, DSO health, data-volume disk usage |
 
 ## Data flow in one paragraph each
 
