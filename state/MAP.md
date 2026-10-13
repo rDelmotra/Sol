@@ -67,6 +67,9 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Area | Where |
 |---|---|
 | Thin orchestrator, rAF loop | `packages/frontend/src/engine/Engine.ts` |
+| Idle frame governor, pure rules: when the loop may skip a frame (full rate, 20 fps idle, 10 fps unfocused) and the `?perf=full` parser | `packages/frontend/src/engine/render/frame-governor.ts` |
+| Frame pacer: store and clock to governor inputs, one call per display tick (the only governor wiring in Engine) | `packages/frontend/src/engine/frame-pacer.ts` |
+| Activity tracker: passive window listeners stamping the last pointer, wheel, key, touch, pad or resize time, plus pad polling | `packages/frontend/src/engine/input/activity-tracker.ts` |
 | Scene layers (one per visual system) | `packages/frontend/src/engine/world/layers/` |
 | Layer registry and failure isolation | `packages/frontend/src/engine/world/World.ts` |
 | Layer contract | `packages/frontend/src/engine/render/Layer.ts` |

@@ -23,6 +23,7 @@ Remove an item when it is fixed. None of these is scheduled unless the owner say
 
 ## Cockpit port (deferred)
 
+- **Idle frame governor needs a browser check.** Measure Chrome CPU and GPU with an idle cockpit, with and without `?perf=full`. Check that camera damping, follow, joyride, ground view, time scrub, and gamepad input never look steppy. Rules and flag: `state/STATE.md`, first milestone.
 - **No unfollow trigger for the UI.** Dock ORBIT leaves a joyride via `cameraMode` 'returning' (eases home). A store trigger slot for `NavigationController.unfollow` would let it stop in place instead.
 - **Place naming after landing.** `NavigationController.landWhereLooking` only sets lat/lon (and clears `observerPlaceName`). Naming the place is left to the UI.
 - **No pad look on the ground.** In the dome view pad buttons work, but the right stick does not turn the gaze (the spike had no binding either).
