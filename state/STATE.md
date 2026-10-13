@@ -13,15 +13,15 @@ Backend: Express. Frontend: React, three.js, Zustand, Vite. Physics: SGP4.
 | Check | Result |
 |---|---|
 | `npm run typecheck` | clean |
-| `npm run test` | 1197 pass, 0 fail |
+| `npm run test` | 1202 pass, 0 fail |
 | Linter | none exists |
 | CI | none exists |
 
-Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 387, frontend 466, repo-level tests 12 (architecture 4, state files 8).
+Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 387, frontend 471, repo-level tests 12 (architecture 4, state files 8).
 
 ## Recent milestones (newest first)
 
-- First-load order fix on `sre/hardening`: the Earth textures (about 6 MB) no longer download in parallel with the satellite catalog. `EarthLayer` builds the globe at once with plain placeholder maps and fetches the real textures only after the catalog request settles (done, failed, or read from the local cache), or after 15 s at most. If every texture is already in the service worker cache they load at once. Gate: `packages/frontend/src/data/load-gate.ts`; texture side: `packages/frontend/src/engine/textures/texture-gate.ts`. `packages/frontend/public/sw.js` is unchanged.
+- First-load order fix on `sre/hardening`: the Earth textures (about 6 MB) no longer download in parallel with the satellite catalog. `EarthLayer` builds the globe at once with plain placeholder maps and fetches the real textures only after the catalog request settles (done, failed, or read from the local cache), or after 15 s at most. If every texture is already in the service worker cache they load at once. The catalog request itself now starts from `packages/frontend/src/main.tsx` through `packages/frontend/src/data/catalog-prefetch.ts`, before the Engine chunk arrives. Gate: `packages/frontend/src/data/load-gate.ts`; texture side: `packages/frontend/src/engine/textures/texture-gate.ts`. `packages/frontend/public/sw.js` is unchanged.
 - SRE hardening on `sre/hardening`: the daily 02:00 cron now always refreshes (it skips only if the cache is under 1 hour old; boot keeps the 24 h rule); `packages/backend/src/supervisor.ts` runs the API and the DSO worker and exits if either dies (Railway start command not changed yet, see OPEN.md); disk usage is logged at boot and after each raw archive write (warn at 75%, error at 90%) and is in `GET /health`; non-breaking security updates for prod dependencies (axios 1.20, express 4.22.3, compression 1.8.2, express-rate-limit 8.7.1). `node-cron` stays at 3.0.3 on purpose: the audit fix would downgrade it to 3.0.1, which needs `uuid` without declaring it. Two moderate advisories remain (`uuid`, `node-cron`); node-cron calls `uuid.v4()` without a buffer, which the advisory does not cover. Findings report: `state/SRE_FINDINGS.md`.
 - Engine-side cleanup on `cockpit/port`: pass planning is an Engine-owned `PassPlanner` (no React hook); `NavigationController` delegates to `UnfollowAnimator` and `LandingController`; reticle candidate name is a selector, not stored; per-call buffers reused; gamepad choice is stable.
 - Input bindings declared once in `packages/frontend/src/bindings/bindings.ts`: keyboard, gamepad, controls-sheet rows and HUD hints all derive from it. `FlyController` is camera-only; pad HUD buttons and the D-pad scrub moved to `pad-commands.ts` and `gamepad-scrub.ts`, both unit-tested.

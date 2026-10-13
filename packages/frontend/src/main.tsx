@@ -1,6 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import { startCatalogPrefetch } from './data/catalog-prefetch';
+
+// Start the satellite catalog download now, before React mounts and before the lazy
+// Engine/three.js chunks arrive. The Earth textures wait for it (see data/load-gate.ts).
+startCatalogPrefetch(import.meta.env.VITE_API_URL ?? '');
 
 const root = document.getElementById('root');
 if (!root) throw new Error('No #root element found');
