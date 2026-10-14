@@ -5,6 +5,7 @@ import * as config from '../../src/utils/config.ts';
 const KEYS = [
   'PORT', 'NODE_ENV', 'CORS_ORIGIN', 'DATABASE_URL', 'HISTORY_DB_SSL', 'HISTORY_DB_POOL_MAX',
   'SPACETRACK_USER', 'SPACETRACK_PASS', 'ANALYTIC_COMPILER_MODEL', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY',
+  'TLE_BROTLI', 'TLE_BROTLI_QUALITY',
 ] as const;
 
 /** Run fn with exactly the given env (others unset), restoring everything after. */
@@ -88,5 +89,21 @@ describe('config accessors', () => {
     withEnv({ ANALYTIC_COMPILER_MODEL: 'gemini-fake' }, () => {
       assert.equal(config.geminiCompilerModel(), 'gemini-fake');
     });
+  });
+
+  it('tleBrotliEnabled: on by default, off for 0/off/false/no', () => {
+    withEnv({}, () => assert.equal(config.tleBrotliEnabled(), true));
+    withEnv({ TLE_BROTLI: '1' }, () => assert.equal(config.tleBrotliEnabled(), true));
+    for (const v of ['0', 'off', 'FALSE', ' no ']) {
+      withEnv({ TLE_BROTLI: v }, () => assert.equal(config.tleBrotliEnabled(), false));
+    }
+  });
+
+  it('tleBrotliQuality: default 10, clamped to 1..11', () => {
+    withEnv({}, () => assert.equal(config.tleBrotliQuality(), 10));
+    withEnv({ TLE_BROTLI_QUALITY: '9' }, () => assert.equal(config.tleBrotliQuality(), 9));
+    withEnv({ TLE_BROTLI_QUALITY: '99' }, () => assert.equal(config.tleBrotliQuality(), 11));
+    withEnv({ TLE_BROTLI_QUALITY: '0' }, () => assert.equal(config.tleBrotliQuality(), 1));
+    withEnv({ TLE_BROTLI_QUALITY: 'abc' }, () => assert.equal(config.tleBrotliQuality(), 10));
   });
 });

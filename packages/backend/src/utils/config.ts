@@ -70,3 +70,20 @@ export function geminiApiKey(): string | undefined {
 export function anthropicApiKey(): string | undefined {
   return process.env.ANTHROPIC_API_KEY;
 }
+
+/**
+ * Serve /api/tle/all as brotli when the client allows it. On by default; set
+ * TLE_BROTLI to 0, off, false or no to turn it off (gzip only, as before).
+ */
+export function tleBrotliEnabled(): boolean {
+  const v = (process.env.TLE_BROTLI ?? '').trim().toLowerCase();
+  return !['0', 'off', 'false', 'no'].includes(v);
+}
+
+/** Brotli quality for the /api/tle/all copy: TLE_BROTLI_QUALITY as an integer 1 to 11, else 10. */
+export function tleBrotliQuality(): number {
+  const raw = process.env.TLE_BROTLI_QUALITY;
+  if (!raw) return 10;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.min(11, Math.max(1, n)) : 10;
+}
