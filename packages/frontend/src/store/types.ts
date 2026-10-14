@@ -135,9 +135,6 @@ export interface CatalogSlice {
 
 export interface CommandSlice {
   selectByIndex: ((index: number) => void) | null;
-  // Registered by SearchBar (G3): replace the search text + run the query
-  // pipeline immediately. InfoCard pivots call it. null until SearchBar mounts.
-  injectSearchQuery: ((text: string) => void) | null;
   triggerFlyTo: ((index: number) => void) | null;
   triggerJoyride: ((index: number) => void) | null;
   triggerResetCamera: (() => void) | null;
@@ -157,7 +154,6 @@ export interface CommandSlice {
   setTriggerResetCamera: (fn: () => void) => void;
   setTriggerRunAnalytic: (fn: (program: AnalyticProgram) => ExecuteOutcome | null) => void;
   setSelectByIndex: (fn: (index: number) => void) => void;
-  setInjectSearchQuery: (fn: ((text: string) => void) | null) => void;
   setTriggerSimTimeJump: (fn: () => void) => void;
   setTriggerScrubPreview: (fn: () => void) => void;
   setTriggerReturnToPresent: (fn: () => void) => void;
@@ -235,8 +231,6 @@ export interface ObserverSlice {
 
 export interface FilterSlice {
   regimeFilters: Record<OrbitalRegime, boolean>;
-  visibleRegimeCounts: Record<OrbitalRegime, number>;
-  visibleFacetCounts: FacetCounts;
   // Rich-metadata facet filters + color-by (Phase B; additive to category/regime above)
   colorBy: ColorBy;
   typeFilters: Record<CatalogType, boolean>;
@@ -248,14 +242,11 @@ export interface FilterSlice {
   launchFilter: LaunchFilter;   // G3 — query-only
   ownerFilter: OwnerFilter;     // G3 — query-only
   toggleRegimeFilter: (regime: OrbitalRegime) => void;
-  setVisibleCounts: (regCounts: Record<OrbitalRegime, number>) => void;
-  setColorBy: (colorBy: ColorBy) => void;
   toggleTypeFilter: (key: CatalogType) => void;
   toggleStatusFilter: (key: OrbitalStatus) => void;
   toggleSectorFilter: (key: SectorFilterKey) => void;
   togglePurposeFilter: (key: Purpose) => void;
   setCountryFilter: (filter: CountryFilter) => void;
-  setVisibleFacetCounts: (counts: FacetCounts) => void;
 }
 
 export interface AnalyticSlice {
@@ -265,8 +256,6 @@ export interface AnalyticSlice {
    *  equality is checked inline so an identical re-run never triggers a recompute. */
   setAnalyticFilter: (ids: Set<number> | null) => void;
   setAnalyticAnswer: (answer: AnalyticAnswer | null) => void;
-  /** The single exit door: clears the answer card AND the globe allow-set. */
-  clearAnalyticAnswer: () => void;
 }
 
 export interface TimeSlice {

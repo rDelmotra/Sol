@@ -2,7 +2,6 @@ import type { CommandSlice, Slice } from './types';
 
 export const createCommandSlice: Slice<CommandSlice> = (set) => ({
   selectByIndex: null,
-  injectSearchQuery: null,
   triggerFlyTo: null,
   triggerJoyride: null,
   triggerResetCamera: null,
@@ -17,7 +16,6 @@ export const createCommandSlice: Slice<CommandSlice> = (set) => ({
   setTriggerResetCamera: (fn) => set({ triggerResetCamera: fn }),
   setTriggerRunAnalytic: (fn) => set({ triggerRunAnalytic: fn }),
   setSelectByIndex: (fn) => set({ selectByIndex: fn }),
-  setInjectSearchQuery: (fn) => set({ injectSearchQuery: fn }),
   setTriggerSimTimeJump: (fn) => set({ triggerSimTimeJump: fn }),
   setTriggerScrubPreview: (fn) => set({ triggerScrubPreview: fn }),
   setTriggerReturnToPresent: (fn) => set({ triggerReturnToPresent: fn }),

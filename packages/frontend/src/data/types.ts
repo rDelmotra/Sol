@@ -48,14 +48,3 @@ export function emptyFacetCounts(): FacetCounts {
     country: {},
   };
 }
-
-/** Deep-copy a FacetCounts (each per-group record cloned) so totals and visible diverge safely. */
-export function cloneFacetCounts(src: FacetCounts): FacetCounts {
-  return {
-    type: { ...src.type },
-    status: { ...src.status },
-    sector: { ...src.sector },
-    purpose: { ...src.purpose },
-    country: { ...src.country },
-  };
-}

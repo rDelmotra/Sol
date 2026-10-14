@@ -32,8 +32,8 @@ Remove an item when it is fixed. None of these is scheduled unless the owner say
 
 The old overlay is deleted. These have no reader left in the UI. Check each before removing.
 
-- `packages/frontend/src/store/filterSlice.ts`: filter state that only FilterPanel set.
-- `packages/frontend/src/store/commandSlice.ts`: `injectSearchQuery` and its setter (SearchBar registered it).
+- `packages/frontend/src/store/filterSlice.ts`: engine still reads, UI can no longer set. The filter fields (`typeFilters`, `statusFilters`, `sectorFilters`, `purposeFilters`, `regimeFilters`, `countryFilter`, `programFilter`, `launchFilter`, `ownerFilter`) and `colorBy` are read by `packages/frontend/src/engine/world/layers/SatellitesLayer.ts` and `packages/frontend/src/engine/SatelliteRenderer.ts`, so they stay. Nothing in the cockpit calls their toggles or `setCountryFilter` today; a Lens or country-spotlight surface would. `colorBy` has no setter, so it stays `'type'`.
+- `packages/frontend/src/engine/SatelliteRenderer.ts`: still counts visible objects per regime and facet on every filter pass and every position update, then drops the result. The store copy of these counts was removed because nothing read it. The counting loop was left alone to keep rendering code untouched.
 - `packages/frontend/src/store/types.ts`: hover state (`hoveredName`) and cluster state (`clusterItems`, `clusterScreenX`, `clusterScreenY`, `setCluster`, `clearCluster`). Tooltip and ClusterPopup read them. The engine may still write them.
 - **Launch/owner vocabulary is never installed.** `ensureQueryVocab` in `packages/frontend/src/query/vocab.ts` had one caller, SearchBar, which is gone. So `getRawQueryVocab()` (read by `packages/frontend/src/engine/Engine.ts` for the live analytic source) is always null in the app. Client-run Ask programs that read `launch.family`, `launch.site` or `owner.name` get null for every object. Fix: call `ensureQueryVocab()` once at boot. Not done in the cleanup because it adds a network fetch.
 

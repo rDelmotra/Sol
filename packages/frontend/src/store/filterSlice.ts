@@ -1,10 +1,8 @@
-import { emptyFacetCounts } from '../data/types';
 import { allOn, TYPE_KEYS, STATUS_KEYS, SECTOR_KEYS, PURPOSE_KEYS } from '../data/facets';
 import type { FilterSlice, Slice } from './types';
 
 export const createFilterSlice: Slice<FilterSlice> = (set) => ({
   regimeFilters: { LEO: true, MEO: true, GEO: true, HEO: true, OTHER: true },
-  visibleRegimeCounts: { LEO: 0, MEO: 0, GEO: 0, HEO: 0, OTHER: 0 },
 
   colorBy: 'type',
   typeFilters: allOn(TYPE_KEYS),
@@ -15,7 +13,6 @@ export const createFilterSlice: Slice<FilterSlice> = (set) => ({
   programFilter: { mode: 'all' },
   launchFilter: { mode: 'all' },
   ownerFilter: { mode: 'all' },
-  visibleFacetCounts: emptyFacetCounts(),
 
   toggleRegimeFilter: (regime) =>
     set((state) => ({
@@ -24,9 +21,7 @@ export const createFilterSlice: Slice<FilterSlice> = (set) => ({
         [regime]: !state.regimeFilters[regime],
       },
     })),
-  setVisibleCounts: (regCounts) => set({ visibleRegimeCounts: regCounts }),
 
-  setColorBy: (colorBy) => set({ colorBy }),
   toggleTypeFilter: (key) =>
     set((state) => ({ typeFilters: { ...state.typeFilters, [key]: !state.typeFilters[key] } })),
   toggleStatusFilter: (key) =>
@@ -36,14 +31,4 @@ export const createFilterSlice: Slice<FilterSlice> = (set) => ({
   togglePurposeFilter: (key) =>
     set((state) => ({ purposeFilters: { ...state.purposeFilters, [key]: !state.purposeFilters[key] } })),
   setCountryFilter: (filter) => set({ countryFilter: filter }),
-  setVisibleFacetCounts: (counts) =>
-    // The satellite render pass counts only TLE objects, so its type.deep_space is
-    // always 0. DSOs (the only deep_space objects, owned by a separate layer) are
-    // never gated by this pass → keep their count = the maintained total.
-    set((state) => ({
-      visibleFacetCounts: {
-        ...counts,
-        type: { ...counts.type, deep_space: state.facetCounts.type.deep_space },
-      },
-    })),
 });
