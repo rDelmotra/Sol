@@ -100,7 +100,7 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Cockpit HUD open/closed state (panels, ask bar, controls sheet) | `packages/frontend/src/store/hudSlice.ts` |
 | Data clients (pure fetch, no store) | `packages/frontend/src/data/` |
 | Live query data source | `packages/frontend/src/query/analytic/live-source.ts` |
-| Older keyword query engine | `packages/frontend/src/query/` |
+| Installed launch/org vocabulary (read by the live source; nothing fetches it today, see OPEN.md) | `packages/frontend/src/query/vocab.ts` |
 | Simulation clock | `packages/frontend/src/time/SimClock.ts` |
 | Calendar time fields (gamepad time scrub) | `packages/frontend/src/time/time-fields.ts` |
 | Observer-sky logic (no engine, store or UI) | `packages/frontend/src/sky/` |

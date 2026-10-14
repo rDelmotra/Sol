@@ -35,9 +35,7 @@ The old overlay is deleted. These have no reader left in the UI. Check each befo
 - `packages/frontend/src/store/filterSlice.ts`: filter state that only FilterPanel set.
 - `packages/frontend/src/store/commandSlice.ts`: `injectSearchQuery` and its setter (SearchBar registered it).
 - `packages/frontend/src/store/types.ts`: hover state (`hoveredName`) and cluster state (`clusterItems`, `clusterScreenX`, `clusterScreenY`, `setCluster`, `clearCluster`). Tooltip and ClusterPopup read them. The engine may still write them.
-- `packages/frontend/src/query/`: the older keyword engine (parser, executor, aliases, vocab, tokenize). SearchBar was its caller. `vocab` is still imported by `packages/frontend/src/engine/Engine.ts`, and `types` by the store.
-- `packages/frontend/src/data/metadata-client.ts`: nothing imports it now.
-- `fuse.js` in `packages/frontend/package.json`: only SearchBar used it.
+- **Launch/owner vocabulary is never installed.** `ensureQueryVocab` in `packages/frontend/src/query/vocab.ts` had one caller, SearchBar, which is gone. So `getRawQueryVocab()` (read by `packages/frontend/src/engine/Engine.ts` for the live analytic source) is always null in the app. Client-run Ask programs that read `launch.family`, `launch.site` or `owner.name` get null for every object. Fix: call `ensureQueryVocab()` once at boot. Not done in the cleanup because it adds a network fetch.
 
 ## Ops gaps found by the SRE pass (details in `state/SRE_FINDINGS.md`)
 

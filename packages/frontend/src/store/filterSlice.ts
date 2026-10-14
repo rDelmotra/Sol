@@ -1,9 +1,8 @@
 import { emptyFacetCounts } from '../data/types';
 import { allOn, TYPE_KEYS, STATUS_KEYS, SECTOR_KEYS, PURPOSE_KEYS } from '../data/facets';
-import { reconcileFilterSlices } from '../query/apply';
 import type { FilterSlice, Slice } from './types';
 
-export const createFilterSlice: Slice<FilterSlice> = (set, get) => ({
+export const createFilterSlice: Slice<FilterSlice> = (set) => ({
   regimeFilters: { LEO: true, MEO: true, GEO: true, HEO: true, OTHER: true },
   visibleRegimeCounts: { LEO: 0, MEO: 0, GEO: 0, HEO: 0, OTHER: 0 },
 
@@ -37,25 +36,6 @@ export const createFilterSlice: Slice<FilterSlice> = (set, get) => ({
   togglePurposeFilter: (key) =>
     set((state) => ({ purposeFilters: { ...state.purposeFilters, [key]: !state.purposeFilters[key] } })),
   setCountryFilter: (filter) => set({ countryFilter: filter }),
-  applyQueryFilters: (patch) => {
-    const s = get();
-    const delta = reconcileFilterSlices(
-      {
-        typeFilters: s.typeFilters,
-        statusFilters: s.statusFilters,
-        sectorFilters: s.sectorFilters,
-        purposeFilters: s.purposeFilters,
-        regimeFilters: s.regimeFilters,
-        countryFilter: s.countryFilter,
-        programFilter: s.programFilter,
-        launchFilter: s.launchFilter,
-        ownerFilter: s.ownerFilter,
-      },
-      patch,
-    );
-    if (Object.keys(delta).length > 0) set(delta);
-  },
-  clearQueryFilters: () => get().applyQueryFilters({}),
   setVisibleFacetCounts: (counts) =>
     // The satellite render pass counts only TLE objects, so its type.deep_space is
     // always 0. DSOs (the only deep_space objects, owned by a separate layer) are

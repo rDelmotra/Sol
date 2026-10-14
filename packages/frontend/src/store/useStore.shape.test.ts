@@ -25,7 +25,6 @@ const STATE_KEYS = [
   'analysisPanelOpen',
   'analyticAnswer',
   'analyticFilter',
-  'applyQueryFilters',
   'askBarOpen',
   'cameraGear',
   'cameraGearCount',
@@ -35,7 +34,6 @@ const STATE_KEYS = [
   'categoryCounts',
   'clearAnalyticAnswer',
   'clearCluster',
-  'clearQueryFilters',
   'closePanels',
   'clusterItems',
   'clusterScreenX',
@@ -268,7 +266,7 @@ const INITIAL_VALUES: Record<string, unknown> = {
 
 test('store exposes exactly today\'s keys (state + actions)', () => {
   assert.deepEqual(Object.keys(initial).sort(), [...STATE_KEYS].sort());
-  assert.equal(STATE_KEYS.length, 157);
+  assert.equal(STATE_KEYS.length, 155);
 });
 
 test('initial values of every non-function key', () => {
@@ -404,20 +402,6 @@ test('clearAnalyticAnswer clears both the answer and the filter', () => {
   const n = useStore.getState();
   assert.equal(n.analyticAnswer, null);
   assert.deepEqual(n.analyticFilter, { mode: 'all' });
-});
-
-test('applyQueryFilters({}) on an all-on state keeps every filter reference', () => {
-  const before = useStore.getState();
-  before.applyQueryFilters({});
-  const after = useStore.getState();
-  for (const k of [
-    'typeFilters', 'statusFilters', 'sectorFilters', 'purposeFilters', 'regimeFilters',
-    'countryFilter', 'programFilter', 'launchFilter', 'ownerFilter',
-  ] as const) {
-    assert.equal(after[k], before[k], k);
-  }
-  before.clearQueryFilters();
-  assert.equal(useStore.getState().typeFilters, before.typeFilters);
 });
 
 test('setSimRate(2) enters review and calls triggerSimTimeJump', () => {

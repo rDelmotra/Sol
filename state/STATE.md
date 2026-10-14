@@ -52,8 +52,8 @@ Test counts by package: contracts 12, orbital-core 119, analytic 201, backend 50
   The Rust/WASM crate uses WGS84 gravity. `satellite.js` is hard-coded WGS72.
   Gap: LEO median 37 m now, about 250 m at +7 days. The owner accepted this.
 - The rendered globe is still a unit sphere. Error is under 0.3 percent, under 2 pixels. Takram replaces it later.
-- The frontend has two query systems. The Analytic IR is the live one.
-  The older keyword engine is `packages/frontend/src/query/` (parser, executor, aliases, vocab). It is still wired in.
+- The frontend has one query system, the Analytic IR. `packages/frontend/src/query/` holds only its live data source and the installed launch/org vocabulary.
+  The older keyword engine (parser, executor, aliases) was removed with the old overlay.
 - `packages/wasm-sgp4/pkg/` is committed and was not rebuilt after the constant rename. Output is identical.
 
 ## Environment hazards

@@ -5,7 +5,6 @@ import type { SectorFilterKey } from '../data/metadata-types';
 import type { DsoObject, DsoLabelPosition } from '../data/dso-types';
 import type { VisualListSource, VisualListStatus } from '../data/visualList';
 import type { HistoryCoverage } from '../data/history-client';
-import type { QueryFilterPatch } from '../query/types';
 import type { AnalyticProgram, ExecuteOutcome, AnalyticResult } from '@orbitwatch/analytic';
 import type { Pass, PassStatus } from '../sky/passes';
 import type { TimeField } from '../time/time-fields';
@@ -256,18 +255,6 @@ export interface FilterSlice {
   toggleSectorFilter: (key: SectorFilterKey) => void;
   togglePurposeFilter: (key: Purpose) => void;
   setCountryFilter: (filter: CountryFilter) => void;
-  /**
-   * Apply a compiled query patch with OVERWRITE semantics over the seven
-   * query-controlled slices (type/status/sector/purpose/regime/country/program):
-   * each group becomes `patch.group ?? all-on`. FilterPanel manual toggles work
-   * on top afterwards; the next query keystroke/chip-removal re-overwrites.
-   * Reference identity is preserved for semantically-unchanged groups via
-   * reconcileFilterSlices (query/apply.ts) — load-bearing for the
-   * SatellitesLayer diff (no per-keystroke recomputes).
-   */
-  applyQueryFilters: (patch: QueryFilterPatch) => void;
-  /** Restore all query-controlled slices to all-on / mode:'all'. */
-  clearQueryFilters: () => void;
   setVisibleFacetCounts: (counts: FacetCounts) => void;
 }
 
