@@ -46,13 +46,15 @@ The old overlay is deleted. These have no reader left in the UI. Check each befo
 - `GET /api/tle/visual` has no negative cache. While CelesTrak is down, every request starts a new 3-try fetch.
 - The NL compiler cache and gap log live in `<backend>/data`, not on the volume. The gap log has no rotation.
 - Unpruned `.tmp` files from a crashed write (cache, raw archive) stay on the volume.
+- The gzip copy of `/api/tle/all` is still built with the sync `gzipSync` (about 0.5 s on the fake catalog), at boot and after each daily fetch. The brotli copy is async. `/api/history/at` builds its day snapshots with the same sync gzip and has no brotli yet.
+- A missing `/assets/...` file falls through to the SPA fallback and returns `index.html` with status 200. A tab left open across a deploy that lazy-loads a removed chunk gets HTML instead of a clean 404.
 
 ## Known weaknesses (left alone by decision D2)
 
 - **Filter fan-out.** Adding one filter group touches about 18 files. It needs a facet registry.
 - **Engine reads the store directly** about 95 times across 15 files.
 - **Test blind spots.** The architecture test has no rules for the catch-all `engine` zone, and cannot see `new URL()` worker edges.
-- **Untested critical code.** `World.ts`, `SatelliteRenderer.applyVisibilityAndFilters`, `routes/tle.ts`, cron, history, the Rust crate.
+- **Untested critical code.** `World.ts`, `SatelliteRenderer.applyVisibilityAndFilters`, `routes/tle.ts` (only `/all` is tested), cron, history, the Rust crate.
 - **Large files.** SatelliteRenderer 517, SatellitesLayer about 510,
   and in the Perceptor area `execute` 950, `validate` 676, `analytic-prompt` 623, `compiler` 565.
 - **Duplicated physics in DSO convert.** `packages/backend/src/dso/normalize/convert.ts` has its own Julian date and precession/nutation.
