@@ -13,7 +13,8 @@ import {
 import { OrbitScene } from './OrbitScene';
 
 /**
- * The locked object's orbit in 3D, to scale, and STILL. The camera is tied to
+ * The locked object's orbit in 3D, and STILL (to scale, except that a low orbit
+ * is lifted a little off the surface, see orbit-diagram.ts). The camera is tied to
  * the orbit plane (see orbit-diagram.ts), so the card needs no motion to be
  * unambiguous: near half solid, far half dashed, Earth with its tilted equator
  * ring. All geometry is computed once per object and rendered by React. Only

@@ -9,6 +9,13 @@
  * is read from the picture itself (near half solid, far half dashed), so no
  * spin is needed. `prepareOrbit` runs once per object, `layoutOrbit` once per
  * object (it is all static), `markerAt` once per marker update (1 Hz).
+ *
+ * One deliberate departure from scale: a low orbit is drawn a little higher
+ * above the surface than it really is (`liftRadiusKm`, at most 0.1 Earth radii,
+ * fading to nothing by one radius of altitude). Drawn true, the ISS sits 6.6%
+ * above the Earth and its ring lies on the Earth's outline. The Earth disc, the
+ * pole and the sampled orbit (`prepareOrbit`) stay true; only what is drawn
+ * (the orbit lines, nodes, perigee, chevrons, marker, equator ring) is lifted.
  */
 import {
   ER_KM,
@@ -21,9 +28,13 @@ import {
   type OrbitShape,
 } from '@orbitwatch/orbital-core';
 
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
 export const VIEW_W = 200;
 export const VIEW_H = 130;
 export const VIEW_PAD = 12;
+/** Top and bottom padding. Smaller than the side padding: the labels all sit at the sides. */
+export const VIEW_PAD_Y = 8;
 /** Extra room on the left, so the "AN" label never touches the card edge. */
 export const LABEL_PAD_LEFT = 8;
 /** Camera elevation above the ORBITAL plane. */
@@ -38,8 +49,19 @@ export const PERIGEE_MIN_E = 0.02;
 export const POLE_TIP = 1.25;
 /** Argument of latitude (degrees from the ascending node) of each direction chevron. */
 export const CHEVRON_U_DEG = [45, 135, 270] as const;
+/** Each chevron may slide inside its slot [lowest, highest] to stay off the perigee mark. */
+export const CHEVRON_SLOT_DEG = [[25, 70], [110, 155], [225, 315]] as const;
+/** A chevron closer than this (degrees of orbit) to the perigee slides away from it. */
+export const CHEVRON_CLEAR_DEG = 22;
+/** Label text metrics (font size 6.5 monospace): width per character and cap height, card units. */
+export const LABEL_CHAR_W = 3.9;
+export const LABEL_CAP_H = 4.7;
 /** Opacity of a mark by depth. */
-export const DEPTH_OPACITY = { near: 1, far: 0.55, hidden: 0.25 } as const;
+export const DEPTH_OPACITY = { near: 1, far: 0.45, hidden: 0.2 } as const;
+/** How far (in Earth radii) a surface-grazing orbit is drawn above the surface; fades to 0 at one radius of altitude. */
+export const LIFT_MAX = 0.1;
+/** The equatorial ring is left out when the orbit is this close (degrees) to the equator: it would lie on the orbit. */
+export const EQUATOR_HIDE_DEG = 1.5;
 
 export interface V3 {
   x: number;
@@ -117,6 +139,20 @@ export function prepareOrbit(el: OrbitElements): PreparedOrbit | null {
   return { el, shape, basis: cameraBasis(el.raanDeg, el.inclinationDeg), ring };
 }
 
+/** Orbit radius (km) as drawn: raised by up to LIFT_MAX Earth radii when the orbit is low, true from one radius of altitude up. */
+export function liftRadiusKm(r: number): number {
+  const h = clamp((r - ER_KM) / ER_KM, 0, 1);
+  return r + ER_KM * LIFT_MAX * (1 - h);
+}
+
+/** The point moved along its radius to its drawn radius. */
+export function liftPoint(p: V3): V3 {
+  const r = Math.hypot(p.x, p.y, p.z);
+  if (!(r > 1e-9)) return p;
+  const k = liftRadiusKm(r) / r;
+  return { x: p.x * k, y: p.y * k, z: p.z * k };
+}
+
 /** Earth-centred point (km) to unscaled view coords. y points DOWN (SVG); d > 0 is toward the camera. */
 export function toView(p: V3, basis: CameraBasis): { x: number; y: number; d: number } {
   return { x: dot(p, basis.right), y: -dot(p, basis.up), d: dot(p, basis.view) };
@@ -131,12 +167,12 @@ export function fitView(pts: { x: number; y: number }[]): Fit {
   }
   const left = VIEW_PAD + LABEL_PAD_LEFT;
   const availW = VIEW_W - left - VIEW_PAD;
-  const availH = VIEW_H - 2 * VIEW_PAD;
+  const availH = VIEW_H - 2 * VIEW_PAD_Y;
   const s = Math.min(availW / (x1 - x0), availH / (y1 - y0));
   return {
     s,
     cx: left + availW / 2 - ((x0 + x1) / 2) * s,
-    cy: VIEW_PAD + availH / 2 - ((y0 + y1) / 2) * s,
+    cy: VIEW_PAD_Y + availH / 2 - ((y0 + y1) / 2) * s,
   };
 }
 
@@ -191,9 +227,10 @@ export function orbitPointAtU(prep: PreparedOrbit, uRad: number): V3 | null {
   return orbitPoint3D(prep.el, (a * (1 - e * e)) / (1 + e * Math.cos(nu)), nu);
 }
 
-function projector(prep: PreparedOrbit, fit: Fit): (p: V3) => Sp {
+/** Earth-centred point (km) to card coords. `lift` moves it to its drawn radius first (orbit marks yes, the Earth's own pole no). */
+function projector(prep: PreparedOrbit, fit: Fit, lift: boolean): (p: V3) => Sp {
   return (p) => {
-    const q = toView(p, prep.basis);
+    const q = toView(lift ? liftPoint(p) : p, prep.basis);
     return { sx: fit.cx + q.x * fit.s, sy: fit.cy + q.y * fit.s, d: q.d };
   };
 }
@@ -201,6 +238,43 @@ function projector(prep: PreparedOrbit, fit: Fit): (p: V3) => Sp {
 export interface Label {
   sx: number;
   sy: number;
+}
+export interface Box {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** The box a short label covers (baseline at `at.sy`). */
+export function labelBox(at: Label, anchor: 'start' | 'middle' | 'end', text: string): Box {
+  const w = text.length * LABEL_CHAR_W;
+  const x0 = anchor === 'start' ? at.sx : anchor === 'end' ? at.sx - w : at.sx - w / 2;
+  return { x0, x1: x0 + w, y0: at.sy - LABEL_CAP_H, y1: at.sy + 0.5 };
+}
+
+/** True when the boxes come within `gap` of each other. */
+export function boxesOverlap(a: Box, b: Box, gap = 1): boolean {
+  return a.x0 < b.x1 + gap && b.x0 < a.x1 + gap && a.y0 < b.y1 + gap && b.y0 < a.y1 + gap;
+}
+
+/** Shortest distance between two angles, degrees (0..180). */
+function angleGapDeg(a: number, b: number): number {
+  return Math.abs((((a - b) % 360) + 540) % 360 - 180);
+}
+
+/**
+ * The chevrons' arguments of latitude: the defaults, except that one which
+ * would sit on the perigee mark slides to the end of its slot that is further
+ * from it. (Molniya and Tundra orbits have the perigee at 270 degrees, exactly
+ * where the last chevron is.) `perigeeUDeg` is null when no perigee is marked.
+ */
+export function chevronAngles(perigeeUDeg: number | null): number[] {
+  return CHEVRON_U_DEG.map((u, i) => {
+    if (perigeeUDeg === null || angleGapDeg(u, perigeeUDeg) >= CHEVRON_CLEAR_DEG) return u;
+    const [lo, hi] = CHEVRON_SLOT_DEG[i]!;
+    return angleGapDeg(lo, perigeeUDeg) >= angleGapDeg(hi, perigeeUDeg) ? lo : hi;
+  });
 }
 export interface Chevron {
   sx: number;
@@ -231,46 +305,55 @@ export interface OrbitLayout {
   inclination: { text: string; at: Label };
 }
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-
 /** One static layout for the whole card. An unusable point falls back to the Earth's centre. */
 export function layoutOrbit(prep: PreparedOrbit): OrbitLayout {
   const { el, shape, basis } = prep;
   // The equatorial ring has the radius of the nearer node, so it meets the orbit on the line of
-  // nodes and never sticks out past it: the tilt between the two loops IS the inclination.
+  // nodes and never sticks out past it: the tilt between the two loops IS the inclination. It is
+  // left out when the orbit is (nearly) equatorial, where it would only lie on the orbit.
   const nodePoint = orbitPointAtU(prep, 0);
   const downPoint = orbitPointAtU(prep, Math.PI);
-  const ringR = Math.min(
-    nodePoint ? Math.hypot(nodePoint.x, nodePoint.y, nodePoint.z) : shape.a,
-    downPoint ? Math.hypot(downPoint.x, downPoint.y, downPoint.z) : shape.a,
+  const ringR = liftRadiusKm(
+    Math.min(
+      nodePoint ? Math.hypot(nodePoint.x, nodePoint.y, nodePoint.z) : shape.a,
+      downPoint ? Math.hypot(downPoint.x, downPoint.y, downPoint.z) : shape.a,
+    ),
   );
-  const equatorPts: V3[] = Array.from({ length: EQUATOR_STEPS + 1 }, (_, k) => {
-    const t = (k / EQUATOR_STEPS) * 2 * Math.PI;
-    return { x: ringR * Math.cos(t), y: ringR * Math.sin(t), z: 0 };
-  });
+  const showEquator = Math.min(el.inclinationDeg % 180, 180 - (el.inclinationDeg % 180)) > EQUATOR_HIDE_DEG;
+  const equatorPts: V3[] = showEquator
+    ? Array.from({ length: EQUATOR_STEPS + 1 }, (_, k) => {
+        const t = (k / EQUATOR_STEPS) * 2 * Math.PI;
+        return { x: ringR * Math.cos(t), y: ringR * Math.sin(t), z: 0 };
+      })
+    : [];
   const poleTipRaw = toView({ x: 0, y: 0, z: ER_KM * POLE_TIP }, basis);
-  const fit = fitView([...prep.ring, ...equatorPts].map((p) => toView(p, basis)).concat(poleTipRaw));
-  const project = projector(prep, fit);
+  const fit = fitView([...prep.ring.map(liftPoint), ...equatorPts].map((p) => toView(p, basis)).concat(poleTipRaw));
+  // Orbit marks are drawn at their lifted radius; the ring is already built at one, the pole is the Earth's own.
+  const project = projector(prep, fit, true);
+  const projectEarth = projector(prep, fit, false);
   const earth = { cx: fit.cx, cy: fit.cy, r: ER_KM * fit.s };
   const centre: Sp = { sx: earth.cx, sy: earth.cy, d: 0 };
   const proj = (p: V3 | null): Sp => (p ? project(p) : centre);
 
   const orbit = splitSides(prep.ring.map(project));
-  const equator = splitSides(equatorPts.map(project));
+  const equator = splitSides(equatorPts.map(projectEarth));
 
   // North pole: the real axis, from the surface out to POLE_TIP radii, projected. It is short when
   // the pole faces the camera (that foreshortening is the honest picture).
-  const poleBase = project({ x: 0, y: 0, z: ER_KM });
-  const poleTip = project({ x: 0, y: 0, z: ER_KM * POLE_TIP });
+  const poleBase = projectEarth({ x: 0, y: 0, z: ER_KM });
+  const poleTip = projectEarth({ x: 0, y: 0, z: ER_KM * POLE_TIP });
   const tickLen = Math.hypot(poleTip.sx - poleBase.sx, poleTip.sy - poleBase.sy);
   const pdx = tickLen > 1e-6 ? (poleTip.sx - poleBase.sx) / tickLen : 0;
   const pdy = tickLen > 1e-6 ? (poleTip.sy - poleBase.sy) / tickLen : -1;
-  const poleLabel: Label =
+  const poleLabelRaw: Label =
     tickLen >= 6
       ? { sx: poleTip.sx + pdx * 5, sy: poleTip.sy + pdy * 5 + 2.3 }
       : { sx: poleBase.sx + 5, sy: poleBase.sy + 2.3 };
+  const poleLabel: Label = { sx: clamp(poleLabelRaw.sx, 4, VIEW_W - 4), sy: clamp(poleLabelRaw.sy, 6, VIEW_H - 2) };
 
   const node = proj(nodePoint);
+  const nodeLabel: Label = { sx: node.sx - 4, sy: node.sy + 2.3 };
+  const inclination = { text: `i ${el.inclinationDeg.toFixed(1)}°`, at: { sx: 6, sy: 9 } };
 
   let perigee: OrbitLayout['perigee'] = null;
   if (shape.e > PERIGEE_MIN_E) {
@@ -278,18 +361,37 @@ export function layoutOrbit(prep: PreparedOrbit): OrbitLayout {
     const len = Math.hypot(at.sx - earth.cx, at.sy - earth.cy);
     const dx = len > 1e-6 ? (at.sx - earth.cx) / len : 0;
     const dy = len > 1e-6 ? (at.sy - earth.cy) / len : -1;
+    // The label sits just outside the tick, turned away in 45 degree steps from any other label or the node dot.
+    const taken: Box[] = [
+      labelBox(nodeLabel, 'end', 'AN'),
+      { x0: node.sx - 3, x1: node.sx + 3, y0: node.sy - 3, y1: node.sy + 3 },
+      labelBox(poleLabel, 'middle', 'N'),
+      labelBox(inclination.at, 'start', inclination.text),
+    ];
+    const base = Math.atan2(dy, dx);
+    let label: Label | null = null;
+    let first: Label | null = null;
+    for (const k of [0, 1, -1, 2, -2, 3, -3, 4]) {
+      const ang = base + (k * Math.PI) / 4;
+      const c: Label = {
+        sx: clamp(at.sx + Math.cos(ang) * 10, 10, VIEW_W - 10),
+        sy: clamp(at.sy + Math.sin(ang) * 10 + 2.3, 7, VIEW_H - 3),
+      };
+      first ??= c;
+      if (!taken.some((b) => boxesOverlap(labelBox(c, 'middle', 'PE'), b))) {
+        label = c;
+        break;
+      }
+    }
     perigee = {
       at,
       tip: { sx: at.sx + dx * 4.5, sy: at.sy + dy * 4.5, d: at.d },
-      label: {
-        sx: clamp(at.sx + dx * 10, 10, VIEW_W - 10),
-        sy: clamp(at.sy + dy * 10 + 2.3, 7, VIEW_H - 3),
-      },
+      label: label ?? first!,
       depth: depthOf(at, earth),
     };
   }
 
-  const chevrons = CHEVRON_U_DEG.map((deg): Chevron => {
+  const chevrons = chevronAngles(perigee ? ((el.argPerigeeDeg % 360) + 360) % 360 : null).map((deg): Chevron => {
     const u = deg * RAD;
     const a = proj(orbitPointAtU(prep, u - 0.03));
     const b = proj(orbitPointAtU(prep, u + 0.03));
@@ -306,10 +408,10 @@ export function layoutOrbit(prep: PreparedOrbit): OrbitLayout {
     equatorNear: equator.near,
     equatorFar: equator.far,
     pole: { base: poleBase, tip: poleTip, label: poleLabel, depth: depthOf(poleBase, earth) },
-    node: { at: node, label: { sx: node.sx - 4, sy: node.sy + 2.3 } },
+    node: { at: node, label: nodeLabel },
     perigee,
     chevrons,
-    inclination: { text: `i ${el.inclinationDeg.toFixed(1)}°`, at: { sx: 6, sy: 9 } },
+    inclination,
   };
 }
 
@@ -321,5 +423,5 @@ export function layoutOrbit(prep: PreparedOrbit): OrbitLayout {
 export function markerAt(prep: PreparedOrbit, fit: Fit, atMs: number): Sp | null {
   const pos = orbitPosition(prep.el, atMs);
   const q = pos ? orbitPoint3D(prep.el, pos.r, pos.trueAnomaly) : null;
-  return q ? projector(prep, fit)(q) : null;
+  return q ? projector(prep, fit, true)(q) : null;
 }

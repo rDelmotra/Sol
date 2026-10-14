@@ -36,19 +36,19 @@ export function OrbitScene({
         <clipPath id={outsideId}>
           <path d={L.outside} clipRule="evenodd" />
         </clipPath>
-        <radialGradient id={shadeId} cx="35%" cy="30%" r="75%">
-          <stop offset="0" stopColor="var(--hud-arc)" stopOpacity={0.27} />
-          <stop offset="0.55" stopColor="var(--hud-arc)" stopOpacity={0.24} />
-          <stop offset="1" stopColor="var(--hud-arc)" stopOpacity={0.21} />
+        <radialGradient id={shadeId} cx="36%" cy="30%" r="80%">
+          <stop offset="0" stopColor="var(--hud-arc)" stopOpacity={0.36} />
+          <stop offset="0.5" stopColor="var(--hud-arc)" stopOpacity={0.21} />
+          <stop offset="1" stopColor="var(--hud-arc)" stopOpacity={0.07} />
         </radialGradient>
       </defs>
 
       {/* Far side first, so the sphere covers it. Dashed; the stretch behind the disc is dimmer still. */}
-      <g fill="none" stroke="var(--hud-arc)" strokeWidth={0.5} strokeDasharray="3 2.5">
-        <path d={L.equatorFar} clipPath={`url(#${outsideId})`} opacity={0.4} />
-        <path d={L.equatorFar} clipPath={`url(#${insideId})`} opacity={0.18} />
+      <g fill="none" stroke="var(--hud-arc)" strokeWidth={0.5} strokeDasharray="2.2 2.6">
+        <path d={L.equatorFar} clipPath={`url(#${outsideId})`} opacity={0.3} />
+        <path d={L.equatorFar} clipPath={`url(#${insideId})`} opacity={0.14} />
       </g>
-      <g fill="none" stroke="#fff" strokeWidth={0.8} strokeDasharray="3 2.5">
+      <g fill="none" stroke="#fff" strokeWidth={0.75} strokeDasharray="2.2 2.6">
         <path d={L.far} clipPath={`url(#${outsideId})`} opacity={DEPTH_OPACITY.far} />
         <path d={L.far} clipPath={`url(#${insideId})`} opacity={DEPTH_OPACITY.hidden} />
       </g>
@@ -58,7 +58,7 @@ export function OrbitScene({
       <circle cx={earth.cx} cy={earth.cy} r={earth.r} fill={`url(#${shadeId})`} stroke="var(--hud-arc-dim)" strokeWidth={0.5} />
 
       {/* Near side of the equatorial ring, and the north pole. */}
-      <path d={L.equatorNear} fill="none" stroke="var(--hud-arc)" strokeWidth={0.7} opacity={0.7} />
+      <path d={L.equatorNear} fill="none" stroke="var(--hud-arc)" strokeWidth={0.6} opacity={0.5} />
       <g opacity={DEPTH_OPACITY[L.pole.depth]}>
         <path
           d={`M ${L.pole.base.sx.toFixed(2)} ${L.pole.base.sy.toFixed(2)} L ${L.pole.tip.sx.toFixed(2)} ${L.pole.tip.sy.toFixed(2)}`}
@@ -72,8 +72,9 @@ export function OrbitScene({
         </Text>
       </g>
 
-      {/* Near half of the orbit: solid and bright. */}
-      <path d={L.near} fill="none" stroke="#fff" strokeWidth={1.2} />
+      {/* Near half of the orbit: solid and bright, with a dark edge so it stands off the sphere. */}
+      <path d={L.near} fill="none" stroke="var(--hud-sky-deep)" strokeWidth={3} strokeOpacity={0.5} strokeLinecap="round" />
+      <path d={L.near} fill="none" stroke="#fff" strokeWidth={1.4} strokeLinecap="round" />
 
       {/* Direction of motion. */}
       {L.chevrons.map((c, i) => (
