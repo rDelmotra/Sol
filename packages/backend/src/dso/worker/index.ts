@@ -36,7 +36,7 @@ import {
   publishDsoWorkerHeartbeat,
   readDsoManifest,
 } from '../snapshot/index.js';
-import { clearDsoEnded, markDsoEnded, readDsoEndedState } from './ended-state.js';
+import { clearDsoEnded, isDsoEndedRecheckDue, markDsoEnded, readDsoEndedState } from './ended-state.js';
 import { dsoRetryEnded } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 
@@ -163,6 +163,7 @@ async function refreshDsoEntry(
   provider: DsoProviderAdapter,
   wasEnded: boolean,
   runtime: DsoWorkerRuntime,
+  checkedAt: Date,
 ): Promise<DsoManifest> {
   const startedAt = Date.now();
   const now = new Date();
@@ -184,7 +185,7 @@ async function refreshDsoEntry(
       `DSO refresh succeeded: dsoId=${entry.dsoId} provider=${entry.provider} durationMs=${durationMs} snapshotVersion=${snapshot.snapshotVersion}`,
     );
 
-    await settleEndedState(entry, providerFetch.coverageEndedAt ?? null, wasEnded, runtime);
+    await settleEndedState(entry, providerFetch.coverageEndedAt ?? null, wasEnded, runtime, checkedAt);
 
     return manifest;
   } catch (error) {
@@ -194,7 +195,7 @@ async function refreshDsoEntry(
       // stop asking. If the flag cannot be saved, fall through to the normal
       // failure path so nothing is silently lost.
       try {
-        await markDsoEnded(entry.dsoId, error.endedAt, new Date());
+        await markDsoEnded(entry.dsoId, error.endedAt, checkedAt);
         runtime.loggedEnded.add(entry.dsoId); // this is the boot's one line for the object
         logger.info(
           `DSO ephemeris ended ${error.endedAt.toISOString()}, keeping stored data: dsoId=${entry.dsoId} provider=${entry.provider} (no more refresh attempts; DSO_RETRY_ENDED=1 forces a retry)`,
@@ -205,6 +206,16 @@ async function refreshDsoEntry(
           `DSO ended-state could not be saved (${formatErrorMessage(markError)}) — recording a normal failure instead`,
         );
       }
+    }
+
+    if (wasEnded) {
+      // A re-check of a finished mission failed for an ordinary reason (network,
+      // throttle). The stored ephemeris is complete and unchanged, so do not degrade
+      // the object's reported state for it. lastCheckedAt stays, so the next loop asks again.
+      logger.warn(
+        `DSO re-check of an ended object failed, keeping stored data: dsoId=${entry.dsoId} provider=${entry.provider} error=${formatErrorMessage(error)}`,
+      );
+      return currentManifest;
     }
 
     const failureAt = new Date().toISOString();
@@ -235,10 +246,11 @@ async function settleEndedState(
   coverageEndedAt: string | null,
   wasEnded: boolean,
   runtime: DsoWorkerRuntime,
+  checkedAt: Date,
 ): Promise<void> {
   try {
     if (coverageEndedAt) {
-      await markDsoEnded(entry.dsoId, coverageEndedAt, new Date());
+      await markDsoEnded(entry.dsoId, coverageEndedAt, checkedAt);
       runtime.loggedEnded.add(entry.dsoId); // this is the boot's one line for the object
       logger.info(
         `DSO ephemeris ended ${coverageEndedAt}, final snapshot published: dsoId=${entry.dsoId} (no more refresh attempts; stored data stays; DSO_RETRY_ENDED=1 forces a retry)`,
@@ -270,24 +282,33 @@ export async function reconcileDsoWorkerOnce(
     const ended = endedState.objects[entry.dsoId];
 
     if (ended) {
-      // A finished mission: serve what is stored, do not ask the provider again.
-      // DSO_RETRY_ENDED=1 allows one retry per object per boot.
-      if (!retryEnded || runtime.forcedRetried.has(entry.dsoId)) {
+      // A finished mission: serve what is stored and leave the provider alone, except
+      //  - about once a week (lastCheckedAt), in case it published more data;
+      //  - DSO_RETRY_ENDED=1, once per object per boot.
+      const forced = retryEnded && !runtime.forcedRetried.has(entry.dsoId);
+      const recheckDue = isDsoEndedRecheckDue(ended, now);
+      if (!forced && !recheckDue) {
         if (!runtime.loggedEnded.has(entry.dsoId)) {
           runtime.loggedEnded.add(entry.dsoId);
           logger.info(
-            `DSO ephemeris ended ${ended.endedAt}, keeping stored data: dsoId=${entry.dsoId} (DSO_RETRY_ENDED=1 forces a retry)`,
+            `DSO ephemeris ended ${ended.endedAt}, keeping stored data: dsoId=${entry.dsoId} (checked again about weekly; DSO_RETRY_ENDED=1 forces a retry)`,
           );
         }
         continue;
       }
-      runtime.forcedRetried.add(entry.dsoId);
-      logger.info(`DSO_RETRY_ENDED is set: retrying ended object once: dsoId=${entry.dsoId}`);
+      if (forced) {
+        runtime.forcedRetried.add(entry.dsoId);
+        logger.info(`DSO_RETRY_ENDED is set: retrying ended object once: dsoId=${entry.dsoId}`);
+      } else {
+        logger.info(
+          `DSO weekly re-check of an ended object (last checked ${ended.lastCheckedAt}): dsoId=${entry.dsoId}`,
+        );
+      }
     } else if (!shouldRefreshDsoEntry(entry, manifest.objects[entry.dsoId], now)) {
       continue;
     }
 
-    manifest = await refreshDsoEntry(entry, manifest, workerLastRunAt, getProvider(entry.provider), Boolean(ended), runtime);
+    manifest = await refreshDsoEntry(entry, manifest, workerLastRunAt, getProvider(entry.provider), Boolean(ended), runtime, now);
   }
 
   return manifest;

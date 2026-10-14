@@ -190,8 +190,11 @@ export function planCoverageRetry(
   const marginMs = entry.sampleStepSec * 1000;
   const latest = bounds.latestAvailable;
 
-  // Empty intersection because the data ended before the window begins.
-  if (latest && latest.getTime() - marginMs <= windowStart.getTime() && latest.getTime() < now.getTime()) {
+  // Empty intersection because the data ended before the window begins. "Ended" means
+  // the same thing as everywhere else: the data stopped more than the grace period ago.
+  // A mission that stopped an hour ago may still get new data, so that case is left to
+  // the normal (transient) failure path and its backoff.
+  if (latest && latest.getTime() - marginMs <= windowStart.getTime() && isEphemerisEndedInPast(bounds, now)) {
     return { action: 'ended', endedAt: latest };
   }
 

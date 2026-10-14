@@ -150,6 +150,34 @@ describe('planCoverageRetry', () => {
     assert.deepEqual(plan, { action: 'ended', endedAt: new Date('2026-04-10T23:54:22.857Z') });
   });
 
+  it('uses the same 24 h grace as isEphemerisEndedInPast: data that stopped 2 hours ago is not ended', () => {
+    const stoppedTwoHoursAgo = new Date(NOW.getTime() - 2 * 3_600_000);
+    const plan = planCoverageRetry(
+      entry,
+      new Date(NOW.getTime() - 1 * 3_600_000), // window starts after the data stops
+      WINDOW_END,
+      { earliestAvailable: null, latestAvailable: stoppedTwoHoursAgo },
+      NOW,
+    );
+    assert.deepEqual(plan, { action: 'give-up' });
+  });
+
+  it('the grace boundary: ended only when the data stopped MORE than 24 h ago', () => {
+    const start = new Date(NOW.getTime() - 10 * 3_600_000);
+    const at = (msAgo: number) => ({
+      earliestAvailable: null,
+      latestAvailable: new Date(NOW.getTime() - msAgo),
+    });
+    // the two predicates must agree at every point near the boundary
+    for (const msAgo of [EPHEMERIS_ENDED_GRACE_MS - 1, EPHEMERIS_ENDED_GRACE_MS, EPHEMERIS_ENDED_GRACE_MS + 1]) {
+      const bounds = at(msAgo);
+      const plan = planCoverageRetry(entry, start, WINDOW_END, bounds, NOW);
+      assert.equal(plan.action === 'ended', isEphemerisEndedInPast(bounds, NOW), `msAgo=${msAgo}`);
+    }
+    assert.equal(planCoverageRetry(entry, start, WINDOW_END, at(EPHEMERIS_ENDED_GRACE_MS + 1), NOW).action, 'ended');
+    assert.equal(planCoverageRetry(entry, start, WINDOW_END, at(EPHEMERIS_ENDED_GRACE_MS), NOW).action, 'give-up');
+  });
+
   it('gives up when the data has not started yet (not ended)', () => {
     const plan = planCoverageRetry(
       entry,
@@ -263,6 +291,23 @@ describe('requestWithCoverageClamp', () => {
       DsoEphemerisEndedError,
     );
     assert.equal(n, 2, 'one clamp retry, then the same bound again -> stop');
+  });
+
+  it('data that stopped 2 hours ago and a window starting after it -> plain error, not ended (grace)', async () => {
+    // NOW is 2026-10-13 18:19:30; the data stopped at 16:19:30, two hours before
+    let calls = 0;
+    const request: HorizonsRequestFn = async () => {
+      calls += 1;
+      throw new HorizonsObjectNotFoundError(
+        'No ephemeris for target "X" after A.D. 2026-OCT-13 16:19:30.0000 TDB',
+      );
+    };
+    const lateStart = new Date(NOW.getTime() - 1 * 3_600_000);
+    await assert.rejects(
+      requestWithCoverageClamp(entry, lateStart, WINDOW_END, request, NOW),
+      (error: unknown) => error instanceof HorizonsObjectNotFoundError && !(error instanceof DsoEphemerisEndedError),
+    );
+    assert.equal(calls, 1);
   });
 
   it('data not started yet -> plain not-found error, never marked ended', async () => {

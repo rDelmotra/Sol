@@ -5,7 +5,7 @@ import compression from 'compression';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import tleRouter from './routes/tle.js';
-import dsoRouter, { summarizeDsoHealth } from './routes/dso.js';
+import dsoRouter, { readEndedDsoIds, summarizeDsoHealth } from './routes/dso.js';
 import {
   metadataRouter,
   catalogRouter,
@@ -104,6 +104,7 @@ export function createApp(deps: AppDeps = {}): Express {
   app.get('/health', async (_req, res) => {
     const version = readVersion();
     const dsoManifest = await readDsoManifest();
+    const dsoEndedIds = await readEndedDsoIds();
     const disk = await readDiskUsage(); // data volume; null if the platform can't say
     res.json({
       status: 'ok',
@@ -111,7 +112,7 @@ export function createApp(deps: AppDeps = {}): Express {
       objectCount: version?.count ?? 0,
       uptime: Math.floor(process.uptime()),
       disk,
-      ...summarizeDsoHealth(dsoManifest),
+      ...summarizeDsoHealth(dsoManifest, dsoEndedIds),
     });
   });
 

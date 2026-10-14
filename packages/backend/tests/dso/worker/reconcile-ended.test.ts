@@ -242,6 +242,125 @@ describe('DSO worker with an ended mission', () => {
     assert.equal(calls, 1);
   });
 
+  describe('weekly re-check of an ended object', () => {
+    const DAY = 24 * HOUR;
+    const BASE = new Date();
+    const at = (ms: number) => new Date(BASE.getTime() + ms);
+    const weeklyLines = () => lines.filter((l) => l.includes('weekly re-check'));
+
+    it('is asked again after 7 days, not before, and then waits another week', async () => {
+      await markDsoEnded('artemis-ii', ENDED_AT, BASE);
+      const d = deps(provider(throwEnded));
+
+      await reconcileDsoWorkerOnce(at(6 * DAY), d);
+      assert.equal(calls, 0, 'six days: still inside the week');
+
+      await reconcileDsoWorkerOnce(at(7 * DAY), d);
+      assert.equal(calls, 1, 'seven days: due');
+      assert.equal(weeklyLines().length, 1);
+      assert.ok(weeklyLines()[0].includes('INFO'));
+
+      const record = (await readDsoEndedState()).objects['artemis-ii'];
+      assert.equal(record.endedAt, ENDED_AT.toISOString());
+      assert.equal(record.markedAt, BASE.toISOString(), 'same end: the first-noticed time is kept');
+      assert.equal(record.lastCheckedAt, at(7 * DAY).toISOString());
+
+      await reconcileDsoWorkerOnce(at(13 * DAY), d);
+      assert.equal(calls, 1);
+      await reconcileDsoWorkerOnce(at(14 * DAY), d);
+      assert.equal(calls, 2);
+      assert.equal(lines.filter((l) => l.includes('ERROR')).length, 0, 'a re-check that finds it still ended is no error');
+    });
+
+    it('new data found on the re-check: the ended flag is cleared and normal refreshes resume', async () => {
+      await markDsoEnded('artemis-ii', ENDED_AT, BASE);
+      const manifest = await reconcileDsoWorkerOnce(at(8 * DAY), deps(provider(async () => fetchResult())));
+      assert.equal(calls, 1);
+      assert.deepEqual(await readDsoEndedState(), { objects: {} });
+      assert.ok(lines.some((l) => l.includes('ended flag cleared')));
+      assert.equal(manifest.objects['artemis-ii'].availability, true);
+      assert.equal(manifest.objects['artemis-ii'].failureCount, 0);
+
+      // a normal refresh when due, no weekly wait
+      await reconcileDsoWorkerOnce(at(8 * DAY + 7 * HOUR), deps(provider(async () => fetchResult())));
+      assert.equal(calls, 2);
+    });
+
+    it('a clamped success on the re-check publishes the final data again and moves lastCheckedAt', async () => {
+      await markDsoEnded('artemis-ii', ENDED_AT, BASE);
+      const d = deps(provider(async () => fetchResult(ENDED_AT.toISOString())));
+      const manifest = await reconcileDsoWorkerOnce(at(8 * DAY), d);
+      assert.equal(calls, 1);
+      assert.ok(manifest.objects['artemis-ii'].currentSnapshotVersion);
+      const record = (await readDsoEndedState()).objects['artemis-ii'];
+      assert.equal(record.lastCheckedAt, at(8 * DAY).toISOString());
+      assert.equal(record.markedAt, BASE.toISOString());
+    });
+
+    it('an ordinary failure on the re-check leaves the stored object and its reported state alone', async () => {
+      await publishDsoSnapshot(entry, storedSnapshot(), null, new Date().toISOString());
+      await markDsoEnded('artemis-ii', ENDED_AT, BASE);
+      const before = ((await readDsoManifest()) as DsoManifest).objects['artemis-ii'];
+
+      const failing = deps(provider(() => Promise.reject(new HorizonsNetworkError('Horizons request failed (network/timeout)'))));
+      const manifest = await reconcileDsoWorkerOnce(at(8 * DAY), failing);
+      assert.equal(calls, 1);
+      assert.deepEqual(manifest.objects['artemis-ii'], before);
+      assert.deepEqual(((await readDsoManifest()) as DsoManifest).objects['artemis-ii'], before);
+      assert.equal(before.failureCount, 0);
+      assert.equal(before.freshnessState, 'fresh');
+      assert.equal(lines.filter((l) => l.includes('ERROR')).length, 0);
+      assert.ok(lines.some((l) => l.includes('WARN') && l.includes('re-check of an ended object failed')));
+
+      // not counted as checked, so the next loop asks again
+      assert.equal((await readDsoEndedState()).objects['artemis-ii'].lastCheckedAt, BASE.toISOString());
+      await reconcileDsoWorkerOnce(at(8 * DAY + 6 * HOUR), failing);
+      assert.equal(calls, 2);
+    });
+
+    it('stored ephemeris stays byte for byte through repeated re-checks', async () => {
+      await publishDsoSnapshot(entry, storedSnapshot(), null, new Date().toISOString());
+      const snapshotFile = getDsoSnapshotPath('artemis-ii', '2026-04-10T235000Z');
+      const bytesBefore = fs.readFileSync(snapshotFile);
+      const statusBefore = ((await readDsoManifest()) as DsoManifest).objects['artemis-ii'];
+      await markDsoEnded('artemis-ii', ENDED_AT, BASE);
+
+      const d = deps(provider(throwEnded));
+      for (const week of [1, 2, 3]) await reconcileDsoWorkerOnce(at(week * 7 * DAY), d);
+
+      assert.equal(calls, 3);
+      assert.deepEqual(fs.readFileSync(snapshotFile), bytesBefore);
+      assert.deepEqual(((await readDsoManifest()) as DsoManifest).objects['artemis-ii'], statusBefore);
+      assert.deepEqual(fs.readdirSync(path.dirname(snapshotFile)), ['2026-04-10T235000Z.json']);
+    });
+
+    it('an old ended.json without lastCheckedAt counts from markedAt', async () => {
+      fs.mkdirSync(path.dirname(getDsoEndedStatePath()), { recursive: true });
+      const write = (markedAt: Date) =>
+        fs.writeFileSync(
+          getDsoEndedStatePath(),
+          JSON.stringify({ objects: { 'artemis-ii': { endedAt: ENDED_AT.toISOString(), markedAt: markedAt.toISOString() } } }),
+          'utf8',
+        );
+
+      write(at(-1 * DAY));
+      await reconcileDsoWorkerOnce(BASE, deps(provider(throwEnded)));
+      assert.equal(calls, 0, 'marked yesterday: not due');
+
+      write(at(-8 * DAY));
+      await reconcileDsoWorkerOnce(BASE, deps(provider(throwEnded)));
+      assert.equal(calls, 1, 'marked 8 days ago: due');
+    });
+
+    it('DSO_RETRY_ENDED=1 still forces a check inside the week', async () => {
+      await markDsoEnded('artemis-ii', ENDED_AT, BASE);
+      await reconcileDsoWorkerOnce(at(1 * DAY), deps(provider(throwEnded), { retryEnded: true }));
+      assert.equal(calls, 1);
+      assert.ok(lines.some((l) => l.includes('DSO_RETRY_ENDED is set')));
+      assert.equal(weeklyLines().length, 0, 'logged as the forced retry, not the weekly one');
+    });
+  });
+
   describe('DSO_RETRY_ENDED', () => {
     it('retries an ended object once per boot, not every cycle', async () => {
       await markDsoEnded('artemis-ii', ENDED_AT);

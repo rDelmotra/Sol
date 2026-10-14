@@ -7,8 +7,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it, beforeEach, afterEach, mock } from 'node:test';
 import {
+  DSO_ENDED_RECHECK_MS,
   clearDsoEnded,
   getDsoEndedStatePath,
+  isDsoEndedRecheckDue,
   markDsoEnded,
   parseDsoEndedState,
   readDsoEndedState,
@@ -30,10 +32,58 @@ describe('parseDsoEndedState', () => {
     assert.equal(parsed!.objects.noMark.markedAt, '2026-04-10T23:54:22.857Z');
   });
 
+  it('keeps lastCheckedAt, and falls back to markedAt for an old file or a bad value', () => {
+    const parsed = parseDsoEndedState({
+      objects: {
+        current: { endedAt: '2026-04-10T23:54:22.857Z', markedAt: '2026-10-01T00:00:00.000Z', lastCheckedAt: '2026-10-08T00:00:00.000Z' },
+        oldFile: { endedAt: '2026-04-10T23:54:22.857Z', markedAt: '2026-10-01T00:00:00.000Z' },
+        badValue: { endedAt: '2026-04-10T23:54:22.857Z', markedAt: '2026-10-01T00:00:00.000Z', lastCheckedAt: 'tomorrow' },
+        onlyEnd: { endedAt: '2026-04-10T23:54:22.857Z' },
+      },
+    });
+    assert.equal(parsed!.objects.current.lastCheckedAt, '2026-10-08T00:00:00.000Z');
+    assert.equal(parsed!.objects.oldFile.lastCheckedAt, '2026-10-01T00:00:00.000Z');
+    assert.equal(parsed!.objects.badValue.lastCheckedAt, '2026-10-01T00:00:00.000Z');
+    assert.equal(parsed!.objects.onlyEnd.lastCheckedAt, '2026-04-10T23:54:22.857Z');
+  });
+
   it('rejects a wrong top-level shape', () => {
     for (const value of [null, 'x', 7, [], {}, { objects: null }, { objects: [] }]) {
       assert.equal(parseDsoEndedState(value), null, JSON.stringify(value));
     }
+  });
+});
+
+describe('isDsoEndedRecheckDue — about weekly', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const record = (lastCheckedAt: string) => ({
+    endedAt: '2026-04-10T23:54:22.857Z',
+    markedAt: '2026-10-01T00:00:00.000Z',
+    lastCheckedAt,
+  });
+  const last = '2026-10-14T00:00:00.000Z';
+  const lastMs = Date.parse(last);
+
+  it('the interval is 7 days', () => {
+    assert.equal(DSO_ENDED_RECHECK_MS, 7 * DAY);
+  });
+
+  it('not due before 7 days, due from 7 days on', () => {
+    assert.equal(isDsoEndedRecheckDue(record(last), new Date(lastMs)), false);
+    assert.equal(isDsoEndedRecheckDue(record(last), new Date(lastMs + 6 * DAY)), false);
+    assert.equal(isDsoEndedRecheckDue(record(last), new Date(lastMs + 7 * DAY - 1)), false);
+    assert.equal(isDsoEndedRecheckDue(record(last), new Date(lastMs + 7 * DAY)), true);
+    assert.equal(isDsoEndedRecheckDue(record(last), new Date(lastMs + 30 * DAY)), true);
+  });
+
+  it('a stamp in the future cannot be trusted: the check is due now, and a good stamp replaces it', () => {
+    assert.equal(isDsoEndedRecheckDue(record('2027-01-01T00:00:00.000Z'), new Date(lastMs)), true);
+    assert.equal(isDsoEndedRecheckDue(record(last), new Date(lastMs - 1)), true);
+  });
+
+  it('a custom interval is honoured', () => {
+    assert.equal(isDsoEndedRecheckDue(record(last), new Date(lastMs + DAY), DAY), true);
+    assert.equal(isDsoEndedRecheckDue(record(last), new Date(lastMs + DAY - 1), DAY), false);
   });
 });
 
@@ -81,8 +131,36 @@ describe('DSO ended state file — real temp dir', () => {
     assert.deepEqual(state.objects['artemis-ii'], {
       endedAt: '2026-04-10T23:54:22.857Z',
       markedAt: '2026-10-14T01:00:00.000Z',
+      lastCheckedAt: '2026-10-14T01:00:00.000Z',
     });
     assert.deepEqual(fs.readdirSync(path.join(tmpDir, 'dso')), ['ended.json']);
+  });
+
+  it('marking the same end again moves lastCheckedAt only; a different end starts over', async () => {
+    const end = '2026-04-10T23:54:22.857Z';
+    await markDsoEnded('artemis-ii', end, new Date('2026-10-14T01:00:00.000Z'));
+    await markDsoEnded('artemis-ii', end, new Date('2026-10-21T01:00:00.000Z'));
+    assert.deepEqual((await readDsoEndedState()).objects['artemis-ii'], {
+      endedAt: end,
+      markedAt: '2026-10-14T01:00:00.000Z',
+      lastCheckedAt: '2026-10-21T01:00:00.000Z',
+    });
+
+    // the provider published a later end: that is a new finding
+    const laterEnd = '2026-04-12T00:00:00.000Z';
+    await markDsoEnded('artemis-ii', laterEnd, new Date('2026-10-28T01:00:00.000Z'));
+    assert.deepEqual((await readDsoEndedState()).objects['artemis-ii'], {
+      endedAt: laterEnd,
+      markedAt: '2026-10-28T01:00:00.000Z',
+      lastCheckedAt: '2026-10-28T01:00:00.000Z',
+    });
+  });
+
+  it('quiet read does not warn about a corrupt file', async () => {
+    fs.mkdirSync(path.join(tmpDir, 'dso'), { recursive: true });
+    fs.writeFileSync(getDsoEndedStatePath(), '{{{', 'utf8');
+    assert.deepEqual(await readDsoEndedState({ quiet: true }), { objects: {} });
+    assert.equal(warn.mock.callCount(), 0);
   });
 
   it('marking twice keeps other objects', async () => {
