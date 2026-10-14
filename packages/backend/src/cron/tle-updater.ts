@@ -19,6 +19,15 @@ import {
   ClassifiableObject,
 } from '../types/index.js';
 import { logger } from '../utils/logger.js';
+import { spacetrackUser, spacetrackPass } from '../utils/config.js';
+import {
+  beginSpaceTrackAttempt,
+  checkSpaceTrackGate,
+  describeSkippedAttempt,
+  recordSpaceTrackFailure,
+  recordSpaceTrackSuccess,
+  type SpaceTrackAttempt,
+} from '../cache/attempt-log.js';
 import { ingestCurrentGp, isHistoryReady, type RawGpRecord } from '../history/index.js';
 
 // Cron schedule: "0 2 * * *" = 02:00 UTC every day.
@@ -173,6 +182,25 @@ function buildFromCelesTrak(gpElements: CelesTrakGPElement[]): EnrichedTLEObject
 // ============================================================
 
 /**
+ * Everything runUpdateCycle talks to the outside world through. Tests inject
+ * fakes (no network, no credentials, fixed clock); production uses the defaults.
+ */
+export interface UpdateCycleDeps {
+  fetchSpaceTrack: () => Promise<{ gp: SpaceTrackGPElement[] }>;
+  fetchCelesTrak: () => Promise<CelesTrakGPElement[]>;
+  /** True when Space-Track credentials are set. Unset -> the attempt log is not used. */
+  spaceTrackConfigured: () => boolean;
+  now: () => number;
+}
+
+const defaultUpdateCycleDeps: UpdateCycleDeps = {
+  fetchSpaceTrack: fetchFromSpaceTrack,
+  fetchCelesTrak: fetchCelesTrakTLEs,
+  spaceTrackConfigured: () => Boolean(spacetrackUser() && spacetrackPass()),
+  now: () => Date.now(),
+};
+
+/**
  * Run one full update cycle: try Space-Track first, fall back to CelesTrak.
  *
  * Skip policy (see shouldSkipRefresh):
@@ -182,9 +210,22 @@ function buildFromCelesTrak(gpElements: CelesTrakGPElement[]): EnrichedTLEObject
  *    previous write is 23h59m old at the next 02:00:00 tick.
  * The minimum-age guard keeps a restart loop or double trigger from
  * hammering Space-Track.
+ *
+ * Space-Track politeness (see cache/attempt-log.ts): every login is recorded in
+ * a small file on the volume. After a failure the next login waits 15 min, 30 min,
+ * 1 h, 2 h, 4 h, then 6 h; after a success it waits 1 h. A restart does not reset
+ * the wait. While Space-Track is held back, the cycle goes straight to the
+ * CelesTrak fallback and the stale cache keeps serving, exactly as it does after
+ * a Space-Track failure. The backoff cap is far below the daily cron interval, so
+ * it never blocks a whole day.
  */
-export async function runUpdateCycle(trigger: UpdateTrigger = 'boot'): Promise<void> {
-  const ageMs = cacheAgeMs();
+export async function runUpdateCycle(
+  trigger: UpdateTrigger = 'boot',
+  overrides: Partial<UpdateCycleDeps> = {},
+): Promise<void> {
+  const deps: UpdateCycleDeps = { ...defaultUpdateCycleDeps, ...overrides };
+
+  const ageMs = cacheAgeMs(deps.now());
   if (shouldSkipRefresh(ageMs, trigger)) {
     const v = readCache();
     const ageMin = Math.round((ageMs ?? 0) / 60_000);
@@ -192,7 +233,7 @@ export async function runUpdateCycle(trigger: UpdateTrigger = 'boot'): Promise<v
     return;
   }
 
-  const start = Date.now();
+  const start = deps.now();
   logger.info('TLE update cycle starting');
 
   let enriched: EnrichedTLEObject[] | null = null;
@@ -200,24 +241,40 @@ export async function runUpdateCycle(trigger: UpdateTrigger = 'boot'): Promise<v
   // Raw provider records, captured for the optional history archive (the
   // "source of truth" layer). Null unless a fetch succeeded.
   let rawGp: RawGpRecord[] | null = null;
+  // Set when a Space-Track login really starts; settled (success/failure) below.
+  let attempt: SpaceTrackAttempt | null = null;
 
   // ── Primary: Space-Track ────────────────────────────────────────────────
-  try {
-    logger.info('Attempting Space-Track fetch (primary source)');
-    const { gp } = await fetchFromSpaceTrack();
-    enriched = buildFromSpaceTrack(gp);
-    rawGp = gp;
-    source = 'space-track';
-  } catch (primaryErr) {
-    logger.error(
-      'Space-Track fetch failed — falling back to CelesTrak:',
-      (primaryErr as Error).message,
-    );
+  // The attempt log applies only when credentials are set; without them the
+  // fetch throws before any network call, so there is nothing to be polite about.
+  const gated = deps.spaceTrackConfigured();
+  const gate = gated ? checkSpaceTrackGate(deps.now()) : ({ allowed: true } as const);
 
-    // ── Fallback: CelesTrak ───────────────────────────────────────────────
+  if (!gate.allowed) {
+    logger.info(describeSkippedAttempt(gate, deps.now()));
+  } else {
+    if (gated) attempt = beginSpaceTrackAttempt(deps.now());
+    try {
+      logger.info('Attempting Space-Track fetch (primary source)');
+      const { gp } = await deps.fetchSpaceTrack();
+      enriched = buildFromSpaceTrack(gp);
+      rawGp = gp;
+      source = 'space-track';
+    } catch (primaryErr) {
+      if (attempt) recordSpaceTrackFailure(attempt, deps.now());
+      attempt = null;
+      logger.error(
+        'Space-Track fetch failed — falling back to CelesTrak:',
+        (primaryErr as Error).message,
+      );
+    }
+  }
+
+  // ── Fallback: CelesTrak ───────────────────────────────────────────────────
+  if (!enriched) {
     try {
       logger.info('Attempting CelesTrak fetch (fallback source)');
-      const gp = await fetchCelesTrakTLEs();
+      const gp = await deps.fetchCelesTrak();
       enriched = buildFromCelesTrak(gp);
       rawGp = gp;
       source = 'celestrak';
@@ -238,6 +295,11 @@ export async function runUpdateCycle(trigger: UpdateTrigger = 'boot'): Promise<v
   }
 
   writeCache(enriched);
+  // The Space-Track attempt counts as a success only once its data is on disk.
+  // If anything above threw (parse bug, disk full), the pending record stays a
+  // failure and the next login backs off instead of re-downloading at once.
+  if (attempt) recordSpaceTrackSuccess(deps.now());
+
   // Re-warm the in-memory gzipped /api/tle/all payload in-process so the next
   // request serves from memory instead of paying the one-time rebuild.
   primeTlePayload();
@@ -253,7 +315,7 @@ export async function runUpdateCycle(trigger: UpdateTrigger = 'boot'): Promise<v
     }
   }
 
-  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+  const elapsed = ((deps.now() - start) / 1000).toFixed(1);
   logger.info(
     `TLE update complete: ${enriched.length} objects from ${source} in ${elapsed}s`,
   );
