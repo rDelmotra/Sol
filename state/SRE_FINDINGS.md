@@ -2,6 +2,7 @@
 
 Written 2026-10-13 from the code and from local measurements only.
 Nothing here was checked against Railway or the live site.
+Update 2026-10-14: the Space-Track attempt log (part c) and the Artemis II ended-mission fix (part d) are now implemented on `sre/hardening`. See `state/STATE.md`.
 No data was deleted or changed. These are findings and proposals, not changes.
 
 ## How the numbers were made

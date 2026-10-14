@@ -8,7 +8,6 @@ Remove an item when it is fixed. None of these is scheduled unless the owner say
 - Rotate the Gemini key. It was rejected as leaked, so every Ask fails.
 - Rotate the key found in the history of `experiment/nl-to-ir`.
 - DSO validity window: `DEFAULT_VALID_PAST_WINDOW_SEC` is 10 days. Should it be "since launch"?
-- Artemis II fetch fails every 30 minutes. Disable it or fix it? Its Horizons ephemeris ended in April, so every request fails. Cause and proposal: `state/SRE_FINDINGS.md`, part (d).
 - The raw history archive is never pruned and grows about 4.6 MB a day. The 500 MB volume fills in roughly 97 days, and the daily-cron fix doubles the old rate. Numbers and lossless options: `state/SRE_FINDINGS.md`, parts (a) and (b). Watch `GET /health` (`disk`) after deploy.
 - Object category is always `unknown` because Space-Track's SATCAT has no operational-status field. Needs another source.
 - Dead branch cleanup. Many old branches exist.
@@ -42,7 +41,7 @@ The old overlay is deleted. These have no reader left in the UI. Check each befo
 
 ## Ops gaps found by the SRE pass (details in `state/SRE_FINDINGS.md`)
 
-- Failed Space-Track attempts are not recorded. With no cache and both sources down, every restart logs in again.
+- The CelesTrak fallback has no attempt log. With a stale cache and a crash loop it is still tried on every restart (3 tries, 5 s apart). Space-Track is now held back by `packages/backend/src/cache/attempt-log.ts`.
 - `GET /api/tle/visual` has no negative cache. While CelesTrak is down, every request starts a new 3-try fetch.
 - The NL compiler cache and gap log live in `<backend>/data`, not on the volume. The gap log has no rotation.
 - Unpruned `.tmp` files from a crashed write (cache, raw archive) stay on the volume.
