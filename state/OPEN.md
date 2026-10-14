@@ -28,10 +28,13 @@ Remove an item when it is fixed. None of these is scheduled unless the owner say
 - **No pad look on the ground.** In the dome view pad buttons work, but the right stick does not turn the gaze (the spike had no binding either).
 - **Pass search runs on the main thread.** `packages/frontend/src/engine/controllers/PassPlanner.ts` runs a 24-hour `findPasses` (about a thousand SGP4 steps) on each selection, observer, vantage or 5-minute sim-time change. Move it to a worker.
 
-## Dead after the cockpit swap (D8) — remove in a follow-up
+## Left over from the cockpit swap (D8)
 
-The old overlay is deleted. These have no reader left in the UI. Check each before removing.
+The dead-code pass after the swap removed the old keyword query engine, `fuse.js`, the metadata client, the hover pick, the cluster popup state, and the store keys only the old overlay used. What remains below is kept on purpose or needs an owner decision.
 
+- **Kept for later UI:** `selectedDso`, `triggerFlyToDso`, `triggerJoyrideDso` and the rest of the DSO machinery (a DSO panel will need them). `historyLoading` and `planetarium` (the time console cue reads them).
+- `packages/frontend/src/engine/world/layers/DsoLayer.ts` pushes `setDsoLabelPositions` to the store on every frame, and nothing reads `dsoLabelPositions` now (the DSO labels were old overlay UI). Candidate to stop once the DSO panel design is known.
+- `historyDay` in `packages/frontend/src/store/historySlice.ts` is written but not read outside the store.
 - `packages/frontend/src/store/filterSlice.ts`: engine still reads, UI can no longer set. The filter fields (`typeFilters`, `statusFilters`, `sectorFilters`, `purposeFilters`, `regimeFilters`, `countryFilter`, `programFilter`, `launchFilter`, `ownerFilter`) and `colorBy` are read by `packages/frontend/src/engine/world/layers/SatellitesLayer.ts` and `packages/frontend/src/engine/SatelliteRenderer.ts`, so they stay. Nothing in the cockpit calls their toggles or `setCountryFilter` today; a Lens or country-spotlight surface would. `colorBy` has no setter, so it stays `'type'`.
 - `packages/frontend/src/engine/SatelliteRenderer.ts`: still counts visible objects per regime and facet on every filter pass and every position update, then drops the result. The store copy of these counts was removed because nothing read it. The counting loop was left alone to keep rendering code untouched.
 - **Clicking a crowded satellite selects nothing.** In `packages/frontend/src/engine/input/InputManager.ts` a click selects only an isolated object. If another visible object is within about 50 km of the hit, the old ClusterPopup opened; it is gone, so now nothing happens. Needs a decision: select the biggest, the nearest, or cycle like the gamepad reticle. Pinned by `packages/frontend/src/engine/input/InputManager.test.ts`.
