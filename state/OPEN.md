@@ -43,7 +43,10 @@ The dead-code pass after the swap removed the old keyword query engine, `fuse.js
 
 ## Ops gaps found by the SRE pass (details in `state/SRE_FINDINGS.md`)
 
-- The CelesTrak fallback has no attempt log. With a stale cache and a crash loop it is still tried on every restart (3 tries, 5 s apart). Space-Track is now held back by `packages/backend/src/cache/attempt-log.ts`.
+- The CelesTrak fallback has no attempt log. With a stale cache and a crash loop it is still tried on every restart (3 tries, 5 s apart). Space-Track is now held back by `packages/backend/src/cache/attempt-log.ts`. The retry timer in `packages/backend/src/cron/tle-updater.ts` also tries CelesTrak each time it fires (15 min, 30 min, 1 h, 2 h, 4 h, then every 6 h), but only while nothing could be written.
+- **A hung history migration would delay the TLE updater at boot.** The `history-init` step in `packages/backend/src/boot.ts` is awaited before `tle-freshness`, which schedules the cron. The DB pool has a 10 s connect timeout, but the migration queries have no statement timeout. Only the disk report was made fire-and-forget.
+- **No alert when the catalog stays stale.** A refused catalog is only an ERROR line in the log (`catalog refused`). If Space-Track and CelesTrak keep answering empty or too small, the old cache serves on, and the only outside sign is `lastUpdate` in `GET /health` getting old. If the real catalog ever shrinks by more than half on purpose, set `CATALOG_MIN_RATIO` lower, then unset it.
+- **An ended DSO still says `fresh` in the manifest and catalog.** `GET /health` reports it as `dsoEndedCount`, but the per-object `freshnessState` comes from the shared `DsoFreshnessState` type in `packages/contracts/src/dso.ts`, which has no `ended` value. Adding one is a contract change (frontend included), so it was not done.
 - `GET /api/tle/visual` has no negative cache. While CelesTrak is down, every request starts a new 3-try fetch.
 - The NL compiler cache and gap log live in `<backend>/data`, not on the volume. The gap log has no rotation.
 - Unpruned `.tmp` files from a crashed write (cache, raw archive) stay on the volume.

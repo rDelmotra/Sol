@@ -2,8 +2,8 @@
 
 Written 2026-10-13 from the code and from local measurements only.
 Nothing here was checked against Railway or the live site.
-Update 2026-10-14: the Space-Track attempt log (part c) and the Artemis II ended-mission fix (part d) are now implemented on `sre/hardening`. See `state/STATE.md`.
-No data was deleted or changed. These are findings and proposals, not changes.
+Update 2026-10-14: the Space-Track attempt log (part c) and the Artemis II ended-mission fix (part d) are implemented on `sre/hardening`. A second review pass added: the catalog size guard, the retry timer, the DSO snapshot archive, the boot disk report guard, and the weekly re-check of ended missions. Resolved findings were removed from this file; how each fix behaves is in `state/STATE.md` and in parts (c) and (d) below.
+Parts (a) and (b) are still findings and proposals. No data was deleted or changed by this report.
 
 ## How the numbers were made
 
@@ -63,7 +63,7 @@ Not on the volume:
 4. Each object in `tle-cache.json` repeats `name`, `inclination` and `epoch` at the top level and again inside `omm`.
    Clients read both, so this is a wire-format question, not a free win.
 5. `dso/catalog.json` is derived from `dso/manifest.json` plus the registry. It is tiny.
-6. Older DSO snapshot generations overlap. They exist for rollback.
+6. Older DSO snapshot generations overlap. They exist for rollback. They are now moved to `archive/`, not deleted.
 7. The history database's daily checkpoint is derived from the raw archive by design.
    The raw archive is the source of truth. The database can be rebuilt from it.
 8. `.tmp` files from a crashed write are never cleaned, except for DSO snapshots. Each is at most 25.7 MB (cache) or 4.6 MB (archive day).
@@ -120,12 +120,16 @@ Rules in force:
 - Boot guard 24 h, cron guard 1 h. A normal restart loop with a good cache cannot refetch.
 - The code comment says Space-Track allows about 30 requests a day and the cycle stays under that.
   I did not verify Space-Track's current published limits (I believe they are per minute and per hour). Please check their API use guidelines.
+- **Attempt log** (`packages/backend/src/cache/attempt-log.ts`, file `spacetrack-attempts.json` in `CACHE_DIR`). After a failure the next login waits 15 min, 30 min, 1 h, 2 h, 4 h, then 6 h. After a success it waits 1 h. A restart does not reset the wait. A refused catalog (next bullet) counts as a failure.
+- **Size guard** (`assessCatalog` in `packages/backend/src/cache/file-cache.ts`, used by `runUpdateCycle`). Space-Track can answer `200 []`, or a page list can be cut short, and the cycle used to write that over the good cache. Now a catalog with 0 objects, or with fewer than 50% of the cached object count, is refused. This applies to Space-Track and to CelesTrak.
+  A refused Space-Track answer is logged at ERROR with the counts, recorded as a Space-Track failure, and the cycle falls through to CelesTrak.
+  If CelesTrak is refused or fails too, the cycle returns at once. It does not touch `tle-cache.json`, `version.json`, the payload cache or the history database, and it logs a WARN that the stale cache keeps serving.
+  With no cache (first boot, or dev with only CelesTrak) any non-empty catalog is accepted.
+  Knob: `CATALOG_MIN_RATIO`, a number from 0 to 1, default 0.5. Use a lower value only if the real catalog shrank by more than half on purpose, then unset it. 0 turns the size check off. An empty catalog is always refused.
+- **Retry timer.** When a cycle writes nothing and Space-Track is only waiting out its backoff, one unref'd timer is armed for the moment the wait ends. It runs the cycle again with the `cron` trigger, so it does not wait for the next 02:00. At most one timer is pending. A successful write cancels it, and so does the `stop()` handle that `scheduleTLEUpdater` returns. If the attempt log cannot be written the gate stays open and no timer is armed, so there is no hot loop.
 
-Gaps (proposals only):
+Open gaps:
 
-- **No record of failed attempts.** If both Space-Track and CelesTrak fail, nothing is written, so the next boot tries Space-Track again.
-  A crash loop with no cache would log in on every restart. The new supervisor delays its exit by 5 s only when a child dies in under 10 s.
-  Proposal: write a small `last-attempt` stamp in `CACHE_DIR` and refuse a new Space-Track login within, say, 1 hour of the last one, whatever the outcome.
 - Two API replicas would each run the cron and each fetch. Today there is one.
 
 Other upstream fetches, for completeness:
@@ -138,32 +142,17 @@ Other upstream fetches, for completeness:
 | Natural Earth gazetteer (GitHub) | `packages/backend/src/services/gazetteer.ts` | Cache 30 days. 3 tries, 3 s apart, 90 s timeout. |
 | JPL Horizons | `packages/backend/src/dso/providers/horizons.ts` | Requests are serialized one at a time. 30 s timeout. See (d). |
 
-## (d) Artemis II error spam
+## (d) Artemis II error spam (resolved)
 
-What the code does today (from `packages/backend/src/dso/` and its tests; I have not seen the prod log lines):
+The cause was that the fetch window runs from the launch date to now + 6 h, but Horizons has data only for the mission itself (2026-04-02 to 2026-04-10 in the test fixtures).
+Horizons names only one bad bound per error and the old code retried once, so every cycle failed. With no usable snapshot that meant a retry every 30 minutes and about 96 requests a day.
 
-1. Artemis II is the only enabled DSO. Its entry in `packages/backend/src/dso/registry/entries.ts` has launch date 2026-04-01.
-2. The fetch window starts at the launch date and ends at now + 6 h. `DEFAULT_VALID_PAST_WINDOW_SEC` is really 1000 days, so the launch date always wins (`computeWindow` in `packages/backend/src/dso/worker/index.ts`).
-3. Horizons has no ephemeris after the mission ended. The test fixtures in `packages/backend/tests/dso/providers/horizons.test.ts` show coverage from 2026-04-02 to 2026-04-10.
-   Today is 2026-10-13, so the end of the window is about six months past the data.
-4. Horizons answers with "No ephemeris for target ... prior to ..." or "... after ...". `packages/backend/src/dso/providers/horizons-coverage.ts` reads that and retries once with a clamped window.
-   The first error gives only one bound. The single retry fixes that bound, then fails on the other one. There is no third try.
-5. So each cycle makes 2 Horizons requests, both fail, and the failure is recorded.
-6. With no snapshot on disk, `packages/backend/src/dso/worker/retry-policy.ts` backs off 1, 2, 4, 8, 16 minutes and then caps at 30 minutes, forever.
-   That matches "fails every 30 minutes" in `state/OPEN.md`: 48 cycles a day, 96 Horizons requests a day, about 4 log lines per cycle, 2 of them at WARN or ERROR.
-7. If an old snapshot exists, the backoff does not apply. The loop sleeps about 6 h and still fails each time.
+How it works now (`packages/backend/src/dso/providers/horizons.ts`, `packages/backend/src/dso/providers/horizons-coverage.ts`, `packages/backend/src/dso/worker/ended-state.ts`, `packages/backend/src/dso/worker/index.ts`):
 
-Proposal (not implemented):
-
-1. Add an optional end date to the registry entry, for example `ephemerisEndsAt`. Set it for Artemis II from the Horizons coverage end.
-   Clamp the window end to it in `computeWindow`.
-   One fetch then succeeds and publishes the full historical track.
-2. Once a snapshot covers the end date, `shouldRefreshDsoEntry` returns false for that object. The worker stops asking. Also leave finished objects out of the loop-delay calculation.
-3. Safety net for objects without an end date: let the clamp retry run until both bounds are applied (up to 2 retries).
-   If the parsed upper bound is more than a day in the past, remember it in the manifest and treat the mission as finished.
-   That needs one new optional field on the shared `DsoObjectStatus` type in `packages/contracts/src/dso.ts`.
-4. Use a long cap (6 to 24 h) for "no ephemeris" style errors instead of 30 minutes. They do not heal by waiting a few minutes.
-5. Log the first failure at ERROR and repeats of the same message once per hour with a count, not every cycle.
-6. Stopgap with no code: set `enabled: false` for Artemis II. That is the "disable it or fix it" question in `state/OPEN.md`.
-   It stops the requests and the log lines. The frontend then has no Artemis track unless a snapshot already exists on the volume.
-7. Add cases to `packages/backend/tests/dso/worker/retry-policy.test.ts` for the finished-mission path.
+- The window is clamped at both ends. At most 3 requests per refresh.
+- Data that stopped more than 24 h ago counts as ended. Every check uses the same grace (`EPHEMERIS_ENDED_GRACE_MS`), including `planCoverageRetry`.
+- An ended object is saved in `dso/ended.json` under `CACHE_DIR` with `endedAt`, `markedAt` and `lastCheckedAt`. The worker stops asking and keeps serving the stored ephemeris.
+- About once a week (`DSO_ENDED_RECHECK_MS`, 7 days, a constant) the worker asks again, in case Horizons published more data. New data clears the flag. A re-check that fails for an ordinary reason is logged at WARN and changes nothing in the manifest.
+- `DSO_RETRY_ENDED=1` forces one try per ended object per boot. Unset it afterwards.
+- `GET /health` counts an ended object that still has its ephemeris as `dsoEndedCount`, not as fresh. The per-object `freshnessState` in the manifest and catalog is left as the last publish set it, because the shared type has no `ended` value. See `state/OPEN.md`.
+- Stored ephemeris is never deleted. Older snapshot files are moved to `archive/` (part a).
