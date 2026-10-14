@@ -87,3 +87,13 @@ export function tleBrotliQuality(): number {
   const n = parseInt(raw, 10);
   return Number.isFinite(n) ? Math.min(11, Math.max(1, n)) : 10;
 }
+
+/**
+ * DSO_RETRY_ENDED=1 (or true, yes, on): retry deep-space objects that were marked
+ * as ended, once per boot each. Use it when you know Horizons has new data for a
+ * finished mission, then unset it. Off by default.
+ */
+export function dsoRetryEnded(): boolean {
+  const v = (process.env.DSO_RETRY_ENDED ?? '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(v);
+}

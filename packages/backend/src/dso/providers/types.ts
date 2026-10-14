@@ -37,6 +37,12 @@ export interface ProviderFetchResult {
   fetchedAt: string;
   sourceRevisionAt: string | null;
   samples: ProviderSample[];
+  /**
+   * Set when the provider's data for this target ended more than a day ago, so the
+   * fetch had to be clamped to the data that exists. The worker marks the object as
+   * ended and stops refreshing it. Absent or null for a live target.
+   */
+  coverageEndedAt?: string | null;
 }
 
 export interface DsoProviderAdapter {
