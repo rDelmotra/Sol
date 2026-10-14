@@ -200,6 +200,11 @@ export interface UpdateCycleDeps {
   /** True when Space-Track credentials are set. Unset -> the attempt log is not used. */
   spaceTrackConfigured: () => boolean;
   now: () => number;
+  /**
+   * Start a one-shot timer and return a function that cancels it. The timer must not
+   * keep the process alive. Used for the retry after a Space-Track backoff.
+   */
+  schedule: (fn: () => void, delayMs: number) => () => void;
 }
 
 const defaultUpdateCycleDeps: UpdateCycleDeps = {
@@ -207,7 +212,66 @@ const defaultUpdateCycleDeps: UpdateCycleDeps = {
   fetchCelesTrak: fetchCelesTrakTLEs,
   spaceTrackConfigured: () => Boolean(spacetrackUser() && spacetrackPass()),
   now: () => Date.now(),
+  schedule: (fn, delayMs) => {
+    const timer = setTimeout(fn, delayMs);
+    timer.unref();
+    return () => clearTimeout(timer);
+  },
 };
+
+// ============================================================
+// One-shot retry after a Space-Track backoff
+//
+// When a cycle ends with nothing written (cache stale or missing) and the
+// Space-Track gate is closed, the next login is allowed at a known time (retryAt).
+// Without a timer the cycle would wait for the next 02:00 cron, up to 24 h. So one
+// timer is armed for retryAt and runs the cycle again with the 'cron' trigger (it
+// skips only when the cache is under 1 h old). At most one timer is pending.
+// ============================================================
+
+/** Wake up a little after retryAt so the gate has really opened. */
+const RETRY_SLACK_MS = 1_000;
+/** Never wait less than this, so a gate that is about to open cannot cause a hot loop. */
+const RETRY_MIN_DELAY_MS = 1_000;
+/** setTimeout cannot take more than 2^31 - 1 ms. The backoff cap (6 h) is far below it. */
+const RETRY_MAX_DELAY_MS = 2 ** 31 - 1;
+
+let pendingRetry: { at: number; cancel: () => void } | null = null;
+
+/** When the pending retry is due (epoch ms), or null when none is armed. */
+export function pendingUpdateRetryAt(): number | null {
+  return pendingRetry ? pendingRetry.at : null;
+}
+
+/** Cancel the pending retry, if any. Called after a successful write and on shutdown. */
+export function cancelUpdateRetry(): void {
+  if (!pendingRetry) return;
+  pendingRetry.cancel();
+  pendingRetry = null;
+}
+
+function armUpdateRetry(retryAt: number, deps: UpdateCycleDeps, overrides: Partial<UpdateCycleDeps>): void {
+  // Idempotent: keep the pending timer unless the new time is earlier than it.
+  if (pendingRetry) {
+    if (pendingRetry.at <= retryAt) return;
+    cancelUpdateRetry();
+  }
+
+  const delayMs = Math.min(
+    RETRY_MAX_DELAY_MS,
+    Math.max(RETRY_MIN_DELAY_MS, retryAt - deps.now() + RETRY_SLACK_MS),
+  );
+  const cancel = deps.schedule(() => {
+    pendingRetry = null;
+    logger.info('TLE update retry: the Space-Track wait is over — running the cycle again');
+    runUpdateCycle('cron', overrides).catch((err) => logger.error('TLE update retry error:', err));
+  }, delayMs);
+  pendingRetry = { at: retryAt, cancel };
+  logger.info(
+    `TLE update retry scheduled for ${new Date(retryAt).toISOString()} ` +
+      `(in about ${Math.max(1, Math.round(delayMs / 60_000))} min) — not waiting for the 02:00 cron`,
+  );
+}
 
 /**
  * Run one full update cycle: try Space-Track first, fall back to CelesTrak.
@@ -226,7 +290,8 @@ const defaultUpdateCycleDeps: UpdateCycleDeps = {
  * the wait. While Space-Track is held back, the cycle goes straight to the
  * CelesTrak fallback and the stale cache keeps serving, exactly as it does after
  * a Space-Track failure. The backoff cap is far below the daily cron interval, so
- * it never blocks a whole day.
+ * it never blocks a whole day. If the cycle then writes nothing, one retry timer is
+ * armed for the moment the wait ends (see armUpdateRetry).
  *
  * Size guard (see assessCatalog): a source can answer with success and still send
  * nothing useful (`200 []`, or a page list cut short). A catalog with 0 objects, or
@@ -336,10 +401,21 @@ export async function runUpdateCycle(
     } else {
       logger.warn('All sources failed and no cache exists — API will return 503');
     }
+
+    // Nothing was written. If Space-Track is only waiting out its backoff, come back
+    // when the wait is over instead of waiting for the next 02:00 cron. A gate that is
+    // already open (for example an unwritable attempt log) gets no timer: that would
+    // be a hot loop.
+    if (gated) {
+      const next = checkSpaceTrackGate(deps.now());
+      if (!next.allowed) armUpdateRetry(next.retryAt, deps, overrides);
+    }
     return;
   }
 
   writeCache(enriched);
+  // The cache is fresh again, so a pending retry has nothing left to do.
+  cancelUpdateRetry();
   // The Space-Track attempt counts as a success only once its data is on disk.
   // If anything above threw (parse bug, disk full), the pending record stays a
   // failure and the next login backs off instead of re-downloading at once.
@@ -366,12 +442,18 @@ export async function runUpdateCycle(
   );
 }
 
+/** Returned by scheduleTLEUpdater so a shutdown (or a test) can stop everything it started. */
+export interface TleUpdaterHandle {
+  /** Stop the daily cron job and cancel any pending retry timer. */
+  stop: () => void;
+}
+
 /**
  * Schedule the daily cron job and optionally trigger an immediate fetch.
  *
  * @param runNow - Pass true when the cache is missing or stale at startup.
  */
-export function scheduleTLEUpdater(runNow: boolean): void {
+export function scheduleTLEUpdater(runNow: boolean): TleUpdaterHandle {
   if (runNow) {
     logger.info('Cache missing or stale at startup — triggering immediate fetch');
     runUpdateCycle('boot').catch((err) => logger.error('Startup fetch error:', err));
@@ -384,4 +466,11 @@ export function scheduleTLEUpdater(runNow: boolean): void {
 
   logger.info(`TLE updater scheduled: ${CRON_SCHEDULE} (daily at 02:00 UTC)`);
   job.start();
+
+  return {
+    stop: () => {
+      job.stop();
+      cancelUpdateRetry();
+    },
+  };
 }

@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it, beforeEach, afterEach, mock } from 'node:test';
-import { runUpdateCycle, type UpdateCycleDeps } from '../../src/cron/tle-updater.js';
+import { cancelUpdateRetry, runUpdateCycle, type UpdateCycleDeps } from '../../src/cron/tle-updater.js';
 import { assessCatalog, readCache, readVersion, writeCache } from '../../src/cache/file-cache.js';
 import { readAttemptState, stateOnSuccess } from '../../src/cache/attempt-log.js';
 import { catalogMinRatio } from '../../src/utils/config.js';
@@ -167,6 +167,7 @@ describe('runUpdateCycle — implausible catalogs are refused', () => {
   });
 
   afterEach(() => {
+    cancelUpdateRetry(); // no retry timer outlives its test
     mock.restoreAll();
     if (prevCacheDir === undefined) delete process.env.CACHE_DIR;
     else process.env.CACHE_DIR = prevCacheDir;
