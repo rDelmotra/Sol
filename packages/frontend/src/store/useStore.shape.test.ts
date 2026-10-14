@@ -32,11 +32,7 @@ const STATE_KEYS = [
   'cameraSpeedMps',
   'catalogData',
   'categoryCounts',
-  'clearCluster',
   'closePanels',
-  'clusterItems',
-  'clusterScreenX',
-  'clusterScreenY',
   'colorBy',
   'controlsSheetOpen',
   'countryFilter',
@@ -52,9 +48,6 @@ const STATE_KEYS = [
   'historyCoverage',
   'historyDay',
   'historyLoading',
-  'hoverScreenX',
-  'hoverScreenY',
-  'hoveredName',
   'jumpToSimTime',
   'launchFilter',
   'liveAltitudeKm',
@@ -96,7 +89,6 @@ const STATE_KEYS = [
   'setCameraMode',
   'setCatalogData',
   'setCatalogInfo',
-  'setCluster',
   'setControlsSheetOpen',
   'setCountryFilter',
   'setDsoEphemeris',
@@ -106,7 +98,6 @@ const STATE_KEYS = [
   'setHistoryCoverage',
   'setHistoryDay',
   'setHistoryLoading',
-  'setHover',
   'setLiveKinematics',
   'setLoadingError',
   'setLoadingPhase',
@@ -201,12 +192,6 @@ const INITIAL_VALUES: Record<string, unknown> = {
   dsoEphemerisById: {},
   selectedDso: null,
   dsoLabelPositions: [],
-  hoveredName: null,
-  hoverScreenX: 0,
-  hoverScreenY: 0,
-  clusterItems: [],
-  clusterScreenX: 0,
-  clusterScreenY: 0,
   observerLocation: null,
   observerPlaceName: null,
   nextPasses: [],
@@ -256,7 +241,7 @@ const INITIAL_VALUES: Record<string, unknown> = {
 
 test('store exposes exactly today\'s keys (state + actions)', () => {
   assert.deepEqual(Object.keys(initial).sort(), [...STATE_KEYS].sort());
-  assert.equal(STATE_KEYS.length, 147);
+  assert.equal(STATE_KEYS.length, 138);
 });
 
 test('initial values of every non-function key', () => {

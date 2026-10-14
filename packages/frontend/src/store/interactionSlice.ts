@@ -10,12 +10,6 @@ export const createInteractionSlice: Slice<InteractionSlice> = (set) => ({
   liveSpeedKmS: null,
   showOrbitTrail: false,
   selectedDso: null,
-  hoveredName: null,
-  hoverScreenX: 0,
-  hoverScreenY: 0,
-  clusterItems: [],
-  clusterScreenX: 0,
-  clusterScreenY: 0,
   setCameraMode: (mode) => set({ cameraMode: mode }),
   setTrackingStyle: (style) => set({ trackingStyle: style }),
   setSelectedSatellite: (index, data, altitude) =>
@@ -55,17 +49,4 @@ export const createInteractionSlice: Slice<InteractionSlice> = (set) => ({
         : { liveAltitudeKm: altitudeKm, liveSpeedKmS: speedKmS },
     ),
   setShowOrbitTrail: (show) => set({ showOrbitTrail: show }),
-  setHover: (name, screenX, screenY) =>
-    set({
-      hoveredName: name,
-      hoverScreenX: screenX ?? 0,
-      hoverScreenY: screenY ?? 0,
-    }),
-  setCluster: (items, screenX, screenY) =>
-    set({
-      clusterItems: items,
-      clusterScreenX: screenX,
-      clusterScreenY: screenY,
-    }),
-  clearCluster: () => set({ clusterItems: [] }),
 });

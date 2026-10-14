@@ -176,12 +176,6 @@ export interface InteractionSlice {
   liveSpeedKmS: number | null;
   showOrbitTrail: boolean;
   selectedDso: DsoObject | null;
-  hoveredName: string | null;
-  hoverScreenX: number;
-  hoverScreenY: number;
-  clusterItems: { index: number; data: EnrichedTLEObject; altitude: number }[];
-  clusterScreenX: number;
-  clusterScreenY: number;
   setCameraMode: (mode: CameraMode) => void;
   setTrackingStyle: (style: TrackingStyle) => void;
   /**
@@ -198,9 +192,6 @@ export interface InteractionSlice {
   /** Skips the write when both values are unchanged (runs ~4×/s). */
   setLiveKinematics: (altitudeKm: number | null, speedKmS: number | null) => void;
   setShowOrbitTrail: (show: boolean) => void;
-  setHover: (name: string | null, screenX?: number, screenY?: number) => void;
-  setCluster: (items: { index: number; data: EnrichedTLEObject; altitude: number }[], screenX: number, screenY: number) => void;
-  clearCluster: () => void;
 }
 
 export interface ObserverSlice {

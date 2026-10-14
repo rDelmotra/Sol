@@ -7,16 +7,10 @@ import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { useStore, isDomeView } from '../../store/useStore';
 import { RETICLE_RING_RADIUS_PX } from '../../constants/reticle';
 import { dsoIndexOf } from '../../data/dso-index';
-import { altitudeKmFromEr } from '@orbitwatch/orbital-core';
-import { sceneToSourceInto, type SourceVec } from '../scene/frames';
-
-// Scratch for scene→source conversion (altitude needs the z = polar-axis frame).
-const _srcScratch: SourceVec = { x: 0, y: 0, z: 0 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const CLUSTER_RADIUS_SQ = 0.0078 * 0.0078; // ~50 km in scene units, squared
-const HOVER_THROTTLE_MS = 100;
 /** Wheel zoom feel: FOV factor = exp(deltaY · k). Scroll up (deltaY<0) zooms in. */
 const WHEEL_ZOOM_K = 0.0014;
 /** Reticle soft-lock pick cadence (a GPU read-back stall, so throttled). ~10 Hz. */
@@ -46,7 +40,6 @@ export class InputManager {
   private pointerDownPos: { x: number; y: number } | null = null;
   private joyrideLookPointerPos: { x: number; y: number } | null = null;
   private domeLookPointerPos: { x: number; y: number } | null = null;
-  private lastHoverTime = 0;
   private lastReticlePickAt = -Infinity;
 
   // Live pointers (by id) + last pinch separation — for two-finger dome zoom.
@@ -284,43 +277,6 @@ export class InputManager {
         this.pointerDownPos = null;
       }
     }
-
-    const now = performance.now();
-    if (now - this.lastHoverTime < HOVER_THROTTLE_MS) return;
-    this.lastHoverTime = now;
-
-    if (!this.gpuPicker || !this.firstPositionReceived) return;
-
-    // Planetarium / empty catalog — nothing to pick; don't index an empty catalog.
-    if (this.catalogData.length === 0) {
-      this.canvas.style.cursor = '';
-      useStore.getState().setHover(null);
-      return;
-    }
-
-    const rect = this.canvas.getBoundingClientRect();
-    const screenX = e.clientX - rect.left;
-    const screenY = e.clientY - rect.top;
-
-    this.syncPickerUniforms();
-    const index = this.gpuPicker.pickSingle(screenX, screenY, rect.width, rect.height);
-
-    if (index !== null && index < this.catalogData.length) {
-      // TLE hover — UI-local store write
-      this.canvas.style.cursor = 'pointer';
-      useStore.getState().setHover(this.catalogData[index].name, e.clientX, e.clientY);
-    } else if (index !== null && index >= this.catalogData.length) {
-      // DSO hover — UI-local store write
-      const dsoIndex = index - this.catalogData.length;
-      const dsoObjects = useStore.getState().dsoObjects;
-      if (dsoIndex < dsoObjects.length) {
-        this.canvas.style.cursor = 'pointer';
-        useStore.getState().setHover(dsoObjects[dsoIndex].name, e.clientX, e.clientY);
-      }
-    } else {
-      this.canvas.style.cursor = '';
-      useStore.getState().setHover(null);
-    }
   };
 
   private handlePointerUp = (e: PointerEvent): void => {
@@ -353,7 +309,6 @@ export class InputManager {
 
     if (gpuHits.length === 0) {
       this.onDeselect();
-      store.clearCluster();
       return;
     }
 
@@ -363,13 +318,14 @@ export class InputManager {
     if (gpuHits[0] >= this.catalogData.length) {
       const dsoIndex = gpuHits[0] - this.catalogData.length;
       if (dsoIndex < store.dsoObjects.length) {
-        store.clearCluster();
         this.onSelectDso(dsoIndex);
       }
       return;
     }
 
-    // TLE hit path — cluster detection
+    // TLE hit path. A click selects only an isolated object: if another visible
+    // object sits within CLUSTER_RADIUS of the hit, nothing is selected. (This
+    // used to open the cluster popup, which went away with the old overlay.)
     const tleHits = gpuHits.filter((i) => i < this.catalogData.length);
     const geom = this.satelliteRenderer.mesh.geometry;
     const posArr = geom.getAttribute('currentPosition') as THREE.BufferAttribute;
@@ -392,21 +348,8 @@ export class InputManager {
     }
 
     const allIndices = Array.from(clusterSet);
-    allIndices.sort((a, b) => sizeArr.getX(b) - sizeArr.getX(a));
-
     if (allIndices.length === 1) {
-      store.clearCluster();
       this.onSelectTle(allIndices[0]);
-      return;
     }
-
-    const items = allIndices.map((i) => {
-      const px = posArr.getX(i);
-      const py = posArr.getY(i);
-      const pz = posArr.getZ(i);
-      const alt = Math.round(altitudeKmFromEr(sceneToSourceInto(_srcScratch, px, py, pz)));
-      return { index: i, data: this.catalogData[i], altitude: alt };
-    });
-    store.setCluster(items, e.clientX, e.clientY);
   };
 }
