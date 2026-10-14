@@ -89,6 +89,19 @@ export function tleBrotliQuality(): number {
 }
 
 /**
+ * CATALOG_MIN_RATIO: the smallest new catalog the updater will accept, as a share
+ * of the cached one. A number from 0 to 1, default 0.5. 0 turns the size check off
+ * (an empty catalog is still refused). Use it only if the real catalog shrank by
+ * more than half on purpose, then unset it.
+ */
+export function catalogMinRatio(): number {
+  const raw = process.env.CATALOG_MIN_RATIO;
+  if (raw === undefined || raw.trim() === '') return 0.5;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.5;
+}
+
+/**
  * DSO_RETRY_ENDED=1 (or true, yes, on): retry deep-space objects that were marked
  * as ended, once per boot each. Use it when you know Horizons has new data for a
  * finished mission, then unset it. Off by default.

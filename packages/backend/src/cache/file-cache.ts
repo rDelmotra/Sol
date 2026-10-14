@@ -99,6 +99,47 @@ export function shouldSkipRefresh(
   return ageMs < (trigger === 'cron' ? cronMinAgeMs : ttlMs);
 }
 
+/** A new catalog smaller than this share of the cached one is refused. */
+export const MIN_CATALOG_RATIO = 0.5;
+
+export interface CatalogVerdict {
+  ok: boolean;
+  /** One plain sentence. Goes into the log when the catalog is refused. */
+  reason: string;
+}
+
+/**
+ * Pure policy: may a freshly fetched catalog replace the cached one?
+ *  - 0 objects                       -> never (Space-Track answers `200 []` on a
+ *                                       bad day; a cut-off page list looks the same)
+ *  - no cache, or an empty cache     -> any non-empty catalog (first boot, dev mode)
+ *  - cache exists                    -> refused when it has fewer than `minRatio`
+ *                                       (default 50%) of the cached object count
+ * `cachedCount` is null when there is no readable cache.
+ */
+export function assessCatalog(
+  newCount: number,
+  cachedCount: number | null,
+  minRatio: number = MIN_CATALOG_RATIO,
+): CatalogVerdict {
+  if (!Number.isFinite(newCount) || newCount <= 0) {
+    return { ok: false, reason: 'the new catalog has 0 objects' };
+  }
+  if (cachedCount === null || !(cachedCount > 0)) {
+    return { ok: true, reason: 'no cached catalog to compare with' };
+  }
+  if (newCount < cachedCount * minRatio) {
+    const pct = ((newCount / cachedCount) * 100).toFixed(1);
+    return {
+      ok: false,
+      reason:
+        `the new catalog has ${newCount} objects, ${pct}% of the ${cachedCount} cached ` +
+        `(minimum ${(minRatio * 100).toFixed(0)}%)`,
+    };
+  }
+  return { ok: true, reason: `the new catalog has ${newCount} objects, the cache has ${cachedCount}` };
+}
+
 /** Returns true if the cache file exists AND its mtime is within the TTL. */
 export function isCacheFresh(): boolean {
   const age = cacheAgeMs();

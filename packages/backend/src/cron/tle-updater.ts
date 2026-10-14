@@ -9,6 +9,7 @@ import {
   readCache,
   cacheAgeMs,
   shouldSkipRefresh,
+  assessCatalog,
   type UpdateTrigger,
 } from '../cache/file-cache.js';
 import { primeTlePayload } from '../cache/tle-payload-cache.js';
@@ -19,7 +20,7 @@ import {
   ClassifiableObject,
 } from '../types/index.js';
 import { logger } from '../utils/logger.js';
-import { spacetrackUser, spacetrackPass } from '../utils/config.js';
+import { spacetrackUser, spacetrackPass, catalogMinRatio } from '../utils/config.js';
 import {
   beginSpaceTrackAttempt,
   checkSpaceTrackGate,
@@ -181,6 +182,14 @@ function buildFromCelesTrak(gpElements: CelesTrakGPElement[]): EnrichedTLEObject
 // Main update cycle
 // ============================================================
 
+/** A source answered, but the catalog is implausible (empty or far too small). */
+class CatalogRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CatalogRejectedError';
+  }
+}
+
 /**
  * Everything runUpdateCycle talks to the outside world through. Tests inject
  * fakes (no network, no credentials, fixed clock); production uses the defaults.
@@ -218,6 +227,14 @@ const defaultUpdateCycleDeps: UpdateCycleDeps = {
  * CelesTrak fallback and the stale cache keeps serving, exactly as it does after
  * a Space-Track failure. The backoff cap is far below the daily cron interval, so
  * it never blocks a whole day.
+ *
+ * Size guard (see assessCatalog): a source can answer with success and still send
+ * nothing useful (`200 []`, or a page list cut short). A catalog with 0 objects, or
+ * with under 50% of the cached object count (CATALOG_MIN_RATIO), is refused. A
+ * refused Space-Track answer is logged at ERROR, recorded as a Space-Track failure
+ * (so the backoff applies) and the cycle falls through to CelesTrak. If CelesTrak is
+ * refused or fails too, the cycle returns without touching the cache, version.json,
+ * the payload cache or the history DB. With no cache, any non-empty catalog is taken.
  */
 export async function runUpdateCycle(
   trigger: UpdateTrigger = 'boot',
@@ -244,6 +261,15 @@ export async function runUpdateCycle(
   // Set when a Space-Track login really starts; settled (success/failure) below.
   let attempt: SpaceTrackAttempt | null = null;
 
+  // Size of the catalog on disk, read once and only if a fetch returns data (it is a
+  // 25 MB parse). null = no readable cache. Used to refuse implausible results.
+  let cachedCount: number | null | undefined;
+  const cachedCatalogCount = (): number | null => {
+    if (cachedCount === undefined) cachedCount = readCache()?.length ?? null;
+    return cachedCount;
+  };
+  const minRatio = catalogMinRatio();
+
   // ── Primary: Space-Track ────────────────────────────────────────────────
   // The attempt log applies only when credentials are set; without them the
   // fetch throws before any network call, so there is nothing to be polite about.
@@ -257,15 +283,24 @@ export async function runUpdateCycle(
     try {
       logger.info('Attempting Space-Track fetch (primary source)');
       const { gp } = await deps.fetchSpaceTrack();
-      enriched = buildFromSpaceTrack(gp);
+      const built = buildFromSpaceTrack(gp);
+      const verdict = assessCatalog(built.length, cachedCatalogCount(), minRatio);
+      if (!verdict.ok) {
+        throw new CatalogRejectedError(
+          `Space-Track catalog refused (${gp.length} records fetched, ${built.length} usable): ${verdict.reason}`,
+        );
+      }
+      enriched = built;
       rawGp = gp;
       source = 'space-track';
     } catch (primaryErr) {
+      // A refused catalog counts as a Space-Track failure, so the backoff applies.
       if (attempt) recordSpaceTrackFailure(attempt, deps.now());
       attempt = null;
       logger.error(
-        'Space-Track fetch failed — falling back to CelesTrak:',
-        (primaryErr as Error).message,
+        primaryErr instanceof CatalogRejectedError
+          ? `${primaryErr.message} — falling back to CelesTrak`
+          : `Space-Track fetch failed — falling back to CelesTrak: ${(primaryErr as Error).message}`,
       );
     }
   }
@@ -275,9 +310,17 @@ export async function runUpdateCycle(
     try {
       logger.info('Attempting CelesTrak fetch (fallback source)');
       const gp = await deps.fetchCelesTrak();
-      enriched = buildFromCelesTrak(gp);
-      rawGp = gp;
-      source = 'celestrak';
+      const built = buildFromCelesTrak(gp);
+      const verdict = assessCatalog(built.length, cachedCatalogCount(), minRatio);
+      if (verdict.ok) {
+        enriched = built;
+        rawGp = gp;
+        source = 'celestrak';
+      } else {
+        logger.error(
+          `CelesTrak catalog refused (${gp.length} records fetched, ${built.length} usable): ${verdict.reason}`,
+        );
+      }
     } catch (fallbackErr) {
       logger.error('CelesTrak fallback also failed:', (fallbackErr as Error).message);
       // Both sources failed — preserve existing cache.
@@ -285,9 +328,11 @@ export async function runUpdateCycle(
   }
 
   if (!enriched) {
-    const existing = readCache();
-    if (existing) {
-      logger.warn(`All sources failed — continuing to serve stale cache (${existing.length} objects)`);
+    // Nothing usable: no writeCache, no payload warm-up, no history ingest. The
+    // cache on disk (and its version.json) stays exactly as it was.
+    const existing = cachedCatalogCount();
+    if (existing !== null) {
+      logger.warn(`All sources failed or were refused — continuing to serve stale cache (${existing} objects)`);
     } else {
       logger.warn('All sources failed and no cache exists — API will return 503');
     }

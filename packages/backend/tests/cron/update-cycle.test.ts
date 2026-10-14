@@ -16,6 +16,7 @@ import {
   stateOnSuccess,
   writeAttemptState,
 } from '../../src/cache/attempt-log.js';
+import { celesTrakGp, spaceTrackGp } from './gp-fixtures.js';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -39,12 +40,12 @@ describe('runUpdateCycle — Space-Track attempt log', () => {
       fetchSpaceTrack: async () => {
         stCalls++;
         if (st === 'fail') throw new Error('Space-Track login rejected (HTTP 500)');
-        return { gp: [] };
+        return { gp: spaceTrackGp(3) };
       },
       fetchCelesTrak: async () => {
         ctCalls++;
         if (ct === 'fail') throw new Error('CelesTrak fetch failed after 3 attempts');
-        return [];
+        return celesTrakGp(3);
       },
       ...over,
     };
@@ -119,7 +120,7 @@ describe('runUpdateCycle — Space-Track attempt log', () => {
     await runUpdateCycle('boot', deps('fail', 'ok'));
     assert.equal(stCalls, 1);
     assert.equal(hasCache(), true);
-    assert.ok(lines.some((l) => l.includes('TLE update complete: 0 objects from celestrak')));
+    assert.ok(lines.some((l) => l.includes('TLE update complete: 3 objects from celestrak')));
     // a CelesTrak success must not reset the Space-Track failure count
     assert.equal(readAttemptState()?.consecutiveFailures, 1);
   });
@@ -218,7 +219,7 @@ describe('runUpdateCycle — Space-Track attempt log', () => {
       deps('ok', 'fail', {
         fetchSpaceTrack: async () => {
           seenDuringFetch = readAttemptState();
-          return { gp: [] };
+          return { gp: spaceTrackGp(3) };
         },
       }),
     );
