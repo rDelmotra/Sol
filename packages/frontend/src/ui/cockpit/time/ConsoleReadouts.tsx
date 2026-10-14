@@ -1,7 +1,7 @@
 import { useStore } from '../../../store/useStore';
 import { LIVE_EPSILON_MS } from '../../../time/time-fields';
 import { groupInt } from '../format';
-import { formatTimeDelta } from './time-console';
+import { catalogCue, formatTimeDelta } from './time-console';
 
 /** Signed "FROM NOW" line, shown only while the sim clock is displaced. */
 export function DeltaLine({ open }: { open: boolean }) {
@@ -15,7 +15,18 @@ export function DeltaLine({ open }: { open: boolean }) {
   );
 }
 
-/** MODE / TRACKING lines. */
+/** "LOADING DAY…" / "NO CATALOG FOR THIS DATE" under TRACKING; nothing when the catalog is live. Still: no animation (D10). */
+function CatalogCueLine() {
+  const historyLoading = useStore((s) => s.historyLoading);
+  const planetarium = useStore((s) => s.planetarium);
+  const cue = catalogCue({ historyLoading, planetarium });
+  if (!cue) return null;
+  return cue.tone === 'warn'
+    ? <div style={{ color: 'var(--hud-warn)', opacity: 0.9 }}>{cue.text}</div>
+    : <div>{cue.text}</div>;
+}
+
+/** MODE / TRACKING lines, plus the catalog cue while the console is open. */
 export function StatusLines({ open }: { open: boolean }) {
   const viewMode = useStore((s) => s.viewMode);
   const simRate = useStore((s) => s.simRate);
@@ -24,6 +35,7 @@ export function StatusLines({ open }: { open: boolean }) {
     <>
       <div style={{ marginTop: open ? 6 : 0 }}>MODE {viewMode.toUpperCase()} · {simRate}×</div>
       <div>TRACKING {groupInt(objectCount)} OBJ</div>
+      {open && <CatalogCueLine />}
     </>
   );
 }

@@ -17,6 +17,23 @@ export function formatTimeDelta(simMs: number, wallMs: number): string {
   return days > 0 ? `${sign}${days}D ${pad(h)}:${pad(m)}` : `${sign}${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
+/** A status line under TRACKING: its text and how loud it is (dim = inherit, warn = amber). */
+export interface CatalogCue {
+  text: string;
+  tone: 'dim' | 'warn';
+}
+
+/**
+ * Why the sky may look empty while reviewing a date. Loading wins over "no
+ * catalog": while a past day is being fetched the planetarium flag can still be
+ * on from the last hidden date. Null in the normal case, so no line is drawn.
+ */
+export function catalogCue(flags: { historyLoading: boolean; planetarium: boolean }): CatalogCue | null {
+  if (flags.historyLoading) return { text: 'LOADING DAY…', tone: 'dim' };
+  if (flags.planetarium) return { text: 'NO CATALOG FOR THIS DATE', tone: 'warn' };
+  return null;
+}
+
 /** The six UTC digit groups of a time, zero-padded. */
 export function utcFieldValues(ms: number): Record<TimeField, string> {
   const d = new Date(ms);
