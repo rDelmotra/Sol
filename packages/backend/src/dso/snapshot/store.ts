@@ -15,8 +15,12 @@ import type {
 } from '@orbitwatch/contracts';
 import { atomicWriteJson } from '../../utils/atomic-write.js';
 import { dsoCacheRoot } from '../../utils/paths.js';
+import { logger } from '../../utils/logger.js';
 
-const SNAPSHOT_RETENTION_COUNT = 3;
+/** How many snapshot files per object stay in the live folder. Older ones are archived, not deleted. */
+export const SNAPSHOT_RETENTION_COUNT = 3;
+/** Sub-folder of `snapshots/<id>/` that receives older snapshots. Readers never look inside it. */
+export const SNAPSHOT_ARCHIVE_DIR = 'archive';
 
 export function getDsoCacheRoot(): string {
   return dsoCacheRoot();
@@ -153,27 +157,81 @@ export function buildDsoCatalog(
   };
 }
 
-async function pruneSnapshotGenerations(dsoId: DsoId): Promise<void> {
-  const snapshotDir = path.join(getDsoSnapshotsRoot(), dsoId);
-
-  try {
-    const files = await fs.readdir(snapshotDir);
-    const snapshotFiles = files
-      .filter((fileName) => fileName.endsWith('.json'))
-      .sort((left, right) => right.localeCompare(left));
-
-    const filesToDelete = snapshotFiles.slice(SNAPSHOT_RETENTION_COUNT);
-    
-    // Also prune any orphaned .tmp files left over from aborted atomic writes
-    const tmpFiles = files.filter((fileName) => fileName.endsWith('.tmp'));
-    filesToDelete.push(...tmpFiles);
-
-    await Promise.all(filesToDelete.map((fileName) => fs.unlink(path.join(snapshotDir, fileName))));
-  } catch (error) {
-    const nodeError = error as NodeJS.ErrnoException;
-    if (nodeError.code !== 'ENOENT') {
+/** A file name that is free in `dir`: `x.json`, then `x.1.json`, `x.2.json` ... Never an existing name. */
+async function freeArchiveName(dir: string, fileName: string): Promise<string> {
+  const ext = path.extname(fileName);
+  const stem = ext ? fileName.slice(0, -ext.length) : fileName;
+  for (let n = 0; n < 10_000; n++) {
+    const candidate = n === 0 ? fileName : `${stem}.${n}${ext}`;
+    try {
+      await fs.lstat(path.join(dir, candidate));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return candidate;
       throw error;
     }
+  }
+  throw new Error(`no free archive name for ${fileName}`);
+}
+
+/**
+ * Keep the newest SNAPSHOT_RETENTION_COUNT snapshot files of one object in
+ * `snapshots/<id>/` and MOVE the older ones to `snapshots/<id>/archive/` (a rename
+ * on the same volume). Nothing is deleted, and an existing archive file is never
+ * overwritten (a clash gets a numeric suffix). The archive is never pruned and no
+ * reader looks inside it.
+ *
+ * Orphaned `.tmp` files from an aborted atomic write are incomplete, so they are
+ * still removed.
+ *
+ * Housekeeping only: a failure here is logged and leaves the file where it is (it
+ * is retried on the next publish). It must never turn a published snapshot into
+ * a recorded refresh failure.
+ */
+export async function pruneSnapshotGenerations(dsoId: DsoId): Promise<void> {
+  const snapshotDir = path.join(getDsoSnapshotsRoot(), dsoId);
+
+  let files: string[];
+  try {
+    files = await fs.readdir(snapshotDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    logger.warn(`DSO snapshot housekeeping could not list ${dsoId} (${(error as Error).message})`);
+    return;
+  }
+
+  for (const fileName of files.filter((name) => name.endsWith('.tmp'))) {
+    try {
+      await fs.unlink(path.join(snapshotDir, fileName));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn(`DSO snapshot housekeeping could not remove ${dsoId}/${fileName} (${(error as Error).message})`);
+      }
+    }
+  }
+
+  const older = files
+    .filter((name) => name.endsWith('.json'))
+    .sort((left, right) => right.localeCompare(left))
+    .slice(SNAPSHOT_RETENTION_COUNT);
+  if (older.length === 0) return;
+
+  const archiveDir = path.join(snapshotDir, SNAPSHOT_ARCHIVE_DIR);
+  let archived = 0;
+  try {
+    await fs.mkdir(archiveDir, { recursive: true });
+    for (const fileName of older) {
+      const target = await freeArchiveName(archiveDir, fileName);
+      await fs.rename(path.join(snapshotDir, fileName), path.join(archiveDir, target));
+      archived += 1;
+    }
+  } catch (error) {
+    logger.warn(
+      `DSO snapshot housekeeping stopped for ${dsoId} (${(error as Error).message}); ` +
+        `${older.length - archived} older file(s) stay in place and are retried next publish`,
+    );
+  }
+  if (archived > 0) {
+    logger.info(`DSO snapshots archived: dsoId=${dsoId} moved=${archived} (kept in ${SNAPSHOT_ARCHIVE_DIR}/, never pruned)`);
   }
 }
 

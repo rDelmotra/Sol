@@ -29,7 +29,7 @@ Everything below is under `CACHE_DIR` (the 500 MB volume) unless noted.
 | `swpc-cache.json` | `packages/backend/src/cache/swpc-cache.ts` | a few KB | None. Rewritten at most every 12 h. |
 | `gazetteer-cache.json` | `packages/backend/src/cache/gazetteer-cache.ts` | about 1 to 2 MB (estimate, about 7.3k places) | None. Rewritten every 30 days. |
 | `dso/catalog.json`, `dso/manifest.json` | `packages/backend/src/dso/snapshot/store.ts` | a few KB each | None. But both are rewritten on every worker loop, even when nothing changed. |
-| `dso/snapshots/<id>/<version>.json` | `publishDsoSnapshot` in the same file | about 0.2 MB per Artemis II file (estimate: about 1,300 samples at about 150 bytes) | Bounded. The code keeps the newest 3 per object and removes older ones (existing behaviour). |
+| `dso/snapshots/<id>/<version>.json` | `publishDsoSnapshot` in the same file | about 0.2 MB per Artemis II file (estimate: about 1,300 samples at about 150 bytes) | Live folder is bounded at the newest 3 per object. Older files are moved to `archive/` next to them and never deleted (about 0.8 MB a day per live object at the 6 hour refresh, estimate). |
 | `history/raw/YYYY-MM-DD.json.gz` | `writeRawArchive` in `packages/backend/src/history/archive/raw-writer.ts` | 4.6 MB | **+4.6 MB per day. Nothing ever prunes it.** |
 
 Not on the volume:

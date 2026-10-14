@@ -47,6 +47,7 @@ The dead-code pass after the swap removed the old keyword query engine, `fuse.js
 - `GET /api/tle/visual` has no negative cache. While CelesTrak is down, every request starts a new 3-try fetch.
 - The NL compiler cache and gap log live in `<backend>/data`, not on the volume. The gap log has no rotation.
 - Unpruned `.tmp` files from a crashed write (cache, raw archive) stay on the volume.
+- **The DSO snapshot archive only grows, on purpose.** The worker keeps the newest 3 snapshots per object in `<CACHE_DIR>/dso/snapshots/<id>/` and moves older ones into its `archive/` sub-folder. Nothing deletes or prunes `archive/`, so no data is lost. Readers never look inside it. One Artemis II file is about 0.2 MB (estimate), so at the 6 hour refresh an object adds about 0.8 MB a day while it is live. Code: `packages/backend/src/dso/snapshot/store.ts`. Watch `GET /health` (`disk`).
 - The gzip copy of `/api/tle/all` is still built with the sync `gzipSync` (about 0.5 s on the fake catalog), at boot and after each daily fetch. The brotli copy is async. `/api/history/at` builds its day snapshots with the same sync gzip and has no brotli yet.
 - A missing `/assets/...` file falls through to the SPA fallback and returns `index.html` with status 200. A tab left open across a deploy that lazy-loads a removed chunk gets HTML instead of a clean 404.
 
