@@ -17,14 +17,62 @@ export interface BootStep {
   run: () => void | Promise<void>;
 }
 
-const reportDisk: BootStep = {
-  name: 'disk-usage',
-  async run() {
-    // Visibility only: log how full the data volume is (WARN >= 75%, ERROR >= 90%).
-    // Never throws, never deletes.
-    await logDiskUsage('boot');
-  },
-};
+/** How long the boot disk report may take before it is given up on. */
+export const DISK_REPORT_TIMEOUT_MS = 5_000;
+
+/**
+ * Start the disk usage report and return a promise that NEVER rejects and settles
+ * within `timeoutMs` at the latest, even when the filesystem call hangs. The boot
+ * step does not wait for it. Visibility only: it logs, it never deletes.
+ */
+export function startDiskReport(
+  logDisk: () => Promise<unknown> = () => logDiskUsage('boot'),
+  timeoutMs: number = DISK_REPORT_TIMEOUT_MS,
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      logger.warn(`Disk usage check (boot) did not finish in ${timeoutMs} ms — giving up on it`);
+      resolve();
+    }, timeoutMs);
+    timer.unref();
+
+    let work: Promise<unknown>;
+    try {
+      work = Promise.resolve(logDisk());
+    } catch (err) {
+      work = Promise.reject(err);
+    }
+    work.then(
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      (err) => {
+        clearTimeout(timer);
+        logger.warn(`Disk usage check (boot) failed: ${(err as Error)?.message ?? String(err)}`);
+        resolve();
+      },
+    );
+  });
+}
+
+/**
+ * The disk report as a boot step: fire and forget. It returns at once, so a hung
+ * statfs can never delay the steps around it (above all the TLE updater).
+ */
+export function makeDiskReportStep(
+  logDisk?: () => Promise<unknown>,
+  timeoutMs?: number,
+): BootStep {
+  return {
+    name: 'disk-usage',
+    run() {
+      void startDiskReport(logDisk, timeoutMs);
+    },
+  };
+}
+
+const reportDisk: BootStep = makeDiskReportStep();
 
 const warmEnrichment: BootStep = {
   name: 'enrichment',
@@ -104,12 +152,14 @@ const analyticSnapshot: BootStep = {
   },
 };
 
+// The disk report runs LAST and is not awaited: nothing may wait on the filesystem
+// before the TLE updater is scheduled.
 export const BOOT_STEPS: readonly BootStep[] = [
-  reportDisk,
   warmEnrichment,
   initHistoryDb,
   tleFreshness,
   analyticSnapshot,
+  reportDisk,
 ];
 
 /** Runs the startup steps in order. No error handling here: a throw propagates. */
