@@ -284,6 +284,9 @@ export class GPUPicker {
    */
   setCatalogSize(catalogSize: number): void {
     this.catalogSize = catalogSize;
+    // Empty catalog (planetarium): the hidden point cloud still holds the old pick IDs,
+    // which would collide with the DSO ID range that now starts at 0.
+    this.pickMesh.visible = catalogSize > 0;
   }
 
   dispose(): void {

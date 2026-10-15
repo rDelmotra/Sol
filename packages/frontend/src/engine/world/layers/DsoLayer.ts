@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import { DsoRenderer } from '../../DsoRenderer';
 import { DsoWorkerClient } from '../../dso/DsoWorkerClient';
+import { resyncDsoCatalog } from '../../dso/dso-resync';
 import { useStore } from '../../../store/useStore';
 import type { DsoObject } from '../../../data/dso-types';
 import { dsoIndexOf } from '../../../data/dso-index';
@@ -37,8 +38,6 @@ export class DsoLayer implements Layer {
   private callbacks: DsoLayerCallbacks | null = null;
   private dsoUnsub: (() => void) | null = null;
   private dsoEphemerisUnsub: (() => void) | null = null;
-  /** True while DSOs are hidden for a historical (past) time-scrub. */
-  private hidden = false;
 
   /**
    * The DSO renderer, or null if init hasn't run / failed. Nullable on purpose:
@@ -105,16 +104,22 @@ export class DsoLayer implements Layer {
   }
 
   /** Rebuild DSO geometry + picker registration + worker ids for a catalog. */
-  private syncCatalog(dsoObjects: DsoObject[]): void {
-    if (!this._renderer || !this.callbacks || this.hidden) return;
-    this._renderer.init(dsoObjects, this.callbacks.getTleCount());
-    this.callbacks.onDsoGeometry(this._renderer.geometry, dsoObjects.length);
-    this.client?.syncIds(dsoObjects.map((dso) => dso.dsoId));
-    if (useStore.getState().showOrbitTrail) this.callbacks.onRefreshTrail();
+  private syncCatalog(dsoObjects: DsoObject[], refreshTrail = true): void {
+    if (!this._renderer || !this.callbacks) return;
+    resyncDsoCatalog(
+      {
+        renderer: this._renderer,
+        client: this.client,
+        getTleCount: this.callbacks.getTleCount,
+        onDsoGeometry: this.callbacks.onDsoGeometry,
+      },
+      dsoObjects,
+    );
+    if (refreshTrail && useStore.getState().showOrbitTrail) this.callbacks.onRefreshTrail();
   }
 
   update(frame: FrameContext): void {
-    if (!this._renderer || this.hidden) return;
+    if (!this._renderer) return;
 
     this.client?.tick(frame.nowMs);
     this._renderer.updateUniforms(frame.pixelRatio);
@@ -160,25 +165,15 @@ export class DsoLayer implements Layer {
   }
 
   /**
-   * Hide/show DSOs for a historical time-scrub. DSOs are current missions whose
-   * ephemeris only covers ~now, and the unified TLE/DSO pick-ID space is keyed to
-   * the TLE count (which differs per historical day), so reviewing the past hides
-   * them: the point cloud goes invisible, ticks + label projection are skipped,
-   * and the DSO pick geometry is pulled from the picker (onDsoGeometry(_, 0)).
-   * Restoring re-syncs geometry + picker + worker ids from the current store, so
-   * DSO pick IDs re-encode against the restored live TLE count.
+   * The TLE catalog was swapped (live, a historical day, or emptied for the
+   * planetarium). DSO pick IDs are encoded above the TLE count, so re-encode them
+   * against the new count and re-register the pick geometry + worker ids. DSOs are
+   * never hidden here: whether one is drawn depends only on its own ephemeris
+   * window and the sim time (the worker's visibleFlags). The caller refreshes the
+   * orbit trail, so this does not. No-op before {@link activate}.
    */
-  setHidden(hidden: boolean): void {
-    if (hidden === this.hidden) return;
-    this.hidden = hidden;
-    if (this._renderer) this._renderer.mesh.visible = !hidden;
-
-    if (hidden) {
-      if (this._renderer) this.callbacks?.onDsoGeometry(this._renderer.geometry, 0);
-      useStore.getState().setDsoLabelPositions([]);
-    } else {
-      this.syncCatalog(useStore.getState().dsoObjects);
-    }
+  resyncForCatalog(): void {
+    this.syncCatalog(useStore.getState().dsoObjects, false);
   }
 
   dispose(): void {

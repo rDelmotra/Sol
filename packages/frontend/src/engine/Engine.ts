@@ -147,6 +147,10 @@ export class Engine {
         onCatalogSwapped: (catalog) => {
           this.inputManager?.setCatalogData(catalog);
           this.gpuPicker?.setCatalogSize(catalog.length);
+          // DSO pick IDs sit above the TLE count → re-encode against the new count.
+          this.world.runLayerCommand(this.dsoLayer, 'resyncForCatalog', () =>
+            this.dsoLayer.resyncForCatalog(),
+          );
         },
         satellitesSetHidden: (hidden) =>
           this.world.runLayerCommand(this.satellitesLayer, 'setHidden', () =>
@@ -159,10 +163,6 @@ export class Engine {
         satellitesSnap: () =>
           this.world.runLayerCommand(this.satellitesLayer, 'requestImmediateSnap', () =>
             this.satellitesLayer.requestImmediateSnap(),
-          ),
-        dsoSetHidden: (hidden) =>
-          this.world.runLayerCommand(this.dsoLayer, 'setHidden', () =>
-            this.dsoLayer.setHidden(hidden),
           ),
         refreshOrbitTrail: () => this.refreshOrbitTrail(),
       },

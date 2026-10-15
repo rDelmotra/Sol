@@ -58,3 +58,9 @@ Supersedes D9's "always animates" for looping motion. The Reduce Motion override
 - Waveform bars are fixed. Colour (cyan to amber) shows active or compiling.
 - Reticle, object scan and pad-live dot do not move.
 - The return-to-present button has a static amber ring.
+
+## D11 — DSOs are shown by their own ephemeris window, not hidden in the past (2026-10-16)
+A deep-space object (Artemis II) is drawn only when the sim time is inside its own ephemeris window, whatever the view is (live, a past day, or the planetarium). Outside the window it is not visible, including before its first sample.
+- `interpolateDsoPosition` (`packages/frontend/src/data/dso-interpolator.ts`) returns null before the first sample, as it already did after `validTo` plus grace.
+- A catalog swap never hides DSOs and the planetarium keeps the DSO selection. Each swap re-encodes the DSO pick IDs against the new TLE count (0 in the planetarium) through `DsoLayer.resyncForCatalog`.
+- Replaces the old rule that hid every DSO while the view was in the past.
