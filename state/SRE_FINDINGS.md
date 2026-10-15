@@ -2,7 +2,7 @@
 
 Written 2026-10-13 from the code and from local measurements only.
 Nothing here was checked against Railway or the live site.
-Update 2026-10-14: the Space-Track attempt log (part c) and the Artemis II ended-mission fix (part d) are implemented on `sre/hardening`. A second review pass added: the catalog size guard, the retry timer, the DSO snapshot archive, the boot disk report guard, and the weekly re-check of ended missions. Resolved findings were removed from this file; how each fix behaves is in `state/STATE.md` and in parts (c) and (d) below.
+Update 2026-10-14: the Space-Track attempt log (part c) and the Artemis II ended-mission fix (part d) are implemented on `sre/hardening`. A second review pass added: the catalog size guard, the retry timer, the DSO snapshot housekeeping guard, the boot disk report guard, and the weekly re-check of ended missions. Resolved findings were removed from this file; how each fix behaves is in `state/STATE.md` and in parts (c) and (d) below.
 Parts (a) and (b) are still findings and proposals. No data was deleted or changed by this report.
 
 ## How the numbers were made
@@ -29,7 +29,7 @@ Everything below is under `CACHE_DIR` (the 500 MB volume) unless noted.
 | `swpc-cache.json` | `packages/backend/src/cache/swpc-cache.ts` | a few KB | None. Rewritten at most every 12 h. |
 | `gazetteer-cache.json` | `packages/backend/src/cache/gazetteer-cache.ts` | about 1 to 2 MB (estimate, about 7.3k places) | None. Rewritten every 30 days. |
 | `dso/catalog.json`, `dso/manifest.json` | `packages/backend/src/dso/snapshot/store.ts` | a few KB each | None. But both are rewritten on every worker loop, even when nothing changed. |
-| `dso/snapshots/<id>/<version>.json` | `publishDsoSnapshot` in the same file | about 0.2 MB per Artemis II file (estimate: about 1,300 samples at about 150 bytes) | Live folder is bounded at the newest 3 per object. Older files are moved to `archive/` next to them and never deleted (about 0.8 MB a day per live object at the 6 hour refresh, estimate). |
+| `dso/snapshots/<id>/<version>.json` | `publishDsoSnapshot` in the same file | about 0.2 MB per Artemis II file (estimate: about 1,300 samples at about 150 bytes) | Bounded. Only the newest snapshot is served and it replaces older values for the same times. The code keeps the newest 3 per object and deletes older ones, after the manifest points at the new one. |
 | `history/raw/YYYY-MM-DD.json.gz` | `writeRawArchive` in `packages/backend/src/history/archive/raw-writer.ts` | 4.6 MB | **+4.6 MB per day. Nothing ever prunes it.** |
 
 Not on the volume:
@@ -63,7 +63,7 @@ Not on the volume:
 4. Each object in `tle-cache.json` repeats `name`, `inclination` and `epoch` at the top level and again inside `omm`.
    Clients read both, so this is a wire-format question, not a free win.
 5. `dso/catalog.json` is derived from `dso/manifest.json` plus the registry. It is tiny.
-6. Older DSO snapshot generations overlap. They exist for rollback. They are now moved to `archive/`, not deleted.
+6. Older DSO snapshot generations overlap. Only the newest is served and it replaces older values for the same times, so the older versions (beyond the newest 3 kept) are deleted. Owner decision 2026-10-15: no old data kept, only correct, continuous data.
 7. The history database's daily checkpoint is derived from the raw archive by design.
    The raw archive is the source of truth. The database can be rebuilt from it.
 8. `.tmp` files from a crashed write are never cleaned, except for DSO snapshots. Each is at most 25.7 MB (cache) or 4.6 MB (archive day).
@@ -155,4 +155,4 @@ How it works now (`packages/backend/src/dso/providers/horizons.ts`, `packages/ba
 - About once a week (`DSO_ENDED_RECHECK_MS`, 7 days, a constant) the worker asks again, in case Horizons published more data. New data clears the flag. A re-check that fails for an ordinary reason is logged at WARN and changes nothing in the manifest.
 - `DSO_RETRY_ENDED=1` forces one try per ended object per boot. Unset it afterwards.
 - `GET /health` counts an ended object that still has its ephemeris as `dsoEndedCount`, not as fresh. The per-object `freshnessState` in the manifest and catalog is left as the last publish set it, because the shared type has no `ended` value. See `state/OPEN.md`.
-- Stored ephemeris is never deleted. Older snapshot files are moved to `archive/` (part a).
+- The current stored ephemeris is never deleted. Only superseded older snapshot versions are deleted (part a).
