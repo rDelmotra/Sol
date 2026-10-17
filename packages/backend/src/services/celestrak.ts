@@ -1,55 +1,55 @@
-import axios, { AxiosError } from 'axios';
 import { CelesTrakGPElement } from '../types/index.js';
 import { logger } from '../utils/logger.js';
+import { gatedCelesTrakGet } from './celestrak-http.js';
 
 // CelesTrak's public GP element set endpoint — no auth required.
-// "last-30-days" returns all objects whose TLEs were updated in the past 30 days,
-// which covers active satellites, recent debris, rocket bodies (~22 000 objects).
-const CELESTRAK_URL =
-  'https://celestrak.org/NORAD/elements/gp.php?GROUP=last-30-days&FORMAT=json';
+//
+// GROUP=active is the ~16.7k active satellites, in JSON. JSON is required: catalog
+// numbers of 100000 and up (issued since 2026-07-11) cannot be written in TLE format.
+// It is NOT the full catalog (no debris, no rocket bodies, no decayed objects), and
+// neither is any other CelesTrak group. The old `last-30-days` group is only the
+// RECENT LAUNCHES (hundreds of objects). So this is a fallback that is OVERLAID on the
+// cached catalog (see cache/catalog-overlay.ts), never a replacement for it.
+export const CELESTRAK_FALLBACK_GROUP = 'active';
+const CELESTRAK_URL = `https://celestrak.org/NORAD/elements/gp.php?GROUP=${CELESTRAK_FALLBACK_GROUP}&FORMAT=json`;
 
 const REQUEST_TIMEOUT_MS = 30_000; // 30 s — CelesTrak can be slow under load
 const RETRY_COUNT = 3;
 const RETRY_DELAY_MS = 5_000; // 5 s between retries; CelesTrak sends 503 during updates
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Fetch raw GP array with retry logic. Throws after all retries are exhausted. */
-async function fetchRaw(): Promise<CelesTrakGPElement[]> {
-  for (let attempt = 1; attempt <= RETRY_COUNT; attempt++) {
-    try {
-      logger.info(`CelesTrak fetch attempt ${attempt}/${RETRY_COUNT}`);
-      const response = await axios.get<CelesTrakGPElement[]>(CELESTRAK_URL, {
-        timeout: REQUEST_TIMEOUT_MS,
-        decompress: true,
-        headers: { 'Accept-Encoding': 'gzip', 'User-Agent': 'OrbitWatch/1.0' },
-      });
-      logger.info(`CelesTrak: received ${response.data.length} elements`);
-      return response.data;
-    } catch (err) {
-      const status = (err as AxiosError).response?.status;
-      logger.warn(`CelesTrak attempt ${attempt} failed (HTTP ${status ?? 'timeout/network'})`);
-      if (attempt < RETRY_COUNT) {
-        await sleep(RETRY_DELAY_MS);
-      }
-    }
+/**
+ * Fetch raw GP array. Retries only timeouts, network errors and 5xx (max 3 tries).
+ * Any 4xx (403 "not updated since your last download", 404) throws at once. The
+ * whole thing sits behind the persisted 2 hour gate: when it is closed this throws
+ * CelesTrakSkippedError without a request.
+ */
+async function fetchRaw(now: () => number): Promise<CelesTrakGPElement[]> {
+  const data = await gatedCelesTrakGet<CelesTrakGPElement[]>(
+    CELESTRAK_FALLBACK_GROUP,
+    CELESTRAK_URL,
+    { label: 'CelesTrak', timeoutMs: REQUEST_TIMEOUT_MS, retryCount: RETRY_COUNT, retryDelayMs: RETRY_DELAY_MS },
+    now,
+  );
+  if (!Array.isArray(data)) {
+    throw new Error('CelesTrak: unexpected non-array response');
   }
-  throw new Error(`CelesTrak fetch failed after ${RETRY_COUNT} attempts`);
+  logger.info(`CelesTrak: received ${data.length} elements`);
+  return data;
 }
 
 /**
- * Fetch, filter, and deduplicate the full GP catalog from CelesTrak.
+ * Fetch, filter, and deduplicate the active-satellite GP set from CelesTrak.
  *
- * 1. Fetch from CelesTrak (with retry).
+ * 1. Fetch from CelesTrak (gated to once per 2 hours, no retry on 4xx).
  * 2. Drop objects with a DECAY_DATE — they have re-entered; their TLEs are
  *    stale and their positions would be nonsensical.
  * 3. Deduplicate by NORAD_CAT_ID, keeping the entry with the newest EPOCH.
  *    (The API should not return duplicates, but this is defensive.)
+ *
+ * NORAD_CAT_ID stays a plain JSON number, so 6-digit ids pass through unchanged.
  */
-export async function fetchCelesTrakTLEs(): Promise<CelesTrakGPElement[]> {
-  const raw = await fetchRaw();
+export async function fetchCelesTrakTLEs(now: () => number = Date.now): Promise<CelesTrakGPElement[]> {
+  const raw = await fetchRaw(now);
 
   // Remove objects that have already re-entered the atmosphere
   const extant = raw.filter((obj) => !obj.DECAY_DATE);

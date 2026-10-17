@@ -8,15 +8,21 @@ import path from 'node:path';
 import { describe, it, beforeEach, afterEach, mock } from 'node:test';
 import { CRON_MIN_AGE_MS } from '../../src/cache/file-cache.js';
 import {
+  DAILY_ATTEMPT_CAP,
   FAILURE_BACKOFF_CAP_MS,
   SUCCESS_MIN_GAP_MS,
   attemptLogPath,
+  attemptsOnDay,
   beginSpaceTrackAttempt,
   checkSpaceTrackGate,
+  dailyFailureAlertDue,
   describeSkippedAttempt,
   evaluateGate,
   failureBackoffMs,
+  markDailyAlertSent,
+  nextUtcMidnight,
   parseAttemptState,
+  utcDay,
   readAttemptState,
   recordSpaceTrackFailure,
   recordSpaceTrackSuccess,
@@ -234,6 +240,8 @@ describe('attempt log file — real temp dir', () => {
       lastAttemptAt: new Date(T0).toISOString(),
       lastOutcome: 'started',
       consecutiveFailures: 1,
+      attemptDay: '2026-10-14',
+      attemptsToday: 1,
     });
   });
 
@@ -269,9 +277,15 @@ describe('attempt log file — real temp dir', () => {
     const a = beginSpaceTrackAttempt(T0);
     recordSpaceTrackFailure(a, T0 + MIN);
     const b = beginSpaceTrackAttempt(T0 + HOUR);
-    recordSpaceTrackSuccess(T0 + HOUR + MIN);
+    recordSpaceTrackSuccess(T0 + HOUR + MIN, b);
     assert.equal(b.started.consecutiveFailures, 2);
-    assert.deepEqual(readAttemptState(), stateOnSuccess(T0 + HOUR + MIN));
+    // the failure counter is reset; the day's count of 2 attempts and the success stay
+    assert.deepEqual(readAttemptState(), {
+      ...stateOnSuccess(T0 + HOUR + MIN),
+      attemptDay: '2026-10-14',
+      attemptsToday: 2,
+      successToday: true,
+    });
   });
 
   it('an unwritable log only warns: the functions still return', () => {
@@ -283,5 +297,210 @@ describe('attempt log file — real temp dir', () => {
     recordSpaceTrackFailure(begun, T0 + MIN);
     recordSpaceTrackSuccess(T0 + 2 * MIN);
     assert.ok(warn.mock.callCount() >= 1);
+  });
+});
+
+// ------------------------------------------------------------
+// Daily cap (5 per UTC day) and the alert memory
+// ------------------------------------------------------------
+
+/** Run `n` failed attempts, one hour apart from `start`. Returns the last record and the time after it. */
+function failTimes(n: number, start: number, from: AttemptState | null = null): { state: AttemptState; end: number } {
+  let state = from;
+  let t = start;
+  for (let i = 0; i < n; i++) {
+    const started = stateOnStart(state, t);
+    state = stateOnFailure(started, t + MIN);
+    t += HOUR;
+  }
+  return { state: state as AttemptState, end: t };
+}
+
+describe('daily cap', () => {
+  it('the cap is 5 and the first four attempts are not capped', () => {
+    assert.equal(DAILY_ATTEMPT_CAP, 5);
+    const four = failTimes(4, T0 - HOUR);
+    assert.equal(four.state.attemptsToday, 4);
+    // 4 failures in a row wait 2 h; after that the gate is open, no cap in sight
+    assert.deepEqual(evaluateGate(four.state, T0 + 5 * HOUR), { allowed: true });
+  });
+
+  it('the 5th attempt reaches the cap: not allowed until the next 00:00 UTC', () => {
+    const five = failTimes(5, T0 - HOUR); // attempts at 01:00 .. 05:00 on 2026-10-14
+    assert.equal(five.state.attemptsToday, 5);
+    const now = T0 + 8 * HOUR; // 10:00, far past the 6 h backoff
+    const d = evaluateGate(five.state, now);
+    assert.equal(d.allowed, false);
+    if (!d.allowed) {
+      assert.equal(d.reason, 'daily-cap');
+      assert.equal(d.retryAt, Date.parse('2026-10-15T00:00:00.000Z'));
+    }
+  });
+
+  it('a success counts toward the cap too', () => {
+    let state: AttemptState | null = null;
+    for (let i = 0; i < 4; i++) state = stateOnFailure(stateOnStart(state, T0 + i * HOUR), T0 + i * HOUR + MIN);
+    const fifth = stateOnStart(state, T0 + 4 * HOUR);
+    const done = stateOnSuccess(T0 + 4 * HOUR + MIN, fifth);
+    assert.equal(done.attemptsToday, 5);
+    assert.equal(done.successToday, true);
+    const d = evaluateGate(done, T0 + 7 * HOUR);
+    assert.equal(d.allowed, false);
+    if (!d.allowed) assert.equal(d.reason, 'daily-cap');
+  });
+
+  it('resets at UTC midnight, to the second', () => {
+    const five = failTimes(5, T0 - HOUR);
+    const midnight = Date.parse('2026-10-15T00:00:00.000Z');
+    assert.equal(evaluateGate(five.state, midnight - 1).allowed, false);
+    assert.deepEqual(evaluateGate(five.state, midnight), { allowed: true });
+    // and the new day counts from 1 again
+    const next = stateOnStart(five.state, midnight);
+    assert.equal(next.attemptDay, '2026-10-15');
+    assert.equal(next.attemptsToday, 1);
+  });
+
+  it('a capped day leaves no backoff behind: the 02:00 cron of the new day is allowed', () => {
+    // attempts at 19:00 .. 23:00, the 5th fails at 23:01: a 4 h backoff would run to 03:01 and block 02:00
+    const five = failTimes(5, Date.parse('2026-10-14T19:00:00.000Z'));
+    assert.equal(five.state.attemptDay, '2026-10-14');
+    assert.equal(five.state.attemptsToday, 5);
+    assert.equal(evaluateGate(five.state, Date.parse('2026-10-14T23:30:00.000Z')).allowed, false);
+    const cron = Date.parse('2026-10-15T02:00:00.000Z');
+    assert.deepEqual(evaluateGate(five.state, cron), { allowed: true });
+  });
+
+  it('an attempt that straddles midnight is counted on the day it started', () => {
+    const started = stateOnStart(null, Date.parse('2026-10-14T23:59:59.000Z'));
+    const failedAfterMidnight = stateOnFailure(started, Date.parse('2026-10-15T00:00:30.000Z'));
+    assert.equal(failedAfterMidnight.attemptDay, '2026-10-14');
+    assert.equal(attemptsOnDay(failedAfterMidnight, Date.parse('2026-10-15T00:01:00.000Z')), 0);
+  });
+
+  it('an old-format file (no daily fields) counts as 0 attempts and still gates normally', () => {
+    const old = { lastAttemptAt: new Date(T0).toISOString(), lastOutcome: 'failure', consecutiveFailures: 1 };
+    const parsed = parseAttemptState(old);
+    assert.deepEqual(parsed, old);
+    assert.equal(attemptsOnDay(parsed, T0 + MIN), 0);
+    assert.equal(evaluateGate(parsed, T0 + MIN).allowed, false); // the 15 min backoff
+    assert.deepEqual(evaluateGate(parsed, T0 + 15 * MIN), { allowed: true });
+    const next = stateOnStart(parsed, T0 + 15 * MIN);
+    assert.equal(next.attemptsToday, 1);
+    assert.equal(next.consecutiveFailures, 2);
+  });
+
+  it('bad daily fields are dropped, not fatal', () => {
+    const odd = {
+      lastAttemptAt: new Date(T0).toISOString(),
+      lastOutcome: 'failure',
+      consecutiveFailures: 1,
+      attemptDay: 'yesterday',
+      attemptsToday: 'many',
+      alertSentDay: 42,
+    };
+    assert.deepEqual(parseAttemptState(odd), {
+      lastAttemptAt: odd.lastAttemptAt,
+      lastOutcome: 'failure',
+      consecutiveFailures: 1,
+    });
+    const halfBad = { ...odd, attemptDay: '2026-10-14', attemptsToday: -2 };
+    assert.equal(parseAttemptState(halfBad)?.attemptsToday, 0);
+  });
+
+  it('clock skew: a count stamped with a future day never blocks', () => {
+    const skewed: AttemptState = {
+      lastAttemptAt: new Date(T0 - HOUR).toISOString(),
+      lastOutcome: 'failure',
+      consecutiveFailures: 1,
+      attemptDay: '2027-01-01',
+      attemptsToday: 5,
+    };
+    assert.equal(attemptsOnDay(skewed, T0), 0);
+    assert.deepEqual(evaluateGate(skewed, T0), { allowed: true });
+    // the next attempt starts the real day at 1
+    assert.equal(stateOnStart(skewed, T0).attemptsToday, 1);
+  });
+
+  it('clock skew: the clock jumps back inside the capped day, the cap still holds until midnight', () => {
+    const five = failTimes(5, T0 - HOUR).state;
+    const d = evaluateGate(five, T0 - 30 * MIN);
+    assert.equal(d.allowed, false);
+    if (!d.allowed) {
+      assert.equal(d.reason, 'daily-cap');
+      assert.equal(d.retryAt, Date.parse('2026-10-15T00:00:00.000Z'));
+    }
+  });
+
+  it('nextUtcMidnight is always within 24 h (far below the setTimeout limit)', () => {
+    for (const t of [T0, Date.parse('2026-10-14T00:00:00.000Z'), Date.parse('2026-10-14T23:59:59.999Z')]) {
+      const next = nextUtcMidnight(t);
+      assert.ok(next > t && next - t <= 24 * HOUR);
+      assert.equal(new Date(next).toISOString().slice(11), '00:00:00.000Z');
+    }
+    assert.equal(utcDay(Date.parse('2026-10-14T23:59:59.999Z')), '2026-10-14');
+  });
+
+  it('describeSkippedAttempt names the daily limit', () => {
+    const five = failTimes(5, T0 - HOUR).state;
+    const now = T0 + 8 * HOUR;
+    const d = evaluateGate(five, now);
+    assert.equal(d.allowed, false);
+    if (d.allowed) return;
+    const line = describeSkippedAttempt(d, now);
+    assert.match(line, /daily limit of 5/);
+    assert.ok(line.includes('2026-10-15T00:00:00.000Z'), line);
+  });
+});
+
+describe('dailyFailureAlertDue', () => {
+  it('is due only on the 5th failure of a day with no success', () => {
+    const four = failTimes(4, T0 - HOUR).state;
+    assert.equal(dailyFailureAlertDue(four), false, '4th failure');
+    const five = failTimes(1, T0 + 4 * HOUR, four).state;
+    assert.equal(five.attemptsToday, 5);
+    assert.equal(dailyFailureAlertDue(five), true, '5th failure');
+  });
+
+  it('is not due when one attempt of the day succeeded', () => {
+    let state: AttemptState | null = null;
+    state = stateOnSuccess(T0 + MIN, stateOnStart(state, T0));
+    for (let i = 1; i <= 4; i++) state = stateOnFailure(stateOnStart(state, T0 + i * HOUR), T0 + i * HOUR + MIN);
+    assert.equal(state.attemptsToday, 5);
+    assert.equal(dailyFailureAlertDue(state), false);
+  });
+
+  it('is not due again once the day is marked', () => {
+    const five = failTimes(5, T0 - HOUR).state;
+    assert.equal(dailyFailureAlertDue(five), true);
+    assert.equal(dailyFailureAlertDue({ ...five, alertSentDay: five.attemptDay }), false);
+    // a later failure record of the same day keeps the memory
+    assert.equal(stateOnStart({ ...five, alertSentDay: five.attemptDay }, T0 + 6 * HOUR).alertSentDay, five.attemptDay);
+  });
+
+  it('is not due for an old-format record, a pending attempt, or no record', () => {
+    assert.equal(dailyFailureAlertDue(null), false);
+    assert.equal(dailyFailureAlertDue(failed(9, T0)), false);
+    assert.equal(dailyFailureAlertDue(stateOnStart(failTimes(4, T0 - HOUR).state, T0 + 4 * HOUR)), false);
+  });
+
+  it('the day marker is written to the file and survives a restart', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'attempt-alert-test-'));
+    const prev = process.env.CACHE_DIR;
+    process.env.CACHE_DIR = dir;
+    try {
+      const five = failTimes(5, T0 - HOUR).state;
+      markDailyAlertSent(five);
+      const reread = readAttemptState();
+      assert.equal(reread?.alertSentDay, '2026-10-14');
+      assert.equal(dailyFailureAlertDue(reread), false);
+      // a new UTC day: the next day's 5th failure may alert again
+      const nextDay = failTimes(5, Date.parse('2026-10-15T01:00:00.000Z'), reread).state;
+      assert.equal(nextDay.attemptsToday, 5);
+      assert.equal(dailyFailureAlertDue(nextDay), true);
+    } finally {
+      if (prev === undefined) delete process.env.CACHE_DIR;
+      else process.env.CACHE_DIR = prev;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

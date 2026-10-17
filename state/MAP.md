@@ -50,6 +50,11 @@ Import rules between and inside packages live in `tests/architecture.test.ts`. R
 | Production process supervisor: runs the API and the DSO worker, exits non-zero if either dies (`npm run start:prod -w @orbitwatch/backend`) | `packages/backend/src/supervisor.ts` |
 | Data-volume disk check: boot log, log after each raw archive write, `GET /health` | `packages/backend/src/utils/disk-usage.ts` |
 | Env access | `packages/backend/src/utils/config.ts` |
+| Space-Track attempt log: backoff, 5-a-day cap, alert memory | `packages/backend/src/cache/attempt-log.ts` |
+| CelesTrak attempt log: 2 hour gate per group | `packages/backend/src/cache/celestrak-attempts.ts` |
+| Daily update cycle: Space-Track first, CelesTrak overlay fallback, alert | `packages/backend/src/cron/tle-updater.ts` |
+| CelesTrak overlay merge rules | `packages/backend/src/cache/catalog-overlay.ts` |
+| Alerts: ERROR log, optional webhook and Resend email | `packages/backend/src/utils/alert.ts` |
 | All filesystem paths | `packages/backend/src/utils/paths.ts` |
 | HTTP routes | `packages/backend/src/routes/` |
 | Data fetchers, NL compiler, prompt builder | `packages/backend/src/services/` |
@@ -157,7 +162,7 @@ Rules that hold even without reading the architecture test:
 
 ## Data flow in one paragraph each
 
-**Live catalog.** Backend fetches from Space-Track (fallback CelesTrak), classifies, caches to a file and to a pre-gzipped memory payload. Frontend loads it (IndexedDB cached), feeds a WASM worker at about 1 Hz, and the worker writes position and velocity buffers the renderer draws.
+**Live catalog.** Backend fetches from Space-Track (fallback: CelesTrak `active`, laid over the cached catalog), classifies, caches to a file and to a pre-gzipped memory payload. Frontend loads it (IndexedDB cached), feeds a WASM worker at about 1 Hz, and the worker writes position and velocity buffers the renderer draws.
 
 **Deep space.** A backend worker fetches JPL Horizons every 6 hours, converts to TEME, and publishes snapshots. The frontend interpolates them in its own worker.
 

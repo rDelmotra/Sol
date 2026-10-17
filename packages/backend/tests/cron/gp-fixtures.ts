@@ -3,6 +3,17 @@
 
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import type { CelesTrakGPElement, SpaceTrackGPElement } from '../../src/types/index.js';
+import type { AttemptState } from '../../src/cache/attempt-log.js';
+
+/** The attempt record without the daily-cap and alert fields (those have their own tests). */
+export function attemptCore(state: AttemptState | null): Pick<AttemptState, 'lastAttemptAt' | 'lastOutcome' | 'consecutiveFailures'> | null {
+  if (!state) return null;
+  return {
+    lastAttemptAt: state.lastAttemptAt,
+    lastOutcome: state.lastOutcome,
+    consecutiveFailures: state.consecutiveFailures,
+  };
+}
 
 /** `n` valid Space-Track GP records (numbers as strings, like the real API). */
 export function spaceTrackGp(n: number, firstId = 90_000): SpaceTrackGPElement[] {

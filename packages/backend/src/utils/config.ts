@@ -110,3 +110,41 @@ export function dsoRetryEnded(): boolean {
   const v = (process.env.DSO_RETRY_ENDED ?? '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'on'].includes(v);
 }
+
+// ── Alerts (see utils/alert.ts) ───────────────────────────────────────────────
+
+function trimmedEnv(name: string): string | undefined {
+  const v = process.env[name]?.trim();
+  return v ? v : undefined;
+}
+
+export type AlertWebhookFormat = 'ntfy' | 'slack' | 'discord' | 'json';
+
+/** ALERT_WEBHOOK_URL: where alerts are POSTed. Unset = no webhook. */
+export function alertWebhookUrl(): string | undefined {
+  return trimmedEnv('ALERT_WEBHOOK_URL');
+}
+
+/** ALERT_WEBHOOK_FORMAT: ntfy, slack, discord or json (default; also used for an unknown value). */
+export function alertWebhookFormat(): AlertWebhookFormat {
+  const v = (process.env.ALERT_WEBHOOK_FORMAT ?? '').trim().toLowerCase();
+  return v === 'ntfy' || v === 'slack' || v === 'discord' ? v : 'json';
+}
+
+/** RESEND_API_KEY: key for Resend's email API. Email needs this and ALERT_EMAIL_TO. */
+export function resendApiKey(): string | undefined {
+  return trimmedEnv('RESEND_API_KEY');
+}
+
+/** ALERT_EMAIL_FROM: sender address, default Resend's shared test sender. */
+export function alertEmailFrom(): string {
+  return trimmedEnv('ALERT_EMAIL_FROM') ?? 'OrbitWatch <onboarding@resend.dev>';
+}
+
+/** ALERT_EMAIL_TO: recipient(s), comma separated. */
+export function alertEmailTo(): string[] {
+  return (trimmedEnv('ALERT_EMAIL_TO') ?? '')
+    .split(',')
+    .map((a) => a.trim())
+    .filter(Boolean);
+}

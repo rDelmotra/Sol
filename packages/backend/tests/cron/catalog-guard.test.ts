@@ -11,7 +11,7 @@ import { cancelUpdateRetry, runUpdateCycle, type UpdateCycleDeps } from '../../s
 import { assessCatalog, readCache, readVersion, writeCache } from '../../src/cache/file-cache.js';
 import { readAttemptState, stateOnSuccess } from '../../src/cache/attempt-log.js';
 import { catalogMinRatio } from '../../src/utils/config.js';
-import { celesTrakGp, fakeCatalog, spaceTrackGp } from './gp-fixtures.js';
+import { attemptCore, celesTrakGp, fakeCatalog, spaceTrackGp } from './gp-fixtures.js';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -183,7 +183,7 @@ describe('runUpdateCycle — implausible catalogs are refused', () => {
     assert.equal(ctCalls, 0);
     assert.equal(cacheCount(), 100);
     assert.equal(readVersion()?.count, 100);
-    assert.deepEqual(readAttemptState(), stateOnSuccess(T0));
+    assert.deepEqual(attemptCore(readAttemptState()), stateOnSuccess(T0));
     assert.ok(lines.some((l) => l.includes('TLE update complete: 100 objects from space-track')));
   });
 
@@ -220,16 +220,17 @@ describe('runUpdateCycle — implausible catalogs are refused', () => {
     clock = T0 + 15 * MIN;
     await runUpdateCycle('boot', deps(100, 'throw'));
     assert.equal(stCalls, 2);
-    assert.deepEqual(readAttemptState(), stateOnSuccess(T0 + 15 * MIN));
+    assert.deepEqual(attemptCore(readAttemptState()), stateOnSuccess(T0 + 15 * MIN));
   });
 
-  it('empty from Space-Track, good from CelesTrak: CelesTrak fills the cache and Space-Track stays a failure', async () => {
+  it('empty from Space-Track, good from CelesTrak: CelesTrak is laid over the cache (nothing is lost) and Space-Track stays a failure', async () => {
     seedCache(100);
     await runUpdateCycle('boot', deps(0, 90));
     assert.equal(stCalls, 1);
     assert.equal(ctCalls, 1);
-    assert.equal(cacheCount(), 90);
-    assert.ok(lines.some((l) => l.includes('TLE update complete: 90 objects from celestrak')));
+    // 100 cached objects kept + 90 CelesTrak objects with new ids
+    assert.equal(cacheCount(), 190);
+    assert.ok(lines.some((l) => l.includes('TLE update complete: 190 objects from celestrak')));
     assert.equal(readAttemptState()?.lastOutcome, 'failure');
   });
 
@@ -254,14 +255,14 @@ describe('runUpdateCycle — implausible catalogs are refused', () => {
     assert.equal(cacheCount(), 51);
   });
 
-  it('CelesTrak also answers too little: the cache is kept and nothing is written', async () => {
+  it('CelesTrak answers with nothing: the cache is kept and nothing is written', async () => {
     const before = seedCache(100);
-    await runUpdateCycle('boot', deps('throw', 30));
+    await runUpdateCycle('boot', deps('throw', 0));
     assert.equal(stCalls, 1);
     assert.equal(ctCalls, 1);
     assert.equal(fs.readFileSync(cachePath(), 'utf8'), before.cache);
     assert.equal(fs.readFileSync(versionPath(), 'utf8'), before.version);
-    assert.ok(lines.some((l) => l.includes('ERROR') && l.includes('CelesTrak catalog refused') && l.includes('30.0%')));
+    assert.ok(lines.some((l) => l.includes('ERROR') && l.includes('CelesTrak catalog refused') && l.includes('0 objects')));
     assert.ok(lines.some((l) => l.includes('continuing to serve stale cache (100 objects)')));
     assert.equal(lines.some((l) => l.includes('Cache written')), false);
   });
@@ -277,7 +278,7 @@ describe('runUpdateCycle — implausible catalogs are refused', () => {
     assert.equal(fs.existsSync(cachePath()), false);
     await runUpdateCycle('boot', deps(3, 'throw'));
     assert.equal(cacheCount(), 3);
-    assert.deepEqual(readAttemptState(), stateOnSuccess(T0));
+    assert.deepEqual(attemptCore(readAttemptState()), stateOnSuccess(T0));
   });
 
   it('fresh volume, only CelesTrak (no Space-Track credentials): a small answer is accepted', async () => {

@@ -115,7 +115,7 @@ Rules in force:
 - One login, then pages of 25,000 rows, then one logout. About 4 requests per cycle for 32,000 objects (login, 2 pages, logout).
 - Logout runs in a `finally` block, so a session is never left open.
 - The query is one narrow `gp` class query: not decayed, epoch within 30 days, ordered by NORAD id. It does not use `gp_history` or SATCAT.
-- No retry against Space-Track inside a cycle. Any failure goes straight to the CelesTrak fallback.
+- No retry against Space-Track inside a cycle. Any failure goes straight to the CelesTrak fallback (an overlay, see below).
 - 120 s timeout per request.
 - Boot guard 24 h, cron guard 1 h. A normal restart loop with a good cache cannot refetch.
 - The code comment says Space-Track allows about 30 requests a day and the cycle stays under that.
@@ -127,17 +127,21 @@ Rules in force:
   With no cache (first boot, or dev with only CelesTrak) any non-empty catalog is accepted.
   Knob: `CATALOG_MIN_RATIO`, a number from 0 to 1, default 0.5. Use a lower value only if the real catalog shrank by more than half on purpose, then unset it. 0 turns the size check off. An empty catalog is always refused.
 - **Retry timer.** When a cycle writes nothing and Space-Track is only waiting out its backoff, one unref'd timer is armed for the moment the wait ends. It runs the cycle again with the `cron` trigger, so it does not wait for the next 02:00. At most one timer is pending. A successful write cancels it, and so does the `stop()` handle that `scheduleTLEUpdater` returns. If the attempt log cannot be written the gate stays open and no timer is armed, so there is no hot loop.
+- **Daily cap and alert** (D14). At most 5 Space-Track logins per UTC day, counted in the attempt log (boot, cron and retry-timer attempts, success or failure). At the cap the gate stays shut until 00:00 UTC. The 02:00 cron of a new day is never blocked by it. When the 5th attempt fails and none succeeded that day, one alert is sent (`packages/backend/src/utils/alert.ts`; ERROR log line, optional webhook, optional Resend email; details in `packages/backend/.env.example`).
+- **Finding: `GROUP=last-30-days` was never the full catalog.** CelesTrak's `last-30-days` group is only the objects launched in the last 30 days (hundreds of objects). The old comment in `celestrak.ts` called it the full catalog (about 22,000 objects), and the code treated its answer as a replacement for the cache. No CelesTrak group is the full catalog (`GROUP=active` is about 16.7k active satellites). The fallback was never used in production, so nothing was lost, but it would have replaced a 32k cache with a few hundred objects (the size guard would have refused it, correctly). Fixed: the fallback now asks for `GROUP=active` in JSON and lays it over the cached catalog by newer epoch (`packages/backend/src/cache/catalog-overlay.ts`).
+- **CelesTrak calling rules** (its usage policy): data changes every 2 hours, asking for the same group sooner is answered with HTTP 403, and repeating after a 403 or 404 can get the IP firewalled (limit 50 such errors in 2 hours). Now no 4xx is retried, and every download is gated to once per 2 hours per group in `celestrak-attempts.json` (`packages/backend/src/cache/celestrak-attempts.ts`), the visual list included.
 
 Open gaps:
 
+- During a multi-day Space-Track outage the backoff reaches 6 h, so a later day fits only 4 attempts and never reaches the cap: the alert fires on the first bad day, not on every day.
 - Two API replicas would each run the cron and each fetch. Today there is one.
 
 Other upstream fetches, for completeness:
 
 | Upstream | Where | Rules |
 |---|---|---|
-| CelesTrak fallback (`last-30-days`) | `packages/backend/src/services/celestrak.ts` | Only when Space-Track fails. 3 tries, 5 s apart, 30 s timeout. |
-| CelesTrak visual list | `packages/backend/src/services/celestrak-visual.ts`, called from `packages/backend/src/routes/tle.ts` | On a user request when the cache is over 8 h old. One refresh at a time. 3 tries, 2 s apart. **No negative cache:** while CelesTrak is down, every request starts another 3-try fetch. The `/api` limit of 100 requests per 15 min per IP is the only brake. |
+| CelesTrak fallback (`active`, overlay) | `packages/backend/src/services/celestrak.ts` | Only when Space-Track fails or is held back. Once per 2 hours (persisted gate). 3 tries 5 s apart for timeouts, network errors and 5xx only; a 4xx stops at once. 30 s timeout. |
+| CelesTrak visual list | `packages/backend/src/services/celestrak-visual.ts`, called from `packages/backend/src/routes/tle.ts` | On a user request when the cache is over 8 h old. One refresh at a time. Same rules as above: once per 2 hours per group (this also acts as the negative cache while CelesTrak is down; the stale list is served), no retry on a 4xx, 3 tries 2 s apart otherwise. |
 | NOAA space weather | `packages/backend/src/services/swpc.ts` | Cache 12 h. One refresh at a time. 3 tries per file, 2 s apart. |
 | Natural Earth gazetteer (GitHub) | `packages/backend/src/services/gazetteer.ts` | Cache 30 days. 3 tries, 3 s apart, 90 s timeout. |
 | JPL Horizons | `packages/backend/src/dso/providers/horizons.ts` | Requests are serialized one at a time. 30 s timeout. See (d). |

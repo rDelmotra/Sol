@@ -22,7 +22,7 @@ import {
   stateOnSuccess,
   writeAttemptState,
 } from '../../src/cache/attempt-log.js';
-import { celesTrakGp, fakeCatalog, spaceTrackGp } from './gp-fixtures.js';
+import { attemptCore, celesTrakGp, fakeCatalog, spaceTrackGp } from './gp-fixtures.js';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -142,7 +142,7 @@ describe('runUpdateCycle — retry timer after a Space-Track backoff', () => {
 
     assert.equal(stCalls, 1);
     await waitFor(() => readAttemptState()?.lastOutcome === 'success');
-    assert.deepEqual(readAttemptState(), stateOnSuccess(clock));
+    assert.deepEqual(attemptCore(readAttemptState()), stateOnSuccess(clock));
     assert.equal(pendingUpdateRetryAt(), null);
     assert.equal(live().length, 0, 'no further timer after a success');
   });

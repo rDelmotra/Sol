@@ -16,7 +16,7 @@ import {
   stateOnSuccess,
   writeAttemptState,
 } from '../../src/cache/attempt-log.js';
-import { celesTrakGp, spaceTrackGp } from './gp-fixtures.js';
+import { attemptCore, celesTrakGp, spaceTrackGp } from './gp-fixtures.js';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -144,7 +144,7 @@ describe('runUpdateCycle — Space-Track attempt log', () => {
     await runUpdateCycle('boot', deps('ok', 'fail'));
     assert.equal(stCalls, 2);
     assert.equal(hasCache(), true);
-    assert.deepEqual(readAttemptState(), stateOnSuccess(T0 + 15 * MIN));
+    assert.deepEqual(attemptCore(readAttemptState()), stateOnSuccess(T0 + 15 * MIN));
   });
 
   it('the daily cron still refreshes: cache 23h59m old, last success a day ago', async () => {
@@ -155,7 +155,7 @@ describe('runUpdateCycle — Space-Track attempt log', () => {
     await runUpdateCycle('cron', deps('ok', 'fail'));
     assert.equal(stCalls, 1);
     assert.equal(ctCalls, 0);
-    assert.deepEqual(readAttemptState(), stateOnSuccess(T0));
+    assert.deepEqual(attemptCore(readAttemptState()), stateOnSuccess(T0));
   });
 
   it('the daily cron is not blocked by old failures (6 h cap)', async () => {
@@ -202,7 +202,7 @@ describe('runUpdateCycle — Space-Track attempt log', () => {
     fs.writeFileSync(attemptLogPath(), 'garbage{{', 'utf8');
     await runUpdateCycle('boot', deps('ok', 'fail'));
     assert.equal(stCalls, 1);
-    assert.deepEqual(readAttemptState(), stateOnSuccess(T0));
+    assert.deepEqual(attemptCore(readAttemptState()), stateOnSuccess(T0));
   });
 
   it('an unwritable log does not block the cycle', async () => {

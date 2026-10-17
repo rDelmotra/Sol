@@ -70,3 +70,9 @@ The orbit card in the object scan pane goes back to the spike's drawing (Earth u
 
 ## D13 — Only the orbit arc turns, at 10 fps (2026-10-17)
 One exception to D10: on the orbit card the arc and its dot turn slowly about the pole so the tilt reads from every side. Earth, web rings and spokes stay fixed. One 100 ms timer, no animation-frame loop, paused while the tab is hidden, arc paths written through refs (no React re-render), scale fitted once over a full turn. `still-hud.test.ts` fails if a frame loop appears or the step drops under 100 ms. Revert if it adds more than about 1 point of idle CPU in the owner's Chrome.
+
+## D14 — 5 Space-Track attempts a day, an alert on the 5th failure; CelesTrak is an overlay fallback only (2026-10-17)
+- Space-Track gets at most 5 logins per UTC day (every attempt counts, success or failure). When the 5th fails with no success that day, one alert goes out (log line `ALERT`, optional webhook, optional Resend email). The cap never blocks the 02:00 cron of a new day.
+- CelesTrak has no group that is the full catalog, and `last-30-days` is only recent launches. So its `GROUP=active` JSON is laid over the cached catalog (newer epoch wins, new ids added, nothing removed). It is never a replacement.
+- CelesTrak is asked at most once per 2 hours per group, and a 3xx/4xx answer is never retried, because repeating can get the IP blocked.
+- History stays Space-Track-only: an overlay result is not ingested into the history database or the raw archive.
