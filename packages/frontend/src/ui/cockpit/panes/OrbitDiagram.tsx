@@ -1,53 +1,78 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef } from 'react';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 import { ER_KM, orbitPoint3D, orbitPosition, orbitShape } from '@orbitwatch/orbital-core';
 import { orbitElementsFromOmm } from '../../../sky/orbit-elements';
 import { useStore } from '../../../store/useStore';
 
 /**
- * The selected object's orbit in 3D, to scale, and STILL: a shaded Earth (pole
- * up, never tilted), the orbit with its true inclination, RAAN and argument of
- * perigee, over the equatorial plane drawn as a dense radial web, seen from
- * 7 degrees above that plane at a fixed turn.
+ * The selected object's orbit in 3D, to scale: a shaded Earth (pole up, never
+ * tilted) and the equatorial plane as a dense radial web, both fixed, seen from
+ * 7 degrees above that plane. ONLY the orbit arc turns, slowly about the pole, so
+ * its tilt reads from every side (decision D13).
  *
- * The stretch of the orbit hidden by the planet's disc is dimmed; the rest of the
- * far side stays full white. Orthographic; the view is fitted to the orbit's own
- * outline so any orbit fills the card. Only the object dot moves (once a second).
+ * The turn is cheap on purpose: 10 steps a second from one timer (no animation-frame
+ * loop), paused while the tab is hidden, and the three arc paths and the dot are
+ * written straight to the DOM through refs, so React never re-renders. The scale
+ * is fitted once over a full turn, so the picture never rescales while it turns.
+ * The stretch hidden by the planet's disc is dimmed; the rest of the far side is white.
  */
 
 const W = 200;
 const H = 130;
 const PAD = 12;
 const TILT = (7 * Math.PI) / 180; // camera elevation above the equatorial plane
-const TURN = 0.6; // fixed turn about the pole (rad)
+const TURN_START = 0.6; // rad; also the fixed turn of the web
+const TURN_RATE = (7 * Math.PI) / 180; // rad per second
+const TURN_STEP_MS = 100; // 10 fps
 const SAMPLES = 160;
 const WEB_RINGS = 16;
 const WEB_SPOKES = 60;
-const MARKER_MS = 1000;
 
-interface P {
-  sx: number;
-  sy: number;
-  /** >0 = nearer the camera than the Earth's centre. */
-  d: number;
-}
 interface V { x: number; y: number; z: number }
+interface P { sx: number; sy: number; d: number }
 
 const cosT = Math.cos(TILT);
 const sinT = Math.sin(TILT);
-const cosS = Math.cos(TURN);
-const sinS = Math.sin(TURN);
 
-/** Earth-fixed-axis point (km) to unscaled view coords; the turn is about the pole. */
-function raw(p: V) {
-  const x = p.x * cosS - p.y * sinS;
-  const y = p.x * sinS + p.y * cosS;
+/** Earth-fixed-axis point (km) to unscaled view coords, turned by `turn` about the pole. */
+function raw(p: V, turn: number) {
+  const cs = Math.cos(turn);
+  const sn = Math.sin(turn);
+  const x = p.x * cs - p.y * sn;
+  const y = p.x * sn + p.y * cs;
   return { x, y: -(p.z * cosT + y * sinT), d: -y * cosT + p.z * sinT };
 }
 
 function toPath(pts: P[]): string {
   return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.sx.toFixed(2)} ${p.sy.toFixed(2)}`).join(' ');
 }
+
+/** The orbit at `turn` as three path strings: near side, and far side (whole). Runs are separate subpaths. */
+function arcPaths(arc: V[], turn: number, cx: number, cy: number, s: number): { front: string; back: string } {
+  const front: string[] = [];
+  const back: string[] = [];
+  let run: P[] = [];
+  let runFront = true;
+  const flush = () => {
+    if (run.length > 1) (runFront ? front : back).push(toPath(run));
+  };
+  for (let k = 0; k < arc.length; k++) {
+    const q = raw(arc[k], turn);
+    const p: P = { sx: cx + q.x * s, sy: cy + q.y * s, d: q.d };
+    const f = p.d >= 0;
+    if (k > 0 && f !== runFront) {
+      run.push(p); // overlap one point so the line has no gap at the crossing
+      flush();
+      run = [run[run.length - 1]];
+    }
+    runFront = f;
+    run.push(p);
+  }
+  flush();
+  return { front: front.join(' '), back: back.join(' ') };
+}
+
+type Elements = NonNullable<ReturnType<typeof orbitElementsFromOmm>>;
 
 export function OrbitDiagram({ object }: { object: EnrichedTLEObject }) {
   const el = useMemo(() => orbitElementsFromOmm(object.omm), [object]);
@@ -61,76 +86,84 @@ export function OrbitDiagram({ object }: { object: EnrichedTLEObject }) {
   return <Diagram el={el} />;
 }
 
-function Diagram({ el }: { el: NonNullable<ReturnType<typeof orbitElementsFromOmm>> }) {
+function Diagram({ el }: { el: Elements }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const frontRef = useRef<SVGPathElement>(null);
+  const backOutRef = useRef<SVGPathElement>(null);
+  const backInRef = useRef<SVGPathElement>(null);
+  const dotRef = useRef<SVGGElement>(null);
 
   const g = useMemo(() => {
-    const shape = orbitShape(el)!;
-    const { a, e } = shape;
-    const rawPts: { x: number; y: number; d: number }[] = [];
+    const { a, e } = orbitShape(el)!;
+    const arc: V[] = [];
     for (let k = 0; k <= SAMPLES; k++) {
       const E = (k / SAMPLES) * 2 * Math.PI;
       const nu = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
       const p3 = orbitPoint3D(el, a * (1 - e * Math.cos(E)), nu);
       if (!p3) return null;
-      rawPts.push(raw(p3));
+      arc.push(p3);
     }
 
+    // Fit over a whole turn so the scale and centre never change while the arc turns.
     let x0 = -ER_KM, x1 = ER_KM, y0 = -ER_KM, y1 = ER_KM;
-    for (const p of rawPts) {
-      x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x);
-      y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+    for (let t = 0; t < 24; t++) {
+      for (const p of arc) {
+        const q = raw(p, (t / 24) * 2 * Math.PI);
+        x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x);
+        y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
+      }
     }
     const s = Math.min((W - 2 * PAD) / (x1 - x0), (H - 2 * PAD) / (y1 - y0));
     const cx = W / 2 - ((x0 + x1) / 2) * s;
     const cy = H / 2 - ((y0 + y1) / 2) * s;
-    const project = (p: V): P => {
-      const q = raw(p);
+
+    // The web is fixed; rings are unchanged by any turn, spokes stay at the start turn.
+    const proj = (p: V): P => {
+      const q = raw(p, TURN_START);
       return { sx: cx + q.x * s, sy: cy + q.y * s, d: q.d };
     };
-    const pts: P[] = rawPts.map((q) => ({ sx: cx + q.x * s, sy: cy + q.y * s, d: q.d }));
-
-    // Split into runs by side of the Earth, overlapping by one point so there is no gap.
-    const runs: { front: boolean; d: string }[] = [];
-    let cur: { front: boolean; pts: P[] } | null = null;
-    for (let k = 0; k < pts.length; k++) {
-      const front = pts[k].d >= 0;
-      if (!cur || cur.front !== front) {
-        if (cur) {
-          cur.pts.push(pts[k]);
-          runs.push({ front: cur.front, d: toPath(cur.pts) });
-        }
-        cur = { front, pts: k > 0 ? [pts[k - 1]] : [] };
-      }
-      cur.pts.push(pts[k]);
-    }
-    if (cur) runs.push({ front: cur.front, d: toPath(cur.pts) });
-
     const webR = (W / 2 + Math.abs(cx - W / 2)) / s;
     const ring = (R: number) =>
-      toPath(Array.from({ length: 73 }, (_, k) => project({ x: R * Math.cos((k / 72) * 2 * Math.PI), y: R * Math.sin((k / 72) * 2 * Math.PI), z: 0 })));
+      toPath(Array.from({ length: 73 }, (_, k) => proj({ x: R * Math.cos((k / 72) * 2 * Math.PI), y: R * Math.sin((k / 72) * 2 * Math.PI), z: 0 })));
     const rings = Array.from({ length: WEB_RINGS }, (_, k) => ring((webR * (k + 1)) / WEB_RINGS));
     const spokes = Array.from({ length: WEB_SPOKES }, (_, k) => {
       const t = (k / WEB_SPOKES) * 2 * Math.PI;
-      return toPath([project({ x: 0, y: 0, z: 0 }), project({ x: webR * Math.cos(t), y: webR * Math.sin(t), z: 0 })]);
+      return toPath([proj({ x: 0, y: 0, z: 0 }), proj({ x: webR * Math.cos(t), y: webR * Math.sin(t), z: 0 })]);
     });
-    return { runs, rings, spokes, cx, cy, earthR: ER_KM * s, project };
+    return { arc, s, cx, cy, earthR: ER_KM * s, rings, spokes, first: arcPaths(arc, TURN_START, cx, cy, s) };
   }, [el]);
 
-  // The dot: refreshed once a second, no animation loop; paused while the tab is hidden.
-  const [simMs, setSimMs] = useState(() => useStore.getState().simTimeMs);
   useEffect(() => {
-    const id = setInterval(() => {
-      if (!document.hidden) setSimMs(useStore.getState().simTimeMs);
-    }, MARKER_MS);
+    if (!g) return;
+    const t0 = performance.now();
+    const step = () => {
+      if (document.hidden) return;
+      const turn = TURN_START + (TURN_RATE * (performance.now() - t0)) / 1000;
+      const { front, back } = arcPaths(g.arc, turn, g.cx, g.cy, g.s);
+      frontRef.current?.setAttribute('d', front);
+      backOutRef.current?.setAttribute('d', back);
+      backInRef.current?.setAttribute('d', back);
+      const pos = orbitPosition(el, useStore.getState().simTimeMs);
+      const p3 = pos ? orbitPoint3D(el, pos.r, pos.trueAnomaly) : null;
+      const dot = dotRef.current;
+      if (dot) {
+        if (p3) {
+          const q = raw(p3, turn);
+          dot.setAttribute('transform', `translate(${(g.cx + q.x * g.s).toFixed(2)} ${(g.cy + q.y * g.s).toFixed(2)})`);
+          dot.setAttribute('opacity', q.d >= 0 ? '1' : '0.5');
+          dot.setAttribute('display', 'inline');
+        } else {
+          dot.setAttribute('display', 'none');
+        }
+      }
+    };
+    step();
+    const id = setInterval(step, TURN_STEP_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [g, el]);
 
   if (!g) return null;
-  const { runs, rings, spokes, cx, cy, earthR, project } = g;
-  const pos = orbitPosition(el, simMs);
-  const q = pos ? orbitPoint3D(el, pos.r, pos.trueAnomaly) : null;
-  const objP = q ? project(q) : null;
+  const { cx, cy, earthR, rings, spokes, first } = g;
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ height: '100%', width: '100%', fontFamily: 'var(--font-hud-mono)' }}>
@@ -146,7 +179,7 @@ function Diagram({ el }: { el: NonNullable<ReturnType<typeof orbitElementsFromOm
         </radialGradient>
       </defs>
 
-      {/* The equatorial plane as a radial web: faint reference, not the subject. */}
+      {/* The equatorial plane as a radial web: fixed, faint reference. */}
       <g fill="none" stroke="var(--hud-arc)">
         {rings.map((d, i) => (
           <path key={`wr${i}`} d={d} strokeWidth={0.3} opacity={0.23 * (1 - i / (WEB_RINGS + 2))} />
@@ -156,35 +189,27 @@ function Diagram({ el }: { el: NonNullable<ReturnType<typeof orbitElementsFromOm
         ))}
       </g>
 
-      {/* Behind the Earth: full white where visible, dimmed where the disc covers it. */}
-      {runs.filter((r) => !r.front).map((r, i) => (
-        <g key={`b${i}`} fill="none" stroke="#fff" strokeWidth={0.9}>
-          <path d={r.d} clipPath={`url(#${uid}out)`} />
-          <path d={r.d} clipPath={`url(#${uid}in)`} opacity={0.4} />
-        </g>
-      ))}
-      {objP && objP.d < 0 && <Marker p={objP} dim />}
+      {/* Far side of the orbit: white where visible, dimmed where the Earth's disc covers it. */}
+      <g fill="none" stroke="#fff" strokeWidth={0.9}>
+        <path ref={backOutRef} d={first.back} clipPath={`url(#${uid}out)`} />
+        <path ref={backInRef} d={first.back} clipPath={`url(#${uid}in)`} opacity={0.4} />
+      </g>
 
       <circle cx={cx} cy={cy} r={earthR} fill={`url(#${uid}shade)`} stroke="var(--hud-arc-dim)" strokeWidth={0.5} />
 
-      {runs.filter((r) => r.front).map((r, i) => (
-        <path key={`f${i}`} d={r.d} fill="none" stroke="#fff" strokeWidth={0.9} />
-      ))}
-      {objP && objP.d >= 0 && <Marker p={objP} />}
+      {/* Near side of the orbit, over the Earth. */}
+      <path ref={frontRef} d={first.front} fill="none" stroke="#fff" strokeWidth={0.9} />
+
+      {/* The object: a plain dot that rides the arc as it turns. */}
+      <g ref={dotRef} display="none">
+        <circle r={5} fill="var(--hud-arc)" opacity={0.25} />
+        <circle r={4} fill="none" stroke="var(--hud-arc)" strokeWidth={0.5} opacity={0.8} />
+        <circle r={2} fill="#fff" />
+      </g>
 
       {/* Centre of mass. */}
       <circle cx={cx} cy={cy} r={3.2} fill="oklch(0.85 0.12 235)" opacity={0.18} />
       <circle cx={cx} cy={cy} r={1.5} fill="oklch(0.9 0.1 235)" />
     </svg>
-  );
-}
-
-function Marker({ p, dim }: { p: P; dim?: boolean }) {
-  return (
-    <g opacity={dim ? 0.5 : 1}>
-      <circle cx={p.sx} cy={p.sy} r={5} fill="var(--hud-arc)" opacity={0.25} />
-      <circle cx={p.sx} cy={p.sy} r={4} fill="none" stroke="var(--hud-arc)" strokeWidth={0.5} opacity={0.8} />
-      <circle cx={p.sx} cy={p.sy} r={2} fill="#fff" />
-    </g>
   );
 }

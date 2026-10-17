@@ -67,3 +67,6 @@ A deep-space object (Artemis II) is drawn only when the sim time is inside its o
 
 ## D12 — The orbit card is the original spike drawing, held still (2026-10-16)
 The orbit card in the object scan pane goes back to the spike's drawing (Earth upright, radial web in the equatorial plane, white orbit arc, the part hidden by the Earth dimmed), with the spin removed. The camera is fixed 7 degrees above the equatorial plane. This replaces the orbit-plane camera with dashed far half (35 degrees) built earlier on this branch; the owner rejected it as less clear.
+
+## D13 — Only the orbit arc turns, at 10 fps (2026-10-17)
+One exception to D10: on the orbit card the arc and its dot turn slowly about the pole so the tilt reads from every side. Earth, web rings and spokes stay fixed. One 100 ms timer, no animation-frame loop, paused while the tab is hidden, arc paths written through refs (no React re-render), scale fitted once over a full turn. `still-hud.test.ts` fails if a frame loop appears or the step drops under 100 ms. Revert if it adds more than about 1 point of idle CPU in the owner's Chrome.

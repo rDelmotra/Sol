@@ -29,8 +29,10 @@ describe('the cockpit HUD is still when idle (D10)', () => {
     const bad = files.filter((f) => /<animate(Transform|Motion)?\b/.test(fs.readFileSync(f, 'utf8')));
     assert.deepEqual(bad.map((f) => path.relative(DIR, f)), []);
   });
-  it('the orbit diagram has no frame loop and no spin', () => {
+  it('the orbit diagram has no frame loop and turns at 10 fps or less', () => {
     const src = ['OrbitDiagram.tsx'].map((f) => fs.readFileSync(path.join(DIR, 'panes', f), 'utf8')).join('\n');
-    assert.ok(!/requestAnimationFrame|SPIN_/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')));
+    const code = src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+    assert.ok(!/requestAnimationFrame/.test(code));
+    assert.ok(Number(/TURN_STEP_MS\s*=\s*(\d+)/.exec(code)?.[1]) >= 100);
   });
 });
