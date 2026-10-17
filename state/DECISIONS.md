@@ -64,3 +64,6 @@ A deep-space object (Artemis II) is drawn only when the sim time is inside its o
 - `interpolateDsoPosition` (`packages/frontend/src/data/dso-interpolator.ts`) returns null before the first sample, as it already did after `validTo` plus grace.
 - A catalog swap never hides DSOs and the planetarium keeps the DSO selection. Each swap re-encodes the DSO pick IDs against the new TLE count (0 in the planetarium) through `DsoLayer.resyncForCatalog`.
 - Replaces the old rule that hid every DSO while the view was in the past.
+
+## D12 — The orbit card is the original spike drawing, held still (2026-10-16)
+The orbit card in the object scan pane goes back to the spike's drawing (Earth upright, radial web in the equatorial plane, white orbit arc, the part hidden by the Earth dimmed), with the spin removed. The camera is fixed 7 degrees above the equatorial plane. This replaces the orbit-plane camera with dashed far half (35 degrees) built earlier on this branch; the owner rejected it as less clear.

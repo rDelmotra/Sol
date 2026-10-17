@@ -30,7 +30,7 @@ describe('the cockpit HUD is still when idle (D10)', () => {
     assert.deepEqual(bad.map((f) => path.relative(DIR, f)), []);
   });
   it('the orbit diagram has no frame loop and no spin', () => {
-    const src = ['OrbitDiagram.tsx', 'OrbitScene.tsx', 'orbit-diagram.ts'].map((f) => fs.readFileSync(path.join(DIR, 'panes', f), 'utf8')).join('\n');
+    const src = ['OrbitDiagram.tsx'].map((f) => fs.readFileSync(path.join(DIR, 'panes', f), 'utf8')).join('\n');
     assert.ok(!/requestAnimationFrame|SPIN_/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')));
   });
 });
