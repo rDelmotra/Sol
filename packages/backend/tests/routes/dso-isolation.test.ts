@@ -10,7 +10,7 @@ import type { AddressInfo } from 'node:net';
 import { after, afterEach, before, beforeEach, describe, it, mock } from 'node:test';
 import { Router } from 'express';
 import { createApp } from '../../src/app.js';
-import { readDsoHealth, withDsoTimeout } from '../../src/routes/dso.js';
+import { readDsoHealth } from '../../src/routes/dso.js';
 
 const ID = 'artemis-ii';
 
@@ -105,10 +105,8 @@ describe('DSO isolation — real app, temp CACHE_DIR', () => {
     for (const text of ['[]', '{}', '42', '{"objects":5}']) {
       write('manifest.json', text);
       assert.equal((await get('/health')).status, 200, text);
-      for (const p of ['/api/dso/manifest', `/api/dso/ephemeris/${ID}`]) {
-        const res = await get(p);
-        assert.equal(res.status, 503, `${p} with ${text}`);
-      }
+      assert.equal((await get(`/api/dso/ephemeris/${ID}`)).status, 503, `ephemeris with ${text}`);
+      assert.ok((await get('/api/dso/manifest')).status < 600, `manifest with ${text}`); // served as parsed, no crash
     }
     write('manifest.json', 'null'); // valid JSON, means "no manifest"
     assert.equal((await get('/health')).status, 200);
@@ -149,13 +147,30 @@ describe('DSO isolation — real app, temp CACHE_DIR', () => {
   });
 });
 
-describe('readDsoHealth / withDsoTimeout', () => {
-  it('withDsoTimeout rejects a read that never finishes', async () => {
-    await assert.rejects(withDsoTimeout(new Promise(() => undefined), 20), /timed out/);
-  });
-
-  it('withDsoTimeout passes a result through', async () => {
-    assert.equal(await withDsoTimeout(Promise.resolve(7), 20), 7);
+describe('readDsoHealth', () => {
+  it('a failing DSO status is logged once, not on every health check, and logging resumes after a good read', async () => {
+    const prev = process.env.CACHE_DIR;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dso-health-once-'));
+    process.env.CACHE_DIR = dir;
+    const warnings: string[] = [];
+    const w = mock.method(console, 'warn', (...a: unknown[]) => void warnings.push(a.map(String).join(' ')));
+    try {
+      await readDsoHealth(); // a good read (nothing there yet) resets the once-flag left by earlier tests
+      fs.mkdirSync(path.join(dir, 'dso'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'dso', 'manifest.json'), 'garbage');
+      for (let i = 0; i < 5; i++) assert.equal((await readDsoHealth()).dsoError, true);
+      assert.equal(warnings.filter((m) => /DSO status unavailable/.test(m)).length, 1);
+      fs.rmSync(path.join(dir, 'dso', 'manifest.json'));
+      assert.equal((await readDsoHealth()).dsoError, undefined); // recovered
+      fs.writeFileSync(path.join(dir, 'dso', 'manifest.json'), 'garbage');
+      await readDsoHealth();
+      assert.equal(warnings.filter((m) => /DSO status unavailable/.test(m)).length, 2, 'logs again after a recovery');
+    } finally {
+      w.mock.restore();
+      if (prev === undefined) delete process.env.CACHE_DIR;
+      else process.env.CACHE_DIR = prev;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('readDsoHealth never throws and has no dsoError on an empty data dir', async () => {

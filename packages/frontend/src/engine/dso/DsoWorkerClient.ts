@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { DsoSnapshot } from '@orbitwatch/contracts';
 import { sourceToSceneInto } from '../scene/frames';
 import type { DsoWorkerInMessage, DsoWorkerOutMessage } from '../../workers/dso-protocol';
-import { DSO_WORKER_RESTART_BASE_MS, nextWorkerRestartDelay } from './restart-backoff';
+import { DSO_WORKER_RESTART_BASE_MS, nextWorkerRestartDelay, workerBackoffAfterMessage } from './restart-backoff';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -23,8 +23,9 @@ export class DsoWorkerClient {
   private tickInFlight = false;
   private lastTickSentAt = 0;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Wait before the next worker restart; doubles per failure, reset by a good message. */
+  /** Wait before the next worker restart; doubles per failure, reset once the worker has stayed up. */
   private restartDelayMs = DSO_WORKER_RESTART_BASE_MS;
+  private workerSpawnedAt = 0;
   private knownIds = new Set<string>();
   private knownSnapshotVersions = new Map<string, string>();
   private velocitiesTeme: Float32Array | null = null;
@@ -204,11 +205,13 @@ export class DsoWorkerClient {
       new URL('../../workers/dso.worker.ts', import.meta.url),
       { type: 'module' },
     );
+    this.workerSpawnedAt = performance.now();
 
     this.worker.onmessage = (event: MessageEvent<DsoWorkerOutMessage>) => {
       const msg = event.data;
 
-      this.restartDelayMs = DSO_WORKER_RESTART_BASE_MS; // the worker works: forget past failures
+      // forget past failures only once the worker has stayed up for a while
+      this.restartDelayMs = workerBackoffAfterMessage(this.restartDelayMs, performance.now() - this.workerSpawnedAt);
       if (msg.type === 'POSITIONS') {
         this.tickInFlight = false;
         this.lastTickSentAt = 0;
@@ -242,14 +245,7 @@ export class DsoWorkerClient {
     this.restartDelayMs = nextWorkerRestartDelay(delay);
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
-      try {
-        this.spawnWorker();
-      } catch (err) {
-        // The DSO worker cannot even be created (script missing, CSP): keep trying
-        // slowly, never throw into the page.
-        console.warn('DSO worker restart failed:', err);
-        this.scheduleRestart();
-      }
+      this.spawnWorker();
     }, delay);
   }
 

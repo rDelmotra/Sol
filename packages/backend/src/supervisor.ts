@@ -265,7 +265,11 @@ export const spawnReal: SpawnFn = (spec) => {
     kill: (signal) => child.kill(signal),
     onExit(cb) {
       // 'error' (spawn failure) can be followed by 'exit'; superviseChildren ignores the second.
-      child.once('error', () => cb(1, null));
+      // 'error' also fires when kill() fails on a child that is still running; only a child
+      // that never started (no pid) is dead, or a non-critical child would be started twice.
+      child.on('error', () => {
+        if (child.pid === undefined) cb(1, null);
+      });
       child.once('exit', (code, signal) => cb(code, signal));
     },
   };
