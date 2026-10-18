@@ -132,3 +132,72 @@ export function deriveClampedRetryWindowFromError(
 
   return clampWindowToCoverageBounds(entry, windowStart, windowEnd, coverageBounds);
 }
+
+// ============================================================
+// Ended missions
+//
+// Horizons answers an out-of-range request with ONE bound per error:
+//   "... prior to A.D. 2026-APR-02 ... TDB"  (the data starts later than the request)
+//   "... after A.D. 2026-APR-10 ... TDB"     (the data ends earlier than the request)
+// So a window that is wrong at both ends takes two clamp steps. These helpers keep
+// the bounds seen so far, clamp the window to their intersection, and tell the
+// caller when the data ended in the past, so a finished mission is not asked for
+// again every cycle.
+// ============================================================
+
+/** Data that ended more than this long ago counts as a finished mission. */
+export const EPHEMERIS_ENDED_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/** Keep the strictest bound seen so far on each side. */
+export function mergeCoverageBounds(
+  known: HorizonsCoverageBounds,
+  found: HorizonsCoverageBounds,
+): HorizonsCoverageBounds {
+  const later = (a: Date | null, b: Date | null): Date | null =>
+    a && b ? (a.getTime() >= b.getTime() ? a : b) : (a ?? b);
+  const earlier = (a: Date | null, b: Date | null): Date | null =>
+    a && b ? (a.getTime() <= b.getTime() ? a : b) : (a ?? b);
+  return {
+    earliestAvailable: later(known.earliestAvailable, found.earliestAvailable),
+    latestAvailable: earlier(known.latestAvailable, found.latestAvailable),
+  };
+}
+
+/** True when the data ends more than a day before `now`. */
+export function isEphemerisEndedInPast(bounds: HorizonsCoverageBounds, now: Date): boolean {
+  const latest = bounds.latestAvailable;
+  return latest !== null && latest.getTime() < now.getTime() - EPHEMERIS_ENDED_GRACE_MS;
+}
+
+export type CoveragePlan =
+  | { action: 'retry'; window: HorizonsRequestWindow }
+  /** The data stopped before the window even starts. Nothing to retry. */
+  | { action: 'ended'; endedAt: Date }
+  /** The bounds cannot produce a new window (data not started yet, too short, or no change). */
+  | { action: 'give-up' };
+
+/**
+ * Decide the next step after a coverage error, given every bound seen so far.
+ * The window is always clamped from the ORIGINAL request, never from a clamp of a clamp.
+ */
+export function planCoverageRetry(
+  entry: DsoRegistryEntry,
+  windowStart: Date,
+  windowEnd: Date,
+  bounds: HorizonsCoverageBounds,
+  now: Date,
+): CoveragePlan {
+  const marginMs = entry.sampleStepSec * 1000;
+  const latest = bounds.latestAvailable;
+
+  // Empty intersection because the data ended before the window begins. "Ended" means
+  // the same thing as everywhere else: the data stopped more than the grace period ago.
+  // A mission that stopped an hour ago may still get new data, so that case is left to
+  // the normal (transient) failure path and its backoff.
+  if (latest && latest.getTime() - marginMs <= windowStart.getTime() && isEphemerisEndedInPast(bounds, now)) {
+    return { action: 'ended', endedAt: latest };
+  }
+
+  const window = clampWindowToCoverageBounds(entry, windowStart, windowEnd, bounds);
+  return window ? { action: 'retry', window } : { action: 'give-up' };
+}

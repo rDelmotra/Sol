@@ -5,6 +5,7 @@ import { TimelineController, type TimelineHost } from './TimelineController';
 import { useStore } from '../../store/useStore';
 import { simClock } from '../../time/SimClock';
 import type { TleCatalogResult } from '../../data/tle-client';
+import type { DsoObject } from '../../data/dso-types';
 
 const obj = (noradId: number) => ({ noradId, name: `SAT-${noradId}`, omm: {} }) as unknown as EnrichedTLEObject;
 
@@ -22,15 +23,12 @@ interface Fake {
   host: TimelineHost;
   calls: string[];
   state: { disposed: boolean; halted: boolean };
-  /** catalog the controller reported at each dsoSetHidden call */
-  catalogAtDso: number[];
   ctl: () => TimelineController;
 }
 
 function makeFake(): Fake {
   const calls: string[] = [];
   const state = { disposed: false, halted: false };
-  const catalogAtDso: number[] = [];
   let ctl: TimelineController;
   const host: TimelineHost = {
     isDisposed: () => state.disposed,
@@ -39,14 +37,10 @@ function makeFake(): Fake {
     satellitesSetHidden: (h) => calls.push(`satHidden:${h}`),
     satellitesReseed: (c) => calls.push(`reseed:${c.length}`),
     satellitesSnap: () => calls.push('snap'),
-    dsoSetHidden: (h) => {
-      catalogAtDso.push(ctl.getCatalog().length);
-      calls.push(`dsoHidden:${h}`);
-    },
     refreshOrbitTrail: () => calls.push('trail'),
   };
   ctl = new TimelineController({ apiUrl: '', host });
-  return { host, calls, state, catalogAtDso, ctl: () => ctl };
+  return { host, calls, state, ctl: () => ctl };
 }
 
 const DAY = 86_400_000;
@@ -97,8 +91,7 @@ test('hidden path: catalog emptied first, hooks in order, before store writes; p
   await flush();
   unsub();
 
-  assert.deepEqual(f.calls, ['satHidden:true', 'dsoHidden:true', 'swapped:0', 'store', 'trail']);
-  assert.deepEqual(f.catalogAtDso, [0], 'catalog already empty when DSO is hidden');
+  assert.deepEqual(f.calls, ['satHidden:true', 'swapped:0', 'store', 'trail']);
   assert.equal(c.getCatalog().length, 0);
   assert.equal(useStore.getState().planetarium, true);
   assert.equal(useStore.getState().selectedSatellite, null);
@@ -127,10 +120,36 @@ test('live restore re-selects by noradId and clears planetarium', async () => {
   assert.equal(useStore.getState().selectedSatellite?.noradId, 30);
   assert.ok(f.calls.includes('satHidden:false'));
   assert.ok(f.calls.includes('reseed:3'));
-  // reseed -> swapped -> dso hide, in that order
+  // reseed -> swapped (the host re-syncs DSO pick IDs there), in that order
   const i = f.calls.lastIndexOf('reseed:3');
   assert.equal(f.calls[i + 1], 'swapped:3');
-  assert.match(f.calls[i + 2], /^dsoHidden:/);
+});
+
+test('DSOs are never hidden: planetarium and restore swaps keep the DSO selection and resync via onCatalogSwapped', async () => {
+  const f = makeFake();
+  const c = f.ctl();
+  c.installLive(live([1, 2, 3]));
+  const dso = { dsoId: 'artemis-ii' } as unknown as DsoObject;
+  useStore.getState().setSelectedDso(dso);
+  f.calls.length = 0;
+
+  // Planetarium (no coverage): TLE count goes to 0, the DSO selection survives.
+  simClock.jumpTo(new Date(NOW - 30 * DAY));
+  c.reconcileCatalogForTime();
+  mock.timers.tick(200);
+  await flush();
+  assert.equal(useStore.getState().planetarium, true);
+  assert.equal(useStore.getState().selectedDso, dso);
+  assert.ok(f.calls.includes('swapped:0'), 'host resyncs DSO pick IDs against TLE count 0');
+
+  // Back to live: TLE count restored, DSO still selected.
+  simClock.reset();
+  c.reconcileCatalogForTime();
+  mock.timers.tick(200);
+  await flush();
+  assert.ok(f.calls.includes('swapped:3'));
+  assert.equal(useStore.getState().selectedDso, dso);
+  assert.ok(!f.calls.some((x) => x.startsWith('dso')), 'the host has no DSO hide call');
 });
 
 test('glide completes: lands live, goLive, catalog restored', async () => {

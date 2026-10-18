@@ -25,7 +25,6 @@ export class GPUPicker {
   private readonly earthOccluder: THREE.Mesh;
   private readonly renderer: THREE.WebGLRenderer;
   private readonly camera: THREE.PerspectiveCamera;
-  private readonly pixelBuffer = new Uint8Array(4);
   private readonly areaBuffer = new Uint8Array(SAMPLE_SIZE * SAMPLE_SIZE * 4);
   /** pickAreaRadius scratch: grows to the largest circle asked for, then is reused. */
   private radiusBuffer = new Uint8Array(0);
@@ -248,22 +247,6 @@ export class GPUPicker {
   }
 
   /**
-   * Single-pixel pick for hover (cheaper than area sampling).
-   */
-  pickSingle(screenX: number, screenY: number, canvasWidth: number, canvasHeight: number): number | null {
-    const pickX = Math.floor((screenX / canvasWidth) * PICK_TARGET_SIZE);
-    const pickY = Math.floor(((canvasHeight - screenY) / canvasHeight) * PICK_TARGET_SIZE);
-
-    this.renderPickPass();
-    this.renderer.readRenderTargetPixels(this.renderTarget, pickX, pickY, 1, 1, this.pixelBuffer);
-    this.restoreState();
-
-    const idx = this.decodePixel(this.pixelBuffer, 0);
-    if (idx < 0 || idx >= this.totalCount) return null;
-    return idx;
-  }
-
-  /**
    * Register DSO geometry for picking.  The geometry must have the same
    * attributes as the TLE geometry (previousPosition, currentPosition, size,
    * pickId) so it can share the picking material.  Safe to call multiple times
@@ -301,6 +284,9 @@ export class GPUPicker {
    */
   setCatalogSize(catalogSize: number): void {
     this.catalogSize = catalogSize;
+    // Empty catalog (planetarium): the hidden point cloud still holds the old pick IDs,
+    // which would collide with the DSO ID range that now starts at 0.
+    this.pickMesh.visible = catalogSize > 0;
   }
 
   dispose(): void {

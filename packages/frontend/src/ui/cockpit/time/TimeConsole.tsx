@@ -39,8 +39,6 @@ export function TimeConsole() {
             background: 'var(--hud-glass)',
             border: '1px solid var(--hud-glass-edge)',
             borderRadius: 8,
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
             transformOrigin: 'top center',
             animation: 'hud-console-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1)',
           }}

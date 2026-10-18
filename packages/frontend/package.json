@@ -15,7 +15,6 @@
     "@orbitwatch/analytic": "*",
     "@orbitwatch/contracts": "*",
     "@orbitwatch/orbital-core": "*",
-    "fuse.js": "^7.1.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "satellite.js": "^6.0.2",

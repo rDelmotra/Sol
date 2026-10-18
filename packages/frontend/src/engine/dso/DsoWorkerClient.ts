@@ -2,12 +2,12 @@ import * as THREE from 'three';
 import type { DsoSnapshot } from '@orbitwatch/contracts';
 import { sourceToSceneInto } from '../scene/frames';
 import type { DsoWorkerInMessage, DsoWorkerOutMessage } from '../../workers/dso-protocol';
+import { DSO_WORKER_RESTART_BASE_MS, nextWorkerRestartDelay, workerBackoffAfterMessage } from './restart-backoff';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const DSO_VALID_TO_GRACE_SEC = 600;
 const DSO_TRAIL_POINTS = 360;
-const DSO_WORKER_RESTART_DELAY_MS = 500;
 const DSO_WORKER_STALL_TIMEOUT_MS = 5000;
 
 /** Store-derived state the worker is seeded from, read at call time (ctor + every restart). */
@@ -23,6 +23,9 @@ export class DsoWorkerClient {
   private tickInFlight = false;
   private lastTickSentAt = 0;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Wait before the next worker restart; doubles per failure, reset once the worker has stayed up. */
+  private restartDelayMs = DSO_WORKER_RESTART_BASE_MS;
+  private workerSpawnedAt = 0;
   private knownIds = new Set<string>();
   private knownSnapshotVersions = new Map<string, string>();
   private velocitiesTeme: Float32Array | null = null;
@@ -202,10 +205,13 @@ export class DsoWorkerClient {
       new URL('../../workers/dso.worker.ts', import.meta.url),
       { type: 'module' },
     );
+    this.workerSpawnedAt = performance.now();
 
     this.worker.onmessage = (event: MessageEvent<DsoWorkerOutMessage>) => {
       const msg = event.data;
 
+      // forget past failures only once the worker has stayed up for a while
+      this.restartDelayMs = workerBackoffAfterMessage(this.restartDelayMs, performance.now() - this.workerSpawnedAt);
       if (msg.type === 'POSITIONS') {
         this.tickInFlight = false;
         this.lastTickSentAt = 0;
@@ -235,10 +241,12 @@ export class DsoWorkerClient {
 
   private scheduleRestart(): void {
     if (this.restartTimer !== null) return;
+    const delay = this.restartDelayMs;
+    this.restartDelayMs = nextWorkerRestartDelay(delay);
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
       this.spawnWorker();
-    }, DSO_WORKER_RESTART_DELAY_MS);
+    }, delay);
   }
 
   private bootstrapState(): void {

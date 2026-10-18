@@ -19,8 +19,4 @@ export const createAnalyticSlice: Slice<AnalyticSlice> = (set, get) => ({
     set({ analyticFilter: { mode: 'only', ids: new Set(ids) } });
   },
   setAnalyticAnswer: (answer) => set({ analyticAnswer: answer }),
-  clearAnalyticAnswer: () => {
-    get().setAnalyticFilter(null);
-    set({ analyticAnswer: null });
-  },
 });

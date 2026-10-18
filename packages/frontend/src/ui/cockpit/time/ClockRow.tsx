@@ -35,7 +35,7 @@ export function ClockRow({ open, onStep, onHover, hover }: ClockRowProps) {
 
   const values = utcFieldValues(simTimeMs);
   const accent = displaced ? 'var(--hud-warn)' : 'var(--hud-text)';
-  const label = open ? 'SCRUB' : displaced ? 'REVIEW' : 'MET';
+  const label = open ? 'SCRUB' : displaced ? 'REVIEW' : 'LIVE';
   const select = (f: TimeField) => useStore.getState().setScrubField(f);
   // Focus parked on ↺ means exactly one "the D-pad is here" marker at a time.
   const digit = (f: TimeField) => (

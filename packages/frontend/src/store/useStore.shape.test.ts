@@ -25,7 +25,6 @@ const STATE_KEYS = [
   'analysisPanelOpen',
   'analyticAnswer',
   'analyticFilter',
-  'applyQueryFilters',
   'askBarOpen',
   'cameraGear',
   'cameraGearCount',
@@ -33,20 +32,13 @@ const STATE_KEYS = [
   'cameraSpeedMps',
   'catalogData',
   'categoryCounts',
-  'clearAnalyticAnswer',
-  'clearCluster',
-  'clearQueryFilters',
   'closePanels',
-  'clusterItems',
-  'clusterScreenX',
-  'clusterScreenY',
   'colorBy',
   'controlsSheetOpen',
   'countryFilter',
   'cycleReticleCandidate',
   'dataTimestamp',
   'dsoEphemerisById',
-  'dsoLabelPositions',
   'dsoObjects',
   'facetCounts',
   'focusPanelOpen',
@@ -55,10 +47,6 @@ const STATE_KEYS = [
   'historyCoverage',
   'historyDay',
   'historyLoading',
-  'hoverScreenX',
-  'hoverScreenY',
-  'hoveredName',
-  'injectSearchQuery',
   'jumpToSimTime',
   'launchFilter',
   'liveAltitudeKm',
@@ -100,19 +88,14 @@ const STATE_KEYS = [
   'setCameraMode',
   'setCatalogData',
   'setCatalogInfo',
-  'setCluster',
-  'setColorBy',
   'setControlsSheetOpen',
   'setCountryFilter',
   'setDsoEphemeris',
-  'setDsoLabelPositions',
   'setDsoObjects',
   'setGamepadConnected',
   'setHistoryCoverage',
   'setHistoryDay',
   'setHistoryLoading',
-  'setHover',
-  'setInjectSearchQuery',
   'setLiveKinematics',
   'setLoadingError',
   'setLoadingPhase',
@@ -144,8 +127,6 @@ const STATE_KEYS = [
   'setTriggerScrubPreview',
   'setTriggerSimTimeJump',
   'setVantage',
-  'setVisibleCounts',
-  'setVisibleFacetCounts',
   'setVisualListState',
   'setWallClockMs',
   'showOrbitTrail',
@@ -175,14 +156,12 @@ const STATE_KEYS = [
   'typeFilters',
   'vantage',
   'viewMode',
-  'visibleFacetCounts',
-  'visibleRegimeCounts',
   'visualList',
   'wallClockMs',
 ];
 
 const TRIGGER_SLOTS = [
-  'selectByIndex', 'injectSearchQuery', 'triggerFlyTo', 'triggerJoyride', 'triggerResetCamera',
+  'selectByIndex', 'triggerFlyTo', 'triggerJoyride', 'triggerResetCamera',
   'triggerRunAnalytic', 'triggerFlyToDso', 'triggerJoyrideDso', 'triggerSimTimeJump',
   'triggerScrubPreview', 'triggerReturnToPresent',
 ] as const;
@@ -210,13 +189,6 @@ const INITIAL_VALUES: Record<string, unknown> = {
   dsoObjects: [],
   dsoEphemerisById: {},
   selectedDso: null,
-  dsoLabelPositions: [],
-  hoveredName: null,
-  hoverScreenX: 0,
-  hoverScreenY: 0,
-  clusterItems: [],
-  clusterScreenX: 0,
-  clusterScreenY: 0,
   observerLocation: null,
   observerPlaceName: null,
   nextPasses: [],
@@ -227,7 +199,6 @@ const INITIAL_VALUES: Record<string, unknown> = {
   visualList: { status: 'loading', version: null, source: null, stale: false, count: 0, updatedAt: null, message: null },
   regimeFilters: allOn(REGS),
   regimeCounts: zeros(REGS),
-  visibleRegimeCounts: zeros(REGS),
   colorBy: 'type',
   typeFilters: allOn(['satellite', 'rocket_body', 'debris', 'unknown', 'deep_space']),
   statusFilters: allOn(['in_orbit', 'decayed', 'deorbited', 'beyond_earth', 'exploded', 'unknown']),
@@ -243,7 +214,6 @@ const INITIAL_VALUES: Record<string, unknown> = {
   analyticFilter: { mode: 'all' },
   analyticAnswer: null,
   facetCounts: emptyFacetCounts(),
-  visibleFacetCounts: emptyFacetCounts(),
   simRate: 1,
   viewMode: 'live',
   scrubberMode: false,
@@ -268,7 +238,7 @@ const INITIAL_VALUES: Record<string, unknown> = {
 
 test('store exposes exactly today\'s keys (state + actions)', () => {
   assert.deepEqual(Object.keys(initial).sort(), [...STATE_KEYS].sort());
-  assert.equal(STATE_KEYS.length, 157);
+  assert.equal(STATE_KEYS.length, 136);
 });
 
 test('initial values of every non-function key', () => {
@@ -282,7 +252,7 @@ test('initial values of every non-function key', () => {
   for (const k of nonFn) assert.deepEqual(s[k], expected[k], k);
 });
 
-test('the 11 command trigger slots start null; every other non-state key is an action', () => {
+test('the 10 command trigger slots start null; every other non-state key is an action', () => {
   const s = initial as unknown as Record<string, unknown>;
   for (const k of TRIGGER_SLOTS) assert.equal(s[k], null, k);
   const nonSlotFns = Object.keys(s).filter((k) => !(TRIGGER_SLOTS as readonly string[]).includes(k) && !(k in INITIAL_VALUES) && k !== 'simTimeMs' && k !== 'wallClockMs');
@@ -332,29 +302,16 @@ test('setSelectedDso(d) clears the three TLE selection fields; null while follow
   assert.equal(n.cameraMode, 'returning');
 });
 
-test('setDsoObjects writes deep_space count into categoryCounts, facetCounts.type, visibleFacetCounts.type', () => {
+test('setDsoObjects writes deep_space count into categoryCounts and facetCounts.type', () => {
   useStore.getState().setDsoObjects([dso('a'), dso('b')]);
   const n = useStore.getState();
   assert.equal(n.dsoObjects.length, 2);
   assert.equal(n.categoryCounts.deep_space, 2);
   assert.equal(n.facetCounts.type.deep_space, 2);
-  assert.equal(n.visibleFacetCounts.type.deep_space, 2);
   assert.equal(n.categoryCounts.debris, 0);
 });
 
-test('setVisibleFacetCounts keeps the deep_space total from facetCounts', () => {
-  useStore.getState().setDsoObjects([dso('a'), dso('b')]);
-  const counts = emptyFacetCounts();
-  counts.type.satellite = 7;
-  counts.type.deep_space = 0;
-  useStore.getState().setVisibleFacetCounts(counts);
-  const n = useStore.getState();
-  assert.equal(n.visibleFacetCounts.type.satellite, 7);
-  assert.equal(n.visibleFacetCounts.type.deep_space, 2);
-  assert.equal(counts.type.deep_space, 0); // input not mutated
-});
-
-test('setCatalogInfo seeds visible counts as clones of the totals', () => {
+test('setCatalogInfo stores the totals', () => {
   const facetCounts = emptyFacetCounts();
   facetCounts.type.satellite = 5;
   const categoryCounts = { ...(INITIAL_VALUES.categoryCounts as Record<string, number>), debris: 4 } as never;
@@ -363,12 +320,8 @@ test('setCatalogInfo seeds visible counts as clones of the totals', () => {
   const n = useStore.getState();
   assert.equal(n.objectCount, 9);
   assert.equal(typeof n.dataTimestamp, 'number');
-  assert.deepEqual(n.visibleRegimeCounts, n.regimeCounts);
-  assert.notEqual(n.visibleRegimeCounts, n.regimeCounts);
+  assert.deepEqual(n.regimeCounts, regimeCounts);
   assert.equal(n.facetCounts, facetCounts); // totals stored by reference
-  assert.deepEqual(n.visibleFacetCounts, n.facetCounts);
-  assert.notEqual(n.visibleFacetCounts, n.facetCounts);
-  assert.notEqual(n.visibleFacetCounts.type, n.facetCounts.type);
 });
 
 test('setCatalogInfo without facetCounts seeds empty facets', () => {
@@ -394,30 +347,6 @@ test('setAnalyticFilter: same set keeps reference; different set replaces; null 
   const all = useStore.getState().analyticFilter;
   s.setAnalyticFilter(null);
   assert.equal(useStore.getState().analyticFilter, all); // already 'all' -> no new object
-});
-
-test('clearAnalyticAnswer clears both the answer and the filter', () => {
-  const s = useStore.getState();
-  s.setAnalyticAnswer({ status: 'ready', question: 'q' });
-  s.setAnalyticFilter(new Set([9]));
-  s.clearAnalyticAnswer();
-  const n = useStore.getState();
-  assert.equal(n.analyticAnswer, null);
-  assert.deepEqual(n.analyticFilter, { mode: 'all' });
-});
-
-test('applyQueryFilters({}) on an all-on state keeps every filter reference', () => {
-  const before = useStore.getState();
-  before.applyQueryFilters({});
-  const after = useStore.getState();
-  for (const k of [
-    'typeFilters', 'statusFilters', 'sectorFilters', 'purposeFilters', 'regimeFilters',
-    'countryFilter', 'programFilter', 'launchFilter', 'ownerFilter',
-  ] as const) {
-    assert.equal(after[k], before[k], k);
-  }
-  before.clearQueryFilters();
-  assert.equal(useStore.getState().typeFilters, before.typeFilters);
 });
 
 test('setSimRate(2) enters review and calls triggerSimTimeJump', () => {

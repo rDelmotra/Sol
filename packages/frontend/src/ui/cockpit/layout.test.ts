@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { RETICLE_BOX_PX, RETICLE_RING_RADIUS_PX } from '../../constants/reticle';
-import { DOCK_GAP, DOCK_H, RETICLE_VIEWBOX, STATUS_BOTTOM, ringRadiusInViewBox } from './layout';
+import { DOCK_GAP, DOCK_H, RETICLE_VIEWBOX, ringRadiusInViewBox } from './layout';
 
 describe('cockpit layout', () => {
-  it('NAV/AI status sits above the dock and the ask bar (golden: bottom 124 px)', () => {
+  it('dock height and gap (golden values)', () => {
     assert.equal(DOCK_H, 40);
     assert.equal(DOCK_GAP, 12);
-    assert.equal(STATUS_BOTTOM, 124);
   });
 
   it('the drawn ring is the picked ring: 46 drawing units in the 108 px box', () => {

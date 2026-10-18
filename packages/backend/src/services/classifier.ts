@@ -29,7 +29,7 @@ const GEO_MAX_PERIOD = 1500;          // minutes
 const GEO_MAX_ECCENTRICITY = 0.1;     // GEO must be near-circular
 const HEO_MIN_ECCENTRICITY = 0.25;    // highly elliptical threshold
 
-function classifyRegime(period: number, eccentricity: number): OrbitalRegime {
+export function classifyRegime(period: number, eccentricity: number): OrbitalRegime {
   // HEO is checked first — a Molniya orbit has a ~12h period that would
   // otherwise land in MEO, but its eccentricity (~0.74) betrays it.
   if (eccentricity >= HEO_MIN_ECCENTRICITY) return 'HEO';

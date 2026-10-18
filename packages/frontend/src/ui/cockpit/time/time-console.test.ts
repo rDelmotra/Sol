@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { advanceUtcField, formatTimeDelta, tickStripOffset, utcFieldValues, wheelAdvance } from './time-console';
+import { advanceUtcField, catalogCue, formatTimeDelta, tickStripOffset, utcFieldValues, wheelAdvance } from './time-console';
 
 const T = Date.UTC(2026, 0, 31, 12, 30, 45);
 
@@ -36,5 +36,17 @@ describe('time console helpers', () => {
   it('tick strip offset wraps into 0..50', () => {
     assert.equal(tickStripOffset(-10), 40);
     assert.equal(tickStripOffset(120), 20);
+  });
+  it('catalog cue: none while the catalog is live', () => {
+    assert.equal(catalogCue({ historyLoading: false, planetarium: false }), null);
+  });
+  it('catalog cue: loading a day is dim', () => {
+    assert.deepEqual(catalogCue({ historyLoading: true, planetarium: false }), { text: 'LOADING DAY…', tone: 'dim' });
+  });
+  it('catalog cue: no catalog for the date is amber', () => {
+    assert.deepEqual(catalogCue({ historyLoading: false, planetarium: true }), { text: 'NO CATALOG FOR THIS DATE', tone: 'warn' });
+  });
+  it('catalog cue: loading wins when both flags are on', () => {
+    assert.deepEqual(catalogCue({ historyLoading: true, planetarium: true }), { text: 'LOADING DAY…', tone: 'dim' });
   });
 });

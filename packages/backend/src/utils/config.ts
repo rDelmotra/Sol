@@ -70,3 +70,81 @@ export function geminiApiKey(): string | undefined {
 export function anthropicApiKey(): string | undefined {
   return process.env.ANTHROPIC_API_KEY;
 }
+
+/**
+ * Serve /api/tle/all as brotli when the client allows it. On by default; set
+ * TLE_BROTLI to 0, off, false or no to turn it off (gzip only, as before).
+ */
+export function tleBrotliEnabled(): boolean {
+  const v = (process.env.TLE_BROTLI ?? '').trim().toLowerCase();
+  return !['0', 'off', 'false', 'no'].includes(v);
+}
+
+/** Brotli quality for the /api/tle/all copy: TLE_BROTLI_QUALITY as an integer 1 to 11, else 10. */
+export function tleBrotliQuality(): number {
+  const raw = process.env.TLE_BROTLI_QUALITY;
+  if (!raw) return 10;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.min(11, Math.max(1, n)) : 10;
+}
+
+/**
+ * CATALOG_MIN_RATIO: the smallest new catalog the updater will accept, as a share
+ * of the cached one. A number from 0 to 1, default 0.5. 0 turns the size check off
+ * (an empty catalog is still refused). Use it only if the real catalog shrank by
+ * more than half on purpose, then unset it.
+ */
+export function catalogMinRatio(): number {
+  const raw = process.env.CATALOG_MIN_RATIO;
+  if (raw === undefined || raw.trim() === '') return 0.5;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.5;
+}
+
+/**
+ * DSO_RETRY_ENDED=1 (or true, yes, on): retry deep-space objects that were marked
+ * as ended, once per boot each. Use it when you know Horizons has new data for a
+ * finished mission, then unset it. Off by default.
+ */
+export function dsoRetryEnded(): boolean {
+  const v = (process.env.DSO_RETRY_ENDED ?? '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(v);
+}
+
+// ── Alerts (see utils/alert.ts) ───────────────────────────────────────────────
+
+function trimmedEnv(name: string): string | undefined {
+  const v = process.env[name]?.trim();
+  return v ? v : undefined;
+}
+
+export type AlertWebhookFormat = 'ntfy' | 'slack' | 'discord' | 'json';
+
+/** ALERT_WEBHOOK_URL: where alerts are POSTed. Unset = no webhook. */
+export function alertWebhookUrl(): string | undefined {
+  return trimmedEnv('ALERT_WEBHOOK_URL');
+}
+
+/** ALERT_WEBHOOK_FORMAT: ntfy, slack, discord or json (default; also used for an unknown value). */
+export function alertWebhookFormat(): AlertWebhookFormat {
+  const v = (process.env.ALERT_WEBHOOK_FORMAT ?? '').trim().toLowerCase();
+  return v === 'ntfy' || v === 'slack' || v === 'discord' ? v : 'json';
+}
+
+/** RESEND_API_KEY: key for Resend's email API. Email needs this and ALERT_EMAIL_TO. */
+export function resendApiKey(): string | undefined {
+  return trimmedEnv('RESEND_API_KEY');
+}
+
+/** ALERT_EMAIL_FROM: sender address, default Resend's shared test sender. */
+export function alertEmailFrom(): string {
+  return trimmedEnv('ALERT_EMAIL_FROM') ?? 'OrbitWatch <onboarding@resend.dev>';
+}
+
+/** ALERT_EMAIL_TO: recipient(s), comma separated. */
+export function alertEmailTo(): string[] {
+  return (trimmedEnv('ALERT_EMAIL_TO') ?? '')
+    .split(',')
+    .map((a) => a.trim())
+    .filter(Boolean);
+}

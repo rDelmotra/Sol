@@ -15,8 +15,10 @@ import type {
 } from '@orbitwatch/contracts';
 import { atomicWriteJson } from '../../utils/atomic-write.js';
 import { dsoCacheRoot } from '../../utils/paths.js';
+import { logger } from '../../utils/logger.js';
 
-const SNAPSHOT_RETENTION_COUNT = 3;
+/** How many snapshot files per object are kept. Older ones are deleted: only the newest is served. */
+export const SNAPSHOT_RETENTION_COUNT = 3;
 
 export function getDsoCacheRoot(): string {
   return dsoCacheRoot();
@@ -153,27 +155,53 @@ export function buildDsoCatalog(
   };
 }
 
-async function pruneSnapshotGenerations(dsoId: DsoId): Promise<void> {
+/**
+ * Keep the newest SNAPSHOT_RETENTION_COUNT snapshot files of one object in
+ * `snapshots/<id>/` and DELETE the older ones. Orphaned `.tmp` files left by an
+ * aborted atomic write are deleted too.
+ *
+ * Old versions have no value: readers serve only the manifest's current snapshot, and
+ * a newer snapshot replaces the older values for the same times. The version the
+ * manifest points to (`keepVersion`) is never deleted, whatever its name sorts like.
+ *
+ * Call it only AFTER the manifest points at the new snapshot (see publishDsoSnapshot).
+ *
+ * Housekeeping only: a failure here is logged and the file is retried on the next
+ * publish. It must never turn a published snapshot into a recorded refresh failure,
+ * so this function does not throw.
+ */
+export async function pruneSnapshotGenerations(dsoId: DsoId, keepVersion: string | null = null): Promise<void> {
   const snapshotDir = path.join(getDsoSnapshotsRoot(), dsoId);
 
+  let files: string[];
   try {
-    const files = await fs.readdir(snapshotDir);
-    const snapshotFiles = files
-      .filter((fileName) => fileName.endsWith('.json'))
-      .sort((left, right) => right.localeCompare(left));
-
-    const filesToDelete = snapshotFiles.slice(SNAPSHOT_RETENTION_COUNT);
-    
-    // Also prune any orphaned .tmp files left over from aborted atomic writes
-    const tmpFiles = files.filter((fileName) => fileName.endsWith('.tmp'));
-    filesToDelete.push(...tmpFiles);
-
-    await Promise.all(filesToDelete.map((fileName) => fs.unlink(path.join(snapshotDir, fileName))));
+    files = await fs.readdir(snapshotDir);
   } catch (error) {
-    const nodeError = error as NodeJS.ErrnoException;
-    if (nodeError.code !== 'ENOENT') {
-      throw error;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    logger.warn(`DSO snapshot housekeeping could not list ${dsoId} (${(error as Error).message})`);
+    return;
+  }
+
+  const keepFile = keepVersion ? `${keepVersion}.json` : null;
+  const olderSnapshots = files
+    .filter((fileName) => fileName.endsWith('.json'))
+    .sort((left, right) => right.localeCompare(left))
+    .slice(SNAPSHOT_RETENTION_COUNT)
+    .filter((fileName) => fileName !== keepFile);
+  const tmpFiles = files.filter((fileName) => fileName.endsWith('.tmp'));
+
+  let failed = 0;
+  for (const fileName of [...olderSnapshots, ...tmpFiles]) {
+    try {
+      await fs.unlink(path.join(snapshotDir, fileName));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      failed += 1;
+      logger.warn(`DSO snapshot housekeeping could not delete ${dsoId}/${fileName} (${(error as Error).message})`);
     }
+  }
+  if (failed > 0) {
+    logger.warn(`DSO snapshot housekeeping left ${failed} file(s) for ${dsoId}; retried on the next publish`);
   }
 }
 
@@ -262,7 +290,8 @@ export async function publishDsoSnapshot(
 
   await atomicWriteJson(getDsoCatalogPath(), catalog);
   await atomicWriteJson(getDsoManifestPath(), manifest);
-  await pruneSnapshotGenerations(entry.dsoId);
+  // Only now, with the manifest already pointing at the new snapshot, are older files deleted.
+  await pruneSnapshotGenerations(entry.dsoId, snapshot.snapshotVersion);
 
   return {
     manifest,

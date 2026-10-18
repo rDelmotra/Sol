@@ -13,5 +13,6 @@
  * - imports from TLE-specific types or updater logic
  */
 export * from './types.js';
+export * from './ended-error.js';
 export * from './horizons.js';
 export * from './factory.js';

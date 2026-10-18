@@ -1,201 +1,215 @@
-import { useId, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useId, useMemo, useRef } from 'react';
 import type { EnrichedTLEObject } from '@orbitwatch/contracts';
+import { ER_KM, orbitPoint3D, orbitPosition, orbitShape } from '@orbitwatch/orbital-core';
 import { orbitElementsFromOmm } from '../../../sky/orbit-elements';
 import { useStore } from '../../../store/useStore';
-import {
-  SPIN_DEG_PER_S,
-  SPIN_START_RAD,
-  VIEW_H,
-  VIEW_W,
-  WEB_RINGS,
-  WEB_SPOKES,
-  frameFor,
-  prepareOrbit,
-} from './orbit-diagram';
-
-/** Spin redraws at about 30 fps: plenty for a slow turn in a small card. */
-const FRAME_MS = 33;
 
 /**
- * The locked object's orbit in 3D, to scale, seen from 5° above the equator and
- * slowly turning (7°/s). Geometry is computed once per object; the spin is
- * driven by one requestAnimationFrame loop that writes SVG attributes through
- * refs, so React never re-renders at animation rate. The marker follows the sim
- * clock, read from the store inside the loop (no subscription).
+ * The selected object's orbit in 3D, to scale: a shaded Earth (pole up, never
+ * tilted) and the equatorial plane as a dense radial web, both fixed, seen from
+ * 7 degrees above that plane. ONLY the orbit arc turns, slowly about the pole, so
+ * its tilt reads from every side (decision D13).
+ *
+ * The turn is cheap on purpose: 10 steps a second from one timer (no animation-frame
+ * loop), paused while the tab is hidden, and the three arc paths and the dot are
+ * written straight to the DOM through refs, so React never re-renders. The scale
+ * is fitted once over a full turn, so the picture never rescales while it turns.
+ * The stretch hidden by the planet's disc is dimmed; the rest of the far side is white.
  */
-export function OrbitDiagram({ object }: { object: EnrichedTLEObject }) {
-  const prep = useMemo(() => {
-    const el = orbitElementsFromOmm(object.omm);
-    return el ? prepareOrbit(el) : null;
-  }, [object]);
 
-  if (!prep) {
+const W = 200;
+const H = 130;
+const PAD = 12;
+const TILT = (7 * Math.PI) / 180; // camera elevation above the equatorial plane
+const TURN_START = 0.6; // rad; also the fixed turn of the web
+const TURN_RATE = (7 * Math.PI) / 180; // rad per second
+const TURN_STEP_MS = 100; // 10 fps
+const SAMPLES = 160;
+const WEB_RINGS = 16;
+const WEB_SPOKES = 60;
+
+interface V { x: number; y: number; z: number }
+interface P { sx: number; sy: number; d: number }
+
+const cosT = Math.cos(TILT);
+const sinT = Math.sin(TILT);
+
+/** Earth-fixed-axis point (km) to unscaled view coords, turned by `turn` about the pole. */
+function raw(p: V, turn: number) {
+  const cs = Math.cos(turn);
+  const sn = Math.sin(turn);
+  const x = p.x * cs - p.y * sn;
+  const y = p.x * sn + p.y * cs;
+  return { x, y: -(p.z * cosT + y * sinT), d: -y * cosT + p.z * sinT };
+}
+
+function toPath(pts: P[]): string {
+  return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.sx.toFixed(2)} ${p.sy.toFixed(2)}`).join(' ');
+}
+
+/** The orbit at `turn` as three path strings: near side, and far side (whole). Runs are separate subpaths. */
+function arcPaths(arc: V[], turn: number, cx: number, cy: number, s: number): { front: string; back: string } {
+  const front: string[] = [];
+  const back: string[] = [];
+  let run: P[] = [];
+  let runFront = true;
+  const flush = () => {
+    if (run.length > 1) (runFront ? front : back).push(toPath(run));
+  };
+  for (let k = 0; k < arc.length; k++) {
+    const q = raw(arc[k], turn);
+    const p: P = { sx: cx + q.x * s, sy: cy + q.y * s, d: q.d };
+    const f = p.d >= 0;
+    if (k > 0 && f !== runFront) {
+      run.push(p); // overlap one point so the line has no gap at the crossing
+      flush();
+      run = [run[run.length - 1]];
+    }
+    runFront = f;
+    run.push(p);
+  }
+  flush();
+  return { front: front.join(' '), back: back.join(' ') };
+}
+
+type Elements = NonNullable<ReturnType<typeof orbitElementsFromOmm>>;
+
+export function OrbitDiagram({ object }: { object: EnrichedTLEObject }) {
+  const el = useMemo(() => orbitElementsFromOmm(object.omm), [object]);
+  if (!el || !orbitShape(el)) {
     return (
-      <div
-        style={{
-          height: '100%',
-          display: 'grid',
-          placeItems: 'center',
-          fontSize: 9,
-          letterSpacing: '0.2em',
-          color: 'var(--hud-text-dim)',
-          fontFamily: 'var(--font-hud-mono)',
-        }}
-      >
+      <div style={{ height: '100%', display: 'grid', placeItems: 'center', fontSize: 9, letterSpacing: '0.2em', color: 'var(--hud-text-dim)', fontFamily: 'var(--font-hud-mono)' }}>
         NO ORBIT SOLUTION
       </div>
     );
   }
-  return <Diagram prep={prep} />;
+  return <Diagram el={el} />;
 }
 
-function Diagram({ prep }: { prep: NonNullable<ReturnType<typeof prepareOrbit>> }) {
-  // useId contains colons; keep the ids plain so url(#…) is safe everywhere.
+function Diagram({ el }: { el: Elements }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
-  const insideId = `${uid}-in`;
-  const outsideId = `${uid}-out`;
-  const shadeId = `${uid}-shade`;
+  const frontRef = useRef<SVGPathElement>(null);
+  const backOutRef = useRef<SVGPathElement>(null);
+  const backInRef = useRef<SVGPathElement>(null);
+  const dotRef = useRef<SVGGElement>(null);
 
-  const insideCircle = useRef<SVGCircleElement>(null);
-  const outsidePath = useRef<SVGPathElement>(null);
-  const rings = useRef<(SVGPathElement | null)[]>([]);
-  const spokes = useRef<(SVGPathElement | null)[]>([]);
-  const backOut = useRef<SVGPathElement>(null);
-  const backIn = useRef<SVGPathElement>(null);
-  const frontLine = useRef<SVGPathElement>(null);
-  const earth = useRef<SVGCircleElement>(null);
-  const com = useRef<SVGGElement>(null);
-  const markerBack = useRef<SVGGElement>(null);
-  const markerFront = useRef<SVGGElement>(null);
+  const g = useMemo(() => {
+    const { a, e } = orbitShape(el)!;
+    const arc: V[] = [];
+    for (let k = 0; k <= SAMPLES; k++) {
+      const E = (k / SAMPLES) * 2 * Math.PI;
+      const nu = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
+      const p3 = orbitPoint3D(el, a * (1 - e * Math.cos(E)), nu);
+      if (!p3) return null;
+      arc.push(p3);
+    }
 
-  useLayoutEffect(() => {
-    let spin = SPIN_START_RAD;
-    let drawnSpin = NaN;
-    let drawnTime = NaN;
-    let last = performance.now();
-    let acc = 0;
-    let raf = 0;
-
-    const draw = () => {
-      const atMs = useStore.getState().simTimeMs;
-      if (spin === drawnSpin && atMs === drawnTime) return;
-      drawnSpin = spin;
-      drawnTime = atMs;
-      const f = frameFor(prep, spin, atMs);
-      const { cx, cy, r } = f.earth;
-      for (const c of [insideCircle.current, earth.current]) {
-        c?.setAttribute('cx', String(cx));
-        c?.setAttribute('cy', String(cy));
-        c?.setAttribute('r', String(r));
+    // Fit over a whole turn so the scale and centre never change while the arc turns.
+    let x0 = -ER_KM, x1 = ER_KM, y0 = -ER_KM, y1 = ER_KM;
+    for (let t = 0; t < 24; t++) {
+      for (const p of arc) {
+        const q = raw(p, (t / 24) * 2 * Math.PI);
+        x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x);
+        y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y);
       }
-      outsidePath.current?.setAttribute('d', f.outside);
-      rings.current.forEach((p, i) => p?.setAttribute('d', f.rings[i] ?? ''));
-      spokes.current.forEach((p, i) => p?.setAttribute('d', f.spokes[i] ?? ''));
-      for (const p of [backOut.current, backIn.current]) p?.setAttribute('d', f.back);
-      frontLine.current?.setAttribute('d', f.front);
-      com.current?.setAttribute('transform', `translate(${cx} ${cy})`);
-      const m = f.marker;
-      const place = (g: SVGGElement | null, show: boolean) => {
-        if (!g) return;
-        g.setAttribute('display', show && m ? 'inline' : 'none');
-        if (m) g.setAttribute('transform', `translate(${m.sx} ${m.sy})`);
-      };
-      place(markerBack.current, !!m && m.d < 0);
-      place(markerFront.current, !!m && m.d >= 0);
-    };
+    }
+    const s = Math.min((W - 2 * PAD) / (x1 - x0), (H - 2 * PAD) / (y1 - y0));
+    const cx = W / 2 - ((x0 + x1) / 2) * s;
+    const cy = H / 2 - ((y0 + y1) / 2) * s;
 
-    const tick = (now: number) => {
-      acc += now - last;
-      last = now;
-      if (acc >= FRAME_MS) {
-        spin += ((SPIN_DEG_PER_S * Math.PI) / 180) * (acc / 1000);
-        acc = 0;
-        draw();
+    // The web is fixed; rings are unchanged by any turn, spokes stay at the start turn.
+    const proj = (p: V): P => {
+      const q = raw(p, TURN_START);
+      return { sx: cx + q.x * s, sy: cy + q.y * s, d: q.d };
+    };
+    const webR = (W / 2 + Math.abs(cx - W / 2)) / s;
+    const ring = (R: number) =>
+      toPath(Array.from({ length: 73 }, (_, k) => proj({ x: R * Math.cos((k / 72) * 2 * Math.PI), y: R * Math.sin((k / 72) * 2 * Math.PI), z: 0 })));
+    const rings = Array.from({ length: WEB_RINGS }, (_, k) => ring((webR * (k + 1)) / WEB_RINGS));
+    const spokes = Array.from({ length: WEB_SPOKES }, (_, k) => {
+      const t = (k / WEB_SPOKES) * 2 * Math.PI;
+      return toPath([proj({ x: 0, y: 0, z: 0 }), proj({ x: webR * Math.cos(t), y: webR * Math.sin(t), z: 0 })]);
+    });
+    return { arc, s, cx, cy, earthR: ER_KM * s, rings, spokes, first: arcPaths(arc, TURN_START, cx, cy, s) };
+  }, [el]);
+
+  useEffect(() => {
+    if (!g) return;
+    const t0 = performance.now();
+    const step = () => {
+      if (document.hidden) return;
+      const turn = TURN_START + (TURN_RATE * (performance.now() - t0)) / 1000;
+      const { front, back } = arcPaths(g.arc, turn, g.cx, g.cy, g.s);
+      frontRef.current?.setAttribute('d', front);
+      backOutRef.current?.setAttribute('d', back);
+      backInRef.current?.setAttribute('d', back);
+      const pos = orbitPosition(el, useStore.getState().simTimeMs);
+      const p3 = pos ? orbitPoint3D(el, pos.r, pos.trueAnomaly) : null;
+      const dot = dotRef.current;
+      if (dot) {
+        if (p3) {
+          const q = raw(p3, turn);
+          dot.setAttribute('transform', `translate(${(g.cx + q.x * g.s).toFixed(2)} ${(g.cy + q.y * g.s).toFixed(2)})`);
+          dot.setAttribute('opacity', q.d >= 0 ? '1' : '0.5');
+          dot.setAttribute('display', 'inline');
+        } else {
+          dot.setAttribute('display', 'none');
+        }
       }
-      raf = requestAnimationFrame(tick);
     };
-    draw();
-    raf = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(raf);
-    };
-  }, [prep]);
+    step();
+    const id = setInterval(step, TURN_STEP_MS);
+    return () => clearInterval(id);
+  }, [g, el]);
+
+  if (!g) return null;
+  const { cx, cy, earthR, rings, spokes, first } = g;
 
   return (
-    <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} style={{ height: '100%', width: '100%', fontFamily: 'var(--font-hud-mono)' }}>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ height: '100%', width: '100%', fontFamily: 'var(--font-hud-mono)' }}>
       <defs>
-        <clipPath id={insideId}>
-          <circle ref={insideCircle} />
+        <clipPath id={`${uid}in`}><circle cx={cx} cy={cy} r={earthR} /></clipPath>
+        <clipPath id={`${uid}out`}>
+          <path clipRule="evenodd" d={`M 0 0 H ${W} V ${H} H 0 Z M ${cx - earthR} ${cy} a ${earthR} ${earthR} 0 1 0 ${2 * earthR} 0 a ${earthR} ${earthR} 0 1 0 ${-2 * earthR} 0 Z`} />
         </clipPath>
-        <clipPath id={outsideId}>
-          <path ref={outsidePath} clipRule="evenodd" />
-        </clipPath>
-        <radialGradient id={shadeId} cx="35%" cy="30%" r="75%">
+        <radialGradient id={`${uid}shade`} cx="35%" cy="30%" r="75%">
           <stop offset="0" stopColor="var(--hud-arc)" stopOpacity={0.27} />
           <stop offset="0.55" stopColor="var(--hud-arc)" stopOpacity={0.24} />
           <stop offset="1" stopColor="var(--hud-arc)" stopOpacity={0.21} />
         </radialGradient>
       </defs>
 
-      {/* The equatorial plane as a radial web, so an inclined orbit visibly tilts out of it. Faint: a reference, not a subject. */}
+      {/* The equatorial plane as a radial web: fixed, faint reference. */}
       <g fill="none" stroke="var(--hud-arc)">
-        {Array.from({ length: WEB_RINGS }, (_, i) => (
-          <path
-            key={`wr${i}`}
-            ref={(el) => {
-              rings.current[i] = el;
-            }}
-            strokeWidth={0.3}
-            opacity={0.23 * (1 - i / (WEB_RINGS + 2))}
-          />
+        {rings.map((d, i) => (
+          <path key={`wr${i}`} d={d} strokeWidth={0.3} opacity={0.23 * (1 - i / (WEB_RINGS + 2))} />
         ))}
-        {Array.from({ length: WEB_SPOKES }, (_, i) => (
-          <path
-            key={`ws${i}`}
-            ref={(el) => {
-              spokes.current[i] = el;
-            }}
-            strokeWidth={0.25}
-            opacity={0.15}
-          />
+        {spokes.map((d, i) => (
+          <path key={`ws${i}`} d={d} strokeWidth={0.25} opacity={0.15} />
         ))}
       </g>
 
-      {/* Far side first, so the sphere covers it; only the stretch hidden by the disc is dimmed. */}
+      {/* Far side of the orbit: white where visible, dimmed where the Earth's disc covers it. */}
       <g fill="none" stroke="#fff" strokeWidth={0.9}>
-        <path ref={backOut} clipPath={`url(#${outsideId})`} />
-        <path ref={backIn} clipPath={`url(#${insideId})`} opacity={0.4} />
+        <path ref={backOutRef} d={first.back} clipPath={`url(#${uid}out)`} />
+        <path ref={backInRef} d={first.back} clipPath={`url(#${uid}in)`} opacity={0.4} />
       </g>
-      <Marker gRef={markerBack} dim />
 
-      {/* The Earth: a plain shaded sphere, same hue as the web. */}
-      <circle ref={earth} fill={`url(#${shadeId})`} stroke="var(--hud-arc-dim)" strokeWidth={0.5} />
+      <circle cx={cx} cy={cy} r={earthR} fill={`url(#${uid}shade)`} stroke="var(--hud-arc-dim)" strokeWidth={0.5} />
 
-      {/* Near side, then the marker on top. */}
-      <path ref={frontLine} fill="none" stroke="#fff" strokeWidth={0.9} />
-      <Marker gRef={markerFront} />
+      {/* Near side of the orbit, over the Earth. */}
+      <path ref={frontRef} d={first.front} fill="none" stroke="#fff" strokeWidth={0.9} />
 
-      {/* Centre of mass: the point everything orbits. */}
-      <g ref={com}>
-        <circle r={3.2} fill="oklch(0.85 0.12 235)" opacity={0.18} />
-        <circle r={1.5} fill="oklch(0.9 0.1 235)" />
+      {/* The object: a plain dot that rides the arc as it turns. */}
+      <g ref={dotRef} display="none">
+        <circle r={5} fill="var(--hud-arc)" opacity={0.25} />
+        <circle r={4} fill="none" stroke="var(--hud-arc)" strokeWidth={0.5} opacity={0.8} />
+        <circle r={2} fill="#fff" />
       </g>
+
+      {/* Centre of mass. */}
+      <circle cx={cx} cy={cy} r={3.2} fill="oklch(0.85 0.12 235)" opacity={0.18} />
+      <circle cx={cx} cy={cy} r={1.5} fill="oklch(0.9 0.1 235)" />
     </svg>
-  );
-}
-
-/** Object marker at the group's origin; the loop moves the group. Pulses via SMIL. */
-function Marker({ gRef, dim }: { gRef: React.RefObject<SVGGElement>; dim?: boolean }) {
-  return (
-    <g ref={gRef} display="none" opacity={dim ? 0.5 : 1}>
-      <circle r={4} fill="var(--hud-arc)" opacity={0.3}>
-        <animate attributeName="r" values="3;7;3" dur="1.6s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.5;0.05;0.5" dur="1.6s" repeatCount="indefinite" />
-      </circle>
-      <circle r={4} fill="none" stroke="var(--hud-arc)" strokeWidth={0.5} opacity={0.8} />
-      <circle r={2} fill="#fff">
-        <animate attributeName="opacity" values="1;0.65;1" dur="1.6s" repeatCount="indefinite" />
-      </circle>
-    </g>
   );
 }

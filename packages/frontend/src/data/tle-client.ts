@@ -2,6 +2,7 @@ import type { TLEInput, FacetCounts } from './types';
 import { emptyFacetCounts } from './types';
 import type { CatalogResponse, EnrichedTLEObject, ObjectCategory, OrbitalRegime, Sector, Purpose, OrbitalStatus } from '@orbitwatch/contracts';
 import { readCatalogCache, writeCatalogCache } from './catalog-cache';
+import { catalogGate, type LoadGate } from './load-gate';
 import {
   fetchVisualList,
   type VisualListResolvedResult,
@@ -130,23 +131,33 @@ async function revalidateCatalogInBackground(apiUrl: string, cachedVersion: stri
  * cache (catalog-cache.ts): within CATALOG_MAX_AGE_MS, returns the on-disk copy
  * instantly and refreshes in the background; otherwise downloads fresh and
  * caches it (write is fire-and-forget so it never slows the cold path).
+ *
+ * Opens `gate` (the catalog gate, which holds back the Earth textures) however
+ * this ends — cache hit, download, or failure — so nothing waits on a dead request.
  */
-export async function fetchTleCatalog(apiUrl: string): Promise<TleCatalogResult> {
-  const cached = await readCatalogCache();
-  if (cached && Date.now() - cached.fetchedAt < CATALOG_MAX_AGE_MS) {
-    // Warm load — instant render from disk; refresh in the background for next time.
-    void revalidateCatalogInBackground(apiUrl, cached.version);
-    return buildCatalogResult(cached.catalogData);
-  }
+export async function fetchTleCatalog(
+  apiUrl: string,
+  gate: Pick<LoadGate, 'settle'> = catalogGate,
+): Promise<TleCatalogResult> {
+  try {
+    const cached = await readCatalogCache();
+    if (cached && Date.now() - cached.fetchedAt < CATALOG_MAX_AGE_MS) {
+      // Warm load — instant render from disk; refresh in the background for next time.
+      void revalidateCatalogInBackground(apiUrl, cached.version);
+      return buildCatalogResult(cached.catalogData);
+    }
 
-  // Cold load (first visit or cache past the staleness ceiling) — fetch fresh.
-  const fresh = await fetchCatalogFromNetwork(apiUrl);
-  void writeCatalogCache({
-    version: fresh.version,
-    fetchedAt: Date.now(),
-    catalogData: fresh.catalogData,
-  });
-  return buildCatalogResult(fresh.catalogData);
+    // Cold load (first visit or cache past the staleness ceiling) — fetch fresh.
+    const fresh = await fetchCatalogFromNetwork(apiUrl);
+    void writeCatalogCache({
+      version: fresh.version,
+      fetchedAt: Date.now(),
+      catalogData: fresh.catalogData,
+    });
+    return buildCatalogResult(fresh.catalogData);
+  } finally {
+    gate.settle();
+  }
 }
 
 // ── Visual List Poller ────────────────────────────────────────────────────

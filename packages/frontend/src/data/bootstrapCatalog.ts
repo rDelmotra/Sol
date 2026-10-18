@@ -1,6 +1,7 @@
 import type { TLEInput, FacetCounts } from './types';
 import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime } from '@orbitwatch/contracts';
 import { fetchTleCatalog } from './tle-client';
+import { takeCatalogPrefetch } from './catalog-prefetch';
 
 export interface BootstrapCatalogInfo {
   objectCount: number;
@@ -26,7 +27,9 @@ export interface BootstrapCatalogResult {
  * subscriptions, and command/trigger registration stay in the Engine.
  */
 export async function bootstrapCatalog(apiUrl: string): Promise<BootstrapCatalogResult> {
-  const { catalogData, tles, categoryCounts, regimeCounts, facetCounts } = await fetchTleCatalog(apiUrl);
+  // main.tsx starts the request as soon as the app boots; use it if it is there.
+  const { catalogData, tles, categoryCounts, regimeCounts, facetCounts } =
+    await (takeCatalogPrefetch(apiUrl) ?? fetchTleCatalog(apiUrl));
 
   return {
     catalogData,

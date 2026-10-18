@@ -6,7 +6,15 @@ import type {
   ProviderSample,
 } from './types.js';
 import { logger } from '../../utils/logger.js';
-import { deriveClampedRetryWindowFromError } from './horizons-coverage.js';
+import {
+  extractCoverageBoundsFromError,
+  isEphemerisEndedInPast,
+  mergeCoverageBounds,
+  planCoverageRetry,
+  type HorizonsCoverageBounds,
+  type HorizonsRequestWindow,
+} from './horizons-coverage.js';
+import { DsoEphemerisEndedError } from './ended-error.js';
 
 const HORIZONS_API_URL = 'https://ssd.jpl.nasa.gov/api/horizons.api';
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -317,45 +325,103 @@ async function requestHorizons(
   }
 }
 
-async function requestHorizonsWithCoverageClamp(
+/** One request to Horizons for an exact window. Injected in tests. */
+export type HorizonsRequestFn = (
   entry: DsoRegistryEntry,
   windowStart: Date,
   windowEnd: Date,
+) => Promise<ProviderFetchResult>;
+
+// Horizons reports one bound per error, so a window that is wrong at both ends
+// needs two clamps: first request fails ("prior to"), retry 1 fails ("after"),
+// retry 2 asks for the intersection. Never more than 3 requests per refresh.
+const MAX_CLAMP_RETRIES = 2;
+
+function windowsEqual(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
+  return aStart.getTime() === bStart.getTime() && aEnd.getTime() === bEnd.getTime();
+}
+
+/**
+ * Ask Horizons for a window; when it answers "no ephemeris prior to / after ...",
+ * read the bounds, clamp the window to what exists and ask again (at most
+ * MAX_CLAMP_RETRIES times, and never for a window already tried).
+ *
+ *  - Data ends in the past (more than a day ago): a successful clamped fetch comes
+ *    back with `coverageEndedAt`; a failed or empty one throws DsoEphemerisEndedError.
+ *    Either way the worker learns the mission is over and stops asking.
+ *  - Anything else that fails (network, throttle, parse errors, unknown target,
+ *    data that has not started yet) is rethrown as it always was: transient, retried
+ *    later by the normal backoff.
+ */
+export async function requestWithCoverageClamp(
+  entry: DsoRegistryEntry,
+  windowStart: Date,
+  windowEnd: Date,
+  request: HorizonsRequestFn = requestHorizons,
+  now: Date = new Date(),
 ): Promise<ProviderFetchResult> {
-  try {
-    return await requestHorizons(entry, windowStart, windowEnd);
-  } catch (error) {
-    if (!(error instanceof HorizonsObjectNotFoundError)) {
-      throw error;
-    }
+  let currentStart = windowStart;
+  let currentEnd = windowEnd;
+  let retries = 0;
+  let bounds: HorizonsCoverageBounds = { earliestAvailable: null, latestAvailable: null };
 
-    const clampedWindow = deriveClampedRetryWindowFromError(
-      entry,
-      windowStart,
-      windowEnd,
-      error.message,
+  const requested = `requestedWindow=${formatWindowRange(windowStart, windowEnd)}`;
+  const endedError = (reason: string): DsoEphemerisEndedError => {
+    const endedAt = bounds.latestAvailable as Date;
+    return new DsoEphemerisEndedError(
+      `Horizons ephemeris for ${entry.dsoId} ended ${endedAt.toISOString()} (${reason}; ${requested})`,
+      endedAt,
     );
+  };
 
-    if (!clampedWindow) {
-      throw new HorizonsObjectNotFoundError(
-        `${error.message} (requestedWindow=${formatWindowRange(windowStart, windowEnd)}; no valid clamped retry window)`,
-      );
-    }
-
-    logger.warn(
-      `Horizons range clamp retry for ${entry.dsoId}: requestedWindow=${formatWindowRange(windowStart, windowEnd)} clampedWindow=${formatWindowRange(clampedWindow.windowStart, clampedWindow.windowEnd)}`,
-    );
-
+  for (;;) {
     try {
-      return await requestHorizons(entry, clampedWindow.windowStart, clampedWindow.windowEnd);
-    } catch (retryError) {
-      if (retryError instanceof HorizonsObjectNotFoundError) {
+      const result = await request(entry, currentStart, currentEnd);
+      if (retries > 0 && isEphemerisEndedInPast(bounds, now)) {
+        return { ...result, coverageEndedAt: (bounds.latestAvailable as Date).toISOString() };
+      }
+      return result;
+    } catch (error) {
+      if (!(error instanceof HorizonsObjectNotFoundError)) {
+        throw error;
+      }
+
+      const found = extractCoverageBoundsFromError(error.message);
+      if (!found || (!found.earliestAvailable && !found.latestAvailable)) {
         throw new HorizonsObjectNotFoundError(
-          `${retryError.message} (requestedWindow=${formatWindowRange(windowStart, windowEnd)} clampedWindow=${formatWindowRange(clampedWindow.windowStart, clampedWindow.windowEnd)})`,
+          `${error.message} (${requested}; no valid clamped retry window)`,
+        );
+      }
+      bounds = mergeCoverageBounds(bounds, found);
+
+      const plan = planCoverageRetry(entry, windowStart, windowEnd, bounds, now);
+      if (plan.action === 'ended') {
+        throw endedError('no data inside the requested window');
+      }
+
+      const canRetry =
+        plan.action === 'retry' &&
+        retries < MAX_CLAMP_RETRIES &&
+        !windowsEqual(plan.window.windowStart, plan.window.windowEnd, currentStart, currentEnd);
+
+      if (!canRetry) {
+        if (isEphemerisEndedInPast(bounds, now)) {
+          throw endedError('clamped window could not be fetched');
+        }
+        const tried =
+          retries > 0 ? ` clampedWindow=${formatWindowRange(currentStart, currentEnd)}` : '';
+        throw new HorizonsObjectNotFoundError(
+          `${error.message} (${requested}${tried}; no valid clamped retry window)`,
         );
       }
 
-      throw retryError;
+      const window = (plan as { action: 'retry'; window: HorizonsRequestWindow }).window;
+      logger.warn(
+        `Horizons range clamp retry for ${entry.dsoId}: ${requested} clampedWindow=${formatWindowRange(window.windowStart, window.windowEnd)}`,
+      );
+      currentStart = window.windowStart;
+      currentEnd = window.windowEnd;
+      retries += 1;
     }
   }
 }
@@ -366,6 +432,6 @@ export class HorizonsProvider implements DsoProviderAdapter {
     windowStart: Date,
     windowEnd: Date,
   ): Promise<ProviderFetchResult> {
-    return runSerialized(() => requestHorizonsWithCoverageClamp(entry, windowStart, windowEnd));
+    return runSerialized(() => requestWithCoverageClamp(entry, windowStart, windowEnd));
   }
 }

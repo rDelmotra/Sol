@@ -18,8 +18,9 @@ export interface DsoInterpolationOptions {
  *
  * - Binary search for the bracketing pair
  * - Linear interpolation between adjacent samples
- * - Clamps to nearest sample at window edges
- * - Returns null once timestamp exceeds validTo + optional grace
+ * - Returns null before the first sample (a mission is not visible before its
+ *   ephemeris starts) and once timestamp exceeds validTo + optional grace
+ * - Holds the last sample between the final sample and validTo + grace
  */
 export function interpolateDsoPosition(
   snapshot: DsoSnapshot,
@@ -33,16 +34,19 @@ export function interpolateDsoPosition(
   const validToGraceMs = options.validToGraceMs ?? 0;
   if (timestampMs > validToMs + validToGraceMs) return null;
 
+  const firstMs = Date.parse(vectors[0][0]);
+  const lastMs = Date.parse(vectors[vectors.length - 1][0]);
+
+  // Before the ephemeris starts the object does not exist yet: not visible.
+  if (timestampMs < firstMs) return null;
+
   // Single sample — return it directly
   if (vectors.length === 1) {
     return vecToPosition(vectors[0]);
   }
 
-  const firstMs = Date.parse(vectors[0][0]);
-  const lastMs = Date.parse(vectors[vectors.length - 1][0]);
-
-  // Clamp before first sample
-  if (timestampMs <= firstMs) {
+  // Exactly at the first sample
+  if (timestampMs === firstMs) {
     return vecToPosition(vectors[0]);
   }
 

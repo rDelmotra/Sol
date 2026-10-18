@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { EarthRenderer } from '../../EarthRenderer';
 import { useStore, isDomeView } from '../../../store/useStore';
+import { catalogGate } from '../../../data/load-gate';
+import { TEXTURE_URLS } from '../../textures/texture-manifest';
+import { textureStartGate } from '../../textures/texture-gate';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 
 /**
@@ -29,7 +32,10 @@ export class EarthLayer implements Layer {
   init(ctx: LayerContext): void {
     this.scene = ctx.scene;
     this.camera = ctx.camera;
-    this.earthRenderer = new EarthRenderer(ctx.maxAnisotropy, ctx.renderer, ctx.camera);
+    // Draw the globe now with placeholder maps; fetch the heavy textures only after the
+    // satellite catalog has settled (or ~15 s), so the catalog gets the link first.
+    const texturesMayLoad = textureStartGate(Object.values(TEXTURE_URLS), catalogGate);
+    this.earthRenderer = new EarthRenderer(ctx.maxAnisotropy, ctx.renderer, ctx.camera, texturesMayLoad);
     ctx.scene.add(this.earthRenderer.object);
   }
 

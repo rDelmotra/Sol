@@ -47,7 +47,17 @@ Import rules between and inside packages live in `tests/architecture.test.ts`. R
 | App and routes table | `packages/backend/src/app.ts` |
 | Boot tasks | `packages/backend/src/boot.ts` |
 | Entry point | `packages/backend/src/index.ts` |
+| Production process supervisor: runs the API and the DSO worker: exits non-zero if the API dies, restarts only the worker (with backoff) if it dies (`npm run start:prod -w @orbitwatch/backend`) | `packages/backend/src/supervisor.ts` |
+| Data-volume disk check: boot log, log after each raw archive write, `GET /health` | `packages/backend/src/utils/disk-usage.ts` |
 | Env access | `packages/backend/src/utils/config.ts` |
+| Space-Track attempt log: backoff, 5-a-day cap, alert memory | `packages/backend/src/cache/attempt-log.ts` |
+| CelesTrak attempt log: 2 hour gate per group | `packages/backend/src/cache/celestrak-attempts.ts` |
+| Daily update cycle: Space-Track first, CelesTrak overlay fallback, alert | `packages/backend/src/cron/tle-updater.ts` |
+| CelesTrak overlay merge rules (the orbit-only merge is `mergeNewerOrbit` in the update cycle) | `packages/backend/src/cache/catalog-overlay.ts` |
+| Alerts: ERROR log, optional webhook and Resend email | `packages/backend/src/utils/alert.ts` |
+| Volume alerts at 75% and 90% used, once per UTC day per level | `packages/backend/src/utils/volume-alert.ts` |
+| Memory of the volume and write-failure alerts (`alert-state.json`) | `packages/backend/src/cache/alert-state.ts` |
+| Period and apsides from mean motion and eccentricity (CelesTrak has none) | `packages/backend/src/utils/orbit-summary.ts` |
 | All filesystem paths | `packages/backend/src/utils/paths.ts` |
 | HTTP routes | `packages/backend/src/routes/` |
 | Data fetchers, NL compiler, prompt builder | `packages/backend/src/services/` |
@@ -65,6 +75,9 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Area | Where |
 |---|---|
 | Thin orchestrator, rAF loop | `packages/frontend/src/engine/Engine.ts` |
+| Idle frame governor, pure rules: when the loop may skip a frame (full rate, 20 fps idle, 10 fps unfocused) and the `?perf=full` parser | `packages/frontend/src/engine/render/frame-governor.ts` |
+| Frame pacer: store and clock to governor inputs, one call per display tick (the only governor wiring in Engine) | `packages/frontend/src/engine/frame-pacer.ts` |
+| Activity tracker: passive window listeners stamping the last pointer, wheel, key, touch, pad or resize time, plus pad polling | `packages/frontend/src/engine/input/activity-tracker.ts` |
 | Scene layers (one per visual system) | `packages/frontend/src/engine/world/layers/` |
 | Layer registry and failure isolation | `packages/frontend/src/engine/world/World.ts` |
 | Layer contract | `packages/frontend/src/engine/render/Layer.ts` |
@@ -76,6 +89,7 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Gamepad HUD buttons (lock, START, L3/R3, SELECT) to store calls, pure | `packages/frontend/src/engine/input/pad-commands.ts` |
 | D-pad: panes, land, time-scrub field focus and step/hold, pure | `packages/frontend/src/engine/input/gamepad-scrub.ts` |
 | Gamepad time-scrub auto-repeat, pure | `packages/frontend/src/engine/input/scrub-repeat.ts` |
+| Pointer input: click select (isolated objects only), drag, dome look and pinch, reticle pick. No hover pick. Tested with fakes | `packages/frontend/src/engine/input/InputManager.ts` (`InputManager.test.ts`) |
 | Reticle area-pick circle test and ranking, pure | `packages/frontend/src/engine/input/reticle-pick.ts` |
 | Follow to free pull-back (eases the camera out of follow range), pure step and plan | `packages/frontend/src/engine/controllers/UnfollowAnimator.ts` |
 | Land where you look / take off: ground pick plus the vantage, location and place-name store writes | `packages/frontend/src/engine/controllers/LandingController.ts` |
@@ -95,7 +109,7 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Cockpit HUD open/closed state (panels, ask bar, controls sheet) | `packages/frontend/src/store/hudSlice.ts` |
 | Data clients (pure fetch, no store) | `packages/frontend/src/data/` |
 | Live query data source | `packages/frontend/src/query/analytic/live-source.ts` |
-| Older keyword query engine | `packages/frontend/src/query/` |
+| Installed launch/org vocabulary (read by the live source; nothing fetches it today, see OPEN.md) | `packages/frontend/src/query/vocab.ts` |
 | Simulation clock | `packages/frontend/src/time/SimClock.ts` |
 | Calendar time fields (gamepad time scrub) | `packages/frontend/src/time/time-fields.ts` |
 | Observer-sky logic (no engine, store or UI) | `packages/frontend/src/sky/` |
@@ -104,9 +118,9 @@ Run the enrichment build with `npm run enrichment:build -w packages/backend`.
 | Pass plan for the selected object: store subscription owned by the Engine, writes `setPassPlan` | `packages/frontend/src/engine/controllers/PassPlanner.ts` |
 | OMM to orbit-diagram elements | `packages/frontend/src/sky/orbit-elements.ts` |
 | Overlay UI | `packages/frontend/src/ui/` |
-| Cockpit HUD root: shell, layout numbers, formatters, keyboard map, tokens (shared surface, mounted by App) | `packages/frontend/src/ui/cockpit/` (`CockpitHud.tsx`, `layout.ts`, `format.ts`, `keys.ts`, `useCockpitKeys.ts`, `cockpit.css`) |
-| Cockpit primitives: the shared building blocks every other cockpit folder uses (glass pane, pane stack and pane body, key/value rows, pane header, empty state, action row, error boundary, title, vignette and scan, native-button reset style). Nothing here imports a feature folder | `packages/frontend/src/ui/cockpit/primitives/` |
-| Cockpit side panes, one file per pane (`IdentityPane.tsx`, `OrbitPane.tsx`, `CatalogPane.tsx`, `ObjectScanPane.tsx`, `TelemetryPane.tsx`, `ActionsPane.tsx`), the two stacks that only arrange them (`AnalysisPanes.tsx`, `FocusPanes.tsx`) and the 3D orbit diagram | `packages/frontend/src/ui/cockpit/panes/` |
+| Cockpit HUD root: shell, layout numbers, formatters, keyboard map, tokens, the `still-hud.test.ts` guard for decision D10 (shared surface, mounted by App) | `packages/frontend/src/ui/cockpit/` (`CockpitHud.tsx`, `layout.ts`, `format.ts`, `keys.ts`, `useCockpitKeys.ts`, `cockpit.css`) |
+| Cockpit primitives: the shared building blocks every other cockpit folder uses (glass pane, pane stack and pane body, key/value rows, pane header, empty state, action row, error boundary, native-button reset style). Nothing here imports a feature folder | `packages/frontend/src/ui/cockpit/primitives/` |
+| Cockpit side panes, one file per pane (`IdentityPane.tsx`, `OrbitPane.tsx`, `CatalogPane.tsx`, `ObjectScanPane.tsx`, `TelemetryPane.tsx`, `ActionsPane.tsx`), the two stacks that only arrange them (`AnalysisPanes.tsx`, `FocusPanes.tsx`) and the still orbit diagram (`OrbitDiagram.tsx`: Earth upright, radial web in the equatorial plane, orbit arc seen from 7 degrees above the plane, only the arc turns, 10 fps) | `packages/frontend/src/ui/cockpit/panes/` |
 | Cockpit dock: mode controls, lens and location controls, location popover, round icon button, dock styles | `packages/frontend/src/ui/cockpit/dock/` |
 | Cockpit time console: clock row (`ClockRow.tsx`) that unfolds into the scrubber, readout lines (`ConsoleReadouts.tsx`), digits, field chips, momentum wheel with its gesture hook (`useMomentumDial.ts`), return button, mouse stepping (`useTimeStep.ts` over the pure `time-stepper.ts`) | `packages/frontend/src/ui/cockpit/time/` |
 | Cockpit ground view: compass strip and pass readout, with their pure helpers | `packages/frontend/src/ui/cockpit/ground/` |
@@ -147,11 +161,11 @@ Rules that hold even without reading the architecture test:
 | `POST /api/query/ask` | Question to answer, routed client or server |
 | `GET /api/query/vocab` | Entity vocabulary |
 | `GET /api/history/coverage`, `/api/history/at` | Historical catalog. 503 when `DATABASE_URL` is unset. |
-| `GET /health` | Uptime and counts |
+| `GET /health` | Uptime, counts, DSO health, data-volume disk usage |
 
 ## Data flow in one paragraph each
 
-**Live catalog.** Backend fetches from Space-Track (fallback CelesTrak), classifies, caches to a file and to a pre-gzipped memory payload. Frontend loads it (IndexedDB cached), feeds a WASM worker at about 1 Hz, and the worker writes position and velocity buffers the renderer draws.
+**Live catalog.** Backend fetches from Space-Track (fallback: CelesTrak `active`, laid over the cached catalog), classifies, caches to a file and to a pre-gzipped memory payload. Frontend loads it (IndexedDB cached), feeds a WASM worker at about 1 Hz, and the worker writes position and velocity buffers the renderer draws.
 
 **Deep space.** A backend worker fetches JPL Horizons every 6 hours, converts to TEME, and publishes snapshots. The frontend interpolates them in its own worker.
 

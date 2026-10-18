@@ -17,8 +17,6 @@ const PANEL: React.CSSProperties = {
   borderRadius: 8,
   background: 'var(--hud-glass)',
   border: '1px solid var(--hud-glass-edge)',
-  backdropFilter: 'blur(14px) saturate(120%)',
-  WebkitBackdropFilter: 'blur(14px) saturate(120%)',
   boxShadow: 'var(--hud-inner-glow), var(--hud-drop-shadow)',
   padding: '8px 14px',
   fontFamily: 'var(--font-hud-mono)',

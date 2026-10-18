@@ -78,8 +78,6 @@ function Sheet() {
           gridTemplateColumns: '1fr auto 1fr',
           pointerEvents: 'auto',
           background: 'oklch(0.08 0.015 250 / 0.78)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
           border: '1px solid oklch(0.98 0.01 240 / 0.12)',
           borderRadius: 10,
           overflow: 'hidden',
@@ -176,7 +174,6 @@ function PadLive() {
           background: 'var(--hud-good)',
           display: 'inline-block',
           boxShadow: '0 0 6px var(--hud-good)',
-          animation: 'hud-pulse 2s ease infinite',
         }}
       />
       GAMEPAD LIVE

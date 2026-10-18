@@ -254,33 +254,31 @@ export class SatellitesLayer implements Layer {
       const sunDir = getSunDirection(propagationDate);
       const visualNoradIds = callbacks.getVisualNoradIds();
 
-      const counts = result.isSnap
-        ? renderer.snapPositions(
-            result.positions,
-            result.validFlags,
-            result.objectCount,
-            observerAnchor,
-            sunDir,
-            state.skyLens,
-            this.catalog,
-            state,
-            visualNoradIds,
-          )
-        : renderer.updatePositions(
-            result.positions,
-            result.validFlags,
-            result.objectCount,
-            observerAnchor,
-            sunDir,
-            state.skyLens,
-            this.catalog,
-            state,
-            visualNoradIds,
-          );
-
-      const store = useStore.getState();
-      store.setVisibleCounts(counts.regimeCounts);
-      store.setVisibleFacetCounts(counts.facetCounts);
+      if (result.isSnap) {
+        renderer.snapPositions(
+          result.positions,
+          result.validFlags,
+          result.objectCount,
+          observerAnchor,
+          sunDir,
+          state.skyLens,
+          this.catalog,
+          state,
+          visualNoradIds,
+        );
+      } else {
+        renderer.updatePositions(
+          result.positions,
+          result.validFlags,
+          result.objectCount,
+          observerAnchor,
+          sunDir,
+          state.skyLens,
+          this.catalog,
+          state,
+          visualNoradIds,
+        );
+      }
 
       renderer.material.uniforms.uT.value = 0.0;
 
@@ -298,7 +296,7 @@ export class SatellitesLayer implements Layer {
     });
   }
 
-  /** Recompute visible facet/regime counts (filter or visual-list change), no new propagation. */
+  /** Re-apply filters to the renderer (filter or visual-list change), no new propagation. */
   recomputeVisibleCounts(state: ReturnType<typeof useStore.getState>): void {
     if (
       !this._renderer ||
@@ -314,7 +312,7 @@ export class SatellitesLayer implements Layer {
     const observerAnchor = this.getObserverSceneAnchorForState(state, simDate);
     const sunDir = getSunDirection(simDate);
 
-    const counts = this._renderer.applyFilters(
+    this._renderer.applyFilters(
       this.catalog,
       state,
       observerAnchor,
@@ -322,9 +320,6 @@ export class SatellitesLayer implements Layer {
       state.skyLens,
       this.callbacks.getVisualNoradIds(),
     );
-    const store = useStore.getState();
-    store.setVisibleCounts(counts.regimeCounts);
-    store.setVisibleFacetCounts(counts.facetCounts);
 
     const sel = state.selectedIndex;
     if (sel !== null && sel < this.catalog.length) {
@@ -447,8 +442,8 @@ export class SatellitesLayer implements Layer {
    * invisible and the per-frame + worker-driven paths early-out
    * (`onPositions`/`update`/`recomputeVisibleCounts`), so no stale counts leak
    * while hidden. The Engine owns the surrounding orchestration (picker size 0,
-   * zeroed store counts, cleared selection) and re-seeds on restore. Mirrors
-   * {@link DsoLayer.setHidden}.
+   * zeroed store counts, cleared selection) and re-seeds on restore. DSOs are not
+   * hidden with the catalog; they follow their own ephemeris window.
    */
   setHidden(hidden: boolean): void {
     if (hidden === this.hidden) return;

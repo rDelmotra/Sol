@@ -2,10 +2,9 @@ import type { StateCreator } from 'zustand';
 import type { CatalogType, FacetCounts, GeodeticObserver } from '../data/types';
 import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime, Purpose, OrbitalStatus, DsoSnapshot } from '@orbitwatch/contracts';
 import type { SectorFilterKey } from '../data/metadata-types';
-import type { DsoObject, DsoLabelPosition } from '../data/dso-types';
+import type { DsoObject } from '../data/dso-types';
 import type { VisualListSource, VisualListStatus } from '../data/visualList';
 import type { HistoryCoverage } from '../data/history-client';
-import type { QueryFilterPatch } from '../query/types';
 import type { AnalyticProgram, ExecuteOutcome, AnalyticResult } from '@orbitwatch/analytic';
 import type { Pass, PassStatus } from '../sky/passes';
 import type { TimeField } from '../time/time-fields';
@@ -136,9 +135,6 @@ export interface CatalogSlice {
 
 export interface CommandSlice {
   selectByIndex: ((index: number) => void) | null;
-  // Registered by SearchBar (G3): replace the search text + run the query
-  // pipeline immediately. InfoCard pivots call it. null until SearchBar mounts.
-  injectSearchQuery: ((text: string) => void) | null;
   triggerFlyTo: ((index: number) => void) | null;
   triggerJoyride: ((index: number) => void) | null;
   triggerResetCamera: (() => void) | null;
@@ -158,7 +154,6 @@ export interface CommandSlice {
   setTriggerResetCamera: (fn: () => void) => void;
   setTriggerRunAnalytic: (fn: (program: AnalyticProgram) => ExecuteOutcome | null) => void;
   setSelectByIndex: (fn: (index: number) => void) => void;
-  setInjectSearchQuery: (fn: ((text: string) => void) | null) => void;
   setTriggerSimTimeJump: (fn: () => void) => void;
   setTriggerScrubPreview: (fn: () => void) => void;
   setTriggerReturnToPresent: (fn: () => void) => void;
@@ -181,12 +176,6 @@ export interface InteractionSlice {
   liveSpeedKmS: number | null;
   showOrbitTrail: boolean;
   selectedDso: DsoObject | null;
-  hoveredName: string | null;
-  hoverScreenX: number;
-  hoverScreenY: number;
-  clusterItems: { index: number; data: EnrichedTLEObject; altitude: number }[];
-  clusterScreenX: number;
-  clusterScreenY: number;
   setCameraMode: (mode: CameraMode) => void;
   setTrackingStyle: (style: TrackingStyle) => void;
   /**
@@ -203,9 +192,6 @@ export interface InteractionSlice {
   /** Skips the write when both values are unchanged (runs ~4×/s). */
   setLiveKinematics: (altitudeKm: number | null, speedKmS: number | null) => void;
   setShowOrbitTrail: (show: boolean) => void;
-  setHover: (name: string | null, screenX?: number, screenY?: number) => void;
-  setCluster: (items: { index: number; data: EnrichedTLEObject; altitude: number }[], screenX: number, screenY: number) => void;
-  clearCluster: () => void;
 }
 
 export interface ObserverSlice {
@@ -236,8 +222,6 @@ export interface ObserverSlice {
 
 export interface FilterSlice {
   regimeFilters: Record<OrbitalRegime, boolean>;
-  visibleRegimeCounts: Record<OrbitalRegime, number>;
-  visibleFacetCounts: FacetCounts;
   // Rich-metadata facet filters + color-by (Phase B; additive to category/regime above)
   colorBy: ColorBy;
   typeFilters: Record<CatalogType, boolean>;
@@ -249,26 +233,11 @@ export interface FilterSlice {
   launchFilter: LaunchFilter;   // G3 — query-only
   ownerFilter: OwnerFilter;     // G3 — query-only
   toggleRegimeFilter: (regime: OrbitalRegime) => void;
-  setVisibleCounts: (regCounts: Record<OrbitalRegime, number>) => void;
-  setColorBy: (colorBy: ColorBy) => void;
   toggleTypeFilter: (key: CatalogType) => void;
   toggleStatusFilter: (key: OrbitalStatus) => void;
   toggleSectorFilter: (key: SectorFilterKey) => void;
   togglePurposeFilter: (key: Purpose) => void;
   setCountryFilter: (filter: CountryFilter) => void;
-  /**
-   * Apply a compiled query patch with OVERWRITE semantics over the seven
-   * query-controlled slices (type/status/sector/purpose/regime/country/program):
-   * each group becomes `patch.group ?? all-on`. FilterPanel manual toggles work
-   * on top afterwards; the next query keystroke/chip-removal re-overwrites.
-   * Reference identity is preserved for semantically-unchanged groups via
-   * reconcileFilterSlices (query/apply.ts) — load-bearing for the
-   * SatellitesLayer diff (no per-keystroke recomputes).
-   */
-  applyQueryFilters: (patch: QueryFilterPatch) => void;
-  /** Restore all query-controlled slices to all-on / mode:'all'. */
-  clearQueryFilters: () => void;
-  setVisibleFacetCounts: (counts: FacetCounts) => void;
 }
 
 export interface AnalyticSlice {
@@ -278,8 +247,6 @@ export interface AnalyticSlice {
    *  equality is checked inline so an identical re-run never triggers a recompute. */
   setAnalyticFilter: (ids: Set<number> | null) => void;
   setAnalyticAnswer: (answer: AnalyticAnswer | null) => void;
-  /** The single exit door: clears the answer card AND the globe allow-set. */
-  clearAnalyticAnswer: () => void;
 }
 
 export interface TimeSlice {
@@ -373,10 +340,8 @@ export interface HudSlice {
 export interface DsoSlice {
   dsoObjects: DsoObject[];
   dsoEphemerisById: Record<string, DsoSnapshot>;
-  dsoLabelPositions: DsoLabelPosition[];
   setDsoObjects: (objects: DsoObject[]) => void;
   setDsoEphemeris: (dsoId: string, snapshot: DsoSnapshot) => void;
-  setDsoLabelPositions: (positions: DsoLabelPosition[]) => void;
 }
 
 export type AppState = BootSlice &

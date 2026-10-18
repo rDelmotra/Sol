@@ -8,8 +8,9 @@ import {
   writeVisualCache,
 } from '../cache/file-cache.js';
 import type { VisualNoradCache } from '../cache/file-cache.js';
-import { getTlePayload } from '../cache/tle-payload-cache.js';
+import { getTlePayload, tleEtag } from '../cache/tle-payload-cache.js';
 import { fetchCelesTrakVisualNoradIds } from '../services/celestrak-visual.js';
+import { chooseEncoding, etagMatches } from '../utils/http-encoding.js';
 import { logger } from '../utils/logger.js';
 import {
   buildVisualEndpointResponse,
@@ -58,19 +59,24 @@ function sendVisualResponse(
 // GET /api/tle/all
 //
 // Returns the full enriched TLE dataset.
-// Served from the version-keyed, pre-gzipped payload in
+// Served from the version-keyed, pre-compressed payload in
 // cache/tle-payload-cache.ts (compression() skips it — Content-Encoding is
 // already set). ~27 MB uncompressed for the ~32k-object catalog.
 //
+// Encoding: brotli when the client allows it and the brotli copy is built (it
+// finishes in the background after each data update), else gzip, else the slow
+// parse + serialize path for clients with neither.
+//
 // Headers:
-//   Cache-Control: public, max-age=3600   (clients may cache for 1 hour)
-//   ETag: "<version timestamp>"           (for conditional GET support)
+//   Cache-Control: private, max-age=3600  (the browser may cache it for 1 hour; the shared edge may not)
+//   ETag: one per encoding ("<version>" gzip, "<version>-br", "<version>-identity")
+//   Vary: Accept-Encoding
 //
 // 503 is returned when no cache exists yet (first boot before the initial
 // fetch cycle completes).
 // ============================================================
 router.get('/all', (req: Request, res: Response) => {
-  // The response body is built once per data version and held pre-gzipped in
+  // The response body is built once per data version and held pre-compressed in
   // memory; the hot path is a version compare + a buffer write (no 13.8 MB
   // read/parse/stringify/gzip per request).
   const payload = getTlePayload();
@@ -80,28 +86,38 @@ router.get('/all', (req: Request, res: Response) => {
     return;
   }
 
-  // Support conditional GET: if the client's ETag matches the current version,
-  // skip sending the body and return 304 Not Modified.
-  if (req.headers['if-none-match'] === payload.etag) {
+  const encoding = chooseEncoding(req.headers['accept-encoding'], {
+    br: payload.br !== null,
+    gzip: true,
+  });
+  const etag = tleEtag(payload.version, encoding);
+
+  // private: Railway's edge cache ignores Vary, and stored the gzip copy right after a
+  // restart (before the brotli copy was built) and then sent it to every client.
+  // Browsers still cache it for an hour; the origin serves it from memory.
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.setHeader('ETag', etag);
+  res.setHeader('Vary', 'Accept-Encoding');
+
+  // Conditional GET: the tag is per encoding, so a 304 only ever confirms a body
+  // the client already holds in the encoding we would have sent.
+  if (etagMatches(req.headers['if-none-match'], etag)) {
     res.status(304).end();
     return;
   }
 
-  res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.setHeader('ETag', payload.etag);
-  res.setHeader('Vary', 'Accept-Encoding');
-
-  if (req.acceptsEncodings(['gzip'])) {
-    // Serve the pre-gzipped buffer directly. compression() skips re-encoding
+  const body = encoding === 'br' ? payload.br : encoding === 'gzip' ? payload.gzip : null;
+  if (body) {
+    // Serve the pre-compressed buffer directly. compression() skips re-encoding
     // because Content-Encoding is already set (non-identity).
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Content-Encoding', 'gzip');
-    res.setHeader('Content-Length', payload.gzip.length);
-    res.end(payload.gzip);
+    res.setHeader('Content-Encoding', encoding);
+    res.setHeader('Content-Length', body.length);
+    res.end(body);
     return;
   }
 
-  // Rare client without gzip support — fall back to the parse + serialize path.
+  // Rare client with neither br nor gzip — fall back to the parse + serialize path.
   const data = readCache();
   if (!data) {
     res.status(503).json({ error: 'Cache read error. Try again shortly.' });

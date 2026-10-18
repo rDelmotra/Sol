@@ -2,22 +2,18 @@
 import type { AnalyticAnswer } from '../../../store/types';
 
 export const WAVE_BARS = 48;
-export const WAVE_IDLE_MS = 1600;
-export const WAVE_ACTIVE_MS = 700;
 
 export const ASK_HINT = '“ask the catalog…” · press SPACE';
 
 export interface WaveBar {
-  /** Resting height, px: 4 + 14 · cos envelope (tallest in the middle). */
+  /** Fixed height, px: 4 + 14 · cos envelope (tallest in the middle). */
   height: number;
-  /** Animation delay, ms. */
-  delayMs: number;
 }
 
 export function waveBars(count = WAVE_BARS): WaveBar[] {
   return Array.from({ length: count }, (_, i) => {
     const mid = (i - count / 2) / (count / 2);
-    return { height: 4 + Math.cos(mid * Math.PI * 0.5) * 14, delayMs: (i * 40) % 900 };
+    return { height: 4 + Math.cos(mid * Math.PI * 0.5) * 14 };
   });
 }
 

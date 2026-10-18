@@ -155,20 +155,38 @@ async function fetchGPPage(
  * (which signals the last page).
  */
 async function fetchAllGP(cookie: string): Promise<SpaceTrackGPElement[]> {
-  const all: SpaceTrackGPElement[] = [];
+  const all = await collectPages((offset) => fetchGPPage(cookie, offset));
+  logger.info(`Space-Track: GP fetch complete — ${all.length} total records`);
+  return all;
+}
+
+/**
+ * Walk the pages. A full page followed by an EMPTY page means the answer was cut
+ * short (the real catalog never ends on an exact multiple of PAGE_SIZE), so that
+ * is an error, not the last page: a half catalog must not replace a good one.
+ */
+export async function collectPages<T>(
+  fetchPage: (offset: number) => Promise<T[]>,
+  pageSize = PAGE_SIZE,
+): Promise<T[]> {
+  const all: T[] = [];
   let offset = 0;
 
   while (true) {
-    const page = await fetchGPPage(cookie, offset);
+    const page = await fetchPage(offset);
+    if (page.length === 0 && offset > 0) {
+      throw new Error(
+        `Space-Track GP fetch: empty page at offset ${offset} after a full page — answer looks truncated`,
+      );
+    }
     all.push(...page);
 
-    // If this page is smaller than PAGE_SIZE, we've reached the last page.
-    if (page.length < PAGE_SIZE) break;
+    // If this page is smaller than the page size, we've reached the last page.
+    if (page.length < pageSize) break;
 
-    offset += PAGE_SIZE;
+    offset += pageSize;
   }
 
-  logger.info(`Space-Track: GP fetch complete — ${all.length} total records`);
   return all;
 }
 

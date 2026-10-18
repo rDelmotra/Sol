@@ -1,4 +1,4 @@
-import { emptyFacetCounts, cloneFacetCounts } from '../data/types';
+import { emptyFacetCounts } from '../data/types';
 import type { CatalogSlice, Slice } from './types';
 
 export const createCatalogSlice: Slice<CatalogSlice> = (set) => ({
@@ -21,11 +21,7 @@ export const createCatalogSlice: Slice<CatalogSlice> = (set) => ({
       objectCount: info.objectCount,
       categoryCounts: info.categoryCounts,
       regimeCounts: info.regimeCounts,
-      visibleRegimeCounts: { ...info.regimeCounts },
       facetCounts,
-      // At load every object is visible — seed visible = total (deep-cloned so the
-      // renderer can mutate visible counts without touching the totals).
-      visibleFacetCounts: cloneFacetCounts(facetCounts),
       dataTimestamp: Date.now(),
     });
   },

@@ -330,16 +330,23 @@ export class EarthRenderer {
   private readonly ktx: KtxTextureLoader;
   /** 1×1 placeholders shown until KTX2 textures arrive; tracked so dispose() frees them. */
   private readonly placeholders: THREE.DataTexture[] = [];
+  private disposed = false;
 
+  /**
+   * @param texturesMayLoad Resolves when the KTX2 downloads may start. The globe is built and
+   *   drawn straight away with 1×1 placeholder maps (plain blue sphere); the real textures
+   *   are fetched and swapped in only after this resolves. Defaults to "now". Callers pass a
+   *   gate so the textures don't share bandwidth with the satellite catalog on first load.
+   */
   constructor(
     maxAnisotropy: number,
     renderer: THREE.WebGLRenderer,
     camera: THREE.Camera,
+    texturesMayLoad: Promise<void> = Promise.resolve(),
   ) {
     this.object = new THREE.Group();
 
     this.ktx = new KtxTextureLoader(renderer, maxAnisotropy);
-    const load = this.ktx.load.bind(this.ktx);
 
     // 1×1 placeholder shown until the corresponding KTX2 texture finishes transcoding.
     // Tracked in `placeholders` so dispose() can free them (Material.dispose() won't).
@@ -366,15 +373,6 @@ export class EarthRenderer {
       fragmentShader: EARTH_FRAG,
     });
 
-    load(TEXTURE_URLS['earth-diffuse-8k'], THREE.SRGBColorSpace,
-      (t) => { this.earthMat.uniforms.uDayMap.value = t; });
-    load(TEXTURE_URLS['earth-night-4k'], THREE.SRGBColorSpace,
-      (t) => { this.earthMat.uniforms.uNightMap.value = t; });
-    load(TEXTURE_URLS['earth-bump-4k'], THREE.LinearSRGBColorSpace,
-      (t) => { this.earthMat.uniforms.uNormalMap.value = t; });
-    load(TEXTURE_URLS['earth-specular-4k'], THREE.LinearSRGBColorSpace,
-      (t) => { this.earthMat.uniforms.uSpecularMap.value = t; });
-
     const earthGeo = new THREE.SphereGeometry(1.0, 128, 64);
     this.earthMesh = new THREE.Mesh(earthGeo, this.earthMat);
     this.object.add(this.earthMesh);
@@ -390,13 +388,6 @@ export class EarthRenderer {
       transparent: true,
       depthWrite: false,
     });
-
-    load(TEXTURE_URLS['earth-clouds-4k'], THREE.LinearSRGBColorSpace,
-      (t) => { this.cloudMat.uniforms.uCloudMap.value = t; });
-
-    // All Earth textures are queued — tear down the transcoder worker pool once they
-    // finish (one-shot load; the textures stay valid). Frees worker threads + Basis WASM.
-    this.ktx.releaseWorkersWhenIdle();
 
     const cloudGeo = new THREE.SphereGeometry(1.004, 64, 32);
     this.cloudMesh = new THREE.Mesh(cloudGeo, this.cloudMat);
@@ -427,6 +418,36 @@ export class EarthRenderer {
     const atmGeo = new THREE.SphereGeometry(ATM_GEOM_RADIUS, 64, 32);
     this.atmosphereMesh = new THREE.Mesh(atmGeo, this.atmosphereMat);
     this.object.add(this.atmosphereMesh);
+
+    // The globe is fully built with placeholder maps. Fetch the real textures once allowed.
+    texturesMayLoad
+      .then(() => this.loadTextures())
+      .catch((err) => console.error('[EarthRenderer] could not start texture loads', err));
+  }
+
+  /**
+   * Queue every Earth texture download. Runs once, after the constructor's gate resolves
+   * (skipped if the renderer was disposed while waiting). Each map replaces its 1×1
+   * placeholder when it arrives; a failed load keeps the placeholder.
+   */
+  private loadTextures(): void {
+    if (this.disposed) return;
+    const load = this.ktx.load.bind(this.ktx);
+
+    load(TEXTURE_URLS['earth-diffuse-8k'], THREE.SRGBColorSpace,
+      (t) => { this.earthMat.uniforms.uDayMap.value = t; });
+    load(TEXTURE_URLS['earth-night-4k'], THREE.SRGBColorSpace,
+      (t) => { this.earthMat.uniforms.uNightMap.value = t; });
+    load(TEXTURE_URLS['earth-bump-4k'], THREE.LinearSRGBColorSpace,
+      (t) => { this.earthMat.uniforms.uNormalMap.value = t; });
+    load(TEXTURE_URLS['earth-specular-4k'], THREE.LinearSRGBColorSpace,
+      (t) => { this.earthMat.uniforms.uSpecularMap.value = t; });
+    load(TEXTURE_URLS['earth-clouds-4k'], THREE.LinearSRGBColorSpace,
+      (t) => { this.cloudMat.uniforms.uCloudMap.value = t; });
+
+    // All Earth textures are queued — tear down the transcoder worker pool once they
+    // finish (one-shot load; the textures stay valid). Frees worker threads + Basis WASM.
+    this.ktx.releaseWorkersWhenIdle();
   }
 
   /**
@@ -462,6 +483,7 @@ export class EarthRenderer {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.object.traverse((obj) => {
       if (obj instanceof THREE.Mesh) {
         obj.geometry.dispose();

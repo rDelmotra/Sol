@@ -1,9 +1,9 @@
 // ============================================================
 // Facet key registry — the ONE ordered list of keys per filter facet.
 //
-// Previously hand-copied in FilterPanel, query/executor, store/filterSlice,
-// data/types (emptyFacetCounts), SatelliteRenderer and query/apply. Key ORDER is
-// load-bearing (UI row order, Object.keys iteration), pinned by facets.test.ts.
+// Previously hand-copied in the old FilterPanel, the query executor,
+// store/filterSlice, data/types (emptyFacetCounts) and SatelliteRenderer. Key ORDER
+// is load-bearing (Object.keys iteration), pinned by facets.test.ts.
 // Content (labels / colours / aliases) deliberately stays elsewhere.
 // Pure data tier: type-only imports of local types, contracts for the enums.
 // ============================================================
@@ -11,10 +11,8 @@
 import {
   OBJECT_TYPES,
   ORBITAL_STATUSES,
-  ORBITAL_REGIMES,
   PURPOSES,
   SECTORS,
-  type OrbitalRegime,
   type OrbitalStatus,
   type Purpose,
 } from '@orbitwatch/contracts';
@@ -25,7 +23,6 @@ export const TYPE_KEYS: readonly CatalogType[] = [...OBJECT_TYPES, 'deep_space']
 export const STATUS_KEYS: readonly OrbitalStatus[] = ORBITAL_STATUSES;
 export const SECTOR_KEYS: readonly SectorFilterKey[] = [...SECTORS, 'unspecified'];
 export const PURPOSE_KEYS: readonly Purpose[] = PURPOSES;
-export const REGIME_KEYS: readonly OrbitalRegime[] = ORBITAL_REGIMES;
 
 /** A fresh record with every key `true`, in key order. */
 export function allOn<K extends string>(keys: readonly K[]): Record<K, boolean> {

@@ -1,17 +1,16 @@
 import { useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
-import { altitudeReading, elementOrbit, groupInt, kindCode, syncStr } from '../format';
+import { altitudeReading, elementOrbit, groupInt, kindCode } from '../format';
 import { HUD_CORNER_INSET } from '../layout';
 
-/** Top-right corner: regime + altitude of the lock (or catalog size), lock id, data sync time. */
+/** Top-right corner: regime + altitude and id of the locked object. Nothing when nothing is locked. */
 export function TelemetryTR() {
   const selected = useStore((s) => s.selectedSatellite);
   const liveAltitudeKm = useStore((s) => s.liveAltitudeKm);
-  const objectCount = useStore((s) => s.objectCount);
-  const dataTimestamp = useStore((s) => s.dataTimestamp);
   const meanAltKm = useMemo(() => (selected ? elementOrbit(selected).meanAltKm : null), [selected]);
   const alt = altitudeReading(liveAltitudeKm, meanAltKm);
   const altText = alt ? `${alt.live ? '' : 'MEAN '}${groupInt(alt.km)} KM` : '—';
+  if (!selected) return null;
 
   return (
     <div
@@ -27,11 +26,8 @@ export function TelemetryTR() {
         color: 'var(--hud-text-dim)',
       }}
     >
-      <div style={{ color: 'var(--hud-text)' }}>
-        {selected ? `${selected.regime} · ${altText}` : `SSA · ${groupInt(objectCount)} OBJ`}
-      </div>
-      <div>{selected ? `LOCK ${kindCode(selected.objectType)} ${selected.noradId}` : 'LOCK —'}</div>
-      <div>SYNC {syncStr(dataTimestamp)}</div>
+      <div style={{ color: 'var(--hud-text)' }}>{`${selected.regime} · ${altText}`}</div>
+      <div>{`${kindCode(selected.objectType)} ${selected.noradId}`}</div>
     </div>
   );
 }

@@ -16,7 +16,8 @@ const RING_R = ringRadiusInViewBox(RETICLE_RING_RADIUS_PX, RETICLE_BOX_PX);
 /**
  * Screen-centre reticle: corner brackets, centre plus, dotted capture ring and
  * a two-line label. Three states: locked (a selection), candidate (gamepad
- * soft-lock under the ring, pad connected only), none.
+ * soft-lock under the ring, pad connected only), none. Static: only the
+ * bracket opacity changes with the state, nothing loops.
  */
 export function Reticle() {
   const selected = useStore((s) => s.selectedSatellite);
@@ -53,7 +54,6 @@ export function Reticle() {
           left: '50%',
           top: '50%',
           transform: 'translate(-50%, -50%)',
-          animation: 'hud-pulse 4s ease-in-out infinite',
         }}
       >
         {RETICLE_BRACKETS.map((d, i) => (

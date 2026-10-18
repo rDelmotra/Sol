@@ -5,7 +5,7 @@ import compression from 'compression';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import tleRouter from './routes/tle.js';
-import dsoRouter, { summarizeDsoHealth } from './routes/dso.js';
+import dsoRouter, { readDsoHealth } from './routes/dso.js';
 import {
   metadataRouter,
   catalogRouter,
@@ -15,14 +15,20 @@ import {
 } from './routes/metadata.js';
 import { createQueryRouter } from './routes/query.js';
 import { readVersion } from './cache/file-cache.js';
-import { readDsoManifest } from './dso/snapshot/index.js';
 import { historyRouter } from './history/index.js';
 import { frontendDistDir } from './utils/paths.js';
+import { IMMUTABLE_CACHE_CONTROL, isHashedAsset } from './utils/static-cache.js';
+import { readDiskUsage } from './utils/disk-usage.js';
 import { isProd as isProdEnv, corsOrigin as corsOriginEnv } from './utils/config.js';
 
 export interface AppDeps {
   /** Override the NL→IR query router (compile + ask). Defaults to the real one. */
   queryRouter?: Router;
+  /**
+   * Built-frontend directory to serve (static files + SPA fallback). Defaults to the
+   * real build in production and to nothing otherwise; tests pass a temp directory.
+   */
+  frontendDist?: string;
 }
 
 /**
@@ -96,24 +102,26 @@ export function createApp(deps: AppDeps = {}): Express {
   // GET /health — used by load balancers and uptime monitors
   app.get('/health', async (_req, res) => {
     const version = readVersion();
-    const dsoManifest = await readDsoManifest();
+    const dso = await readDsoHealth(); // never throws, bounded; reports dsoError instead
+    const disk = await readDiskUsage(); // data volume; null if the platform can't say
     res.json({
       status: 'ok',
       lastUpdate: version?.version ?? null,
       objectCount: version?.count ?? 0,
       uptime: Math.floor(process.uptime()),
-      ...summarizeDsoHealth(dsoManifest),
+      disk,
+      ...dso,
     });
   });
 
-  // ── Static frontend (production only) ──────────────────────────────────────
-  if (isProd) {
-    const frontendDist = frontendDistDir();
+  // ── Static frontend (production, or an explicit frontendDist) ───────────────
+  const frontendDist = deps.frontendDist ?? (isProd ? frontendDistDir() : null);
+  if (frontendDist) {
     app.use(express.static(frontendDist, {
       setHeaders: (res, filePath) => {
         if (filePath.includes('/textures/')) {
           // .ktx2 filenames are content-hashed (earth-*.<hash>.ktx2) → cache forever.
-          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          res.setHeader('Cache-Control', IMMUTABLE_CACHE_CONTROL);
         } else if (filePath.includes('/basis/')) {
           // Basis transcoder isn't hashed but is stable (ships with three) — cache a week.
           res.setHeader('Cache-Control', 'public, max-age=604800');
@@ -122,7 +130,14 @@ export function createApp(deps: AppDeps = {}): Express {
           // picked up promptly. Service-Worker-Allowed lets it claim root scope.
           res.setHeader('Cache-Control', 'no-cache');
           res.setHeader('Service-Worker-Allowed', '/');
+        } else if (isHashedAsset(path.relative(frontendDist, filePath).split(path.sep).join('/'))) {
+          // Vite's assets/name-HASH.ext: a new build means new names, and index.html (which
+          // names them) is revalidated on every visit, so a year of caching cannot strand
+          // anyone on an old build. The service worker does not touch /assets/.
+          res.setHeader('Cache-Control', IMMUTABLE_CACHE_CONTROL);
         }
+        // Everything else (index.html, favicon, manifest, ...) keeps express's default
+        // "public, max-age=0" with ETag, so the browser revalidates it each time.
       },
     }));
     app.get('*', (_req, res) => {

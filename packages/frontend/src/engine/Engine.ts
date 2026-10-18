@@ -33,6 +33,7 @@ import { TimelineController } from './controllers/TimelineController';
 import { LiveKinematicsPublisher } from './controllers/LiveKinematics';
 import { PassPlanner } from './controllers/PassPlanner';
 import { FlyController } from './controllers/FlyController';
+import { FramePacer } from './frame-pacer';
 
 export class Engine {
   private static readonly EMPTY_NORAD_SET: Set<number> = new Set();
@@ -71,6 +72,8 @@ export class Engine {
   private readonly passPlanner = new PassPlanner();
   /** Keyboard + gamepad free flight, pad actions, gamepad time scrub. */
   private fly: FlyController;
+  /** Idle frame governor: lets the loop skip frames while nothing is happening. */
+  private readonly pacer = new FramePacer({ isGliding: () => this.timeline.isGliding() });
 
   constructor(canvas: HTMLCanvasElement) {
     // ── Renderer ──────────────────────────────────────────────────────────────
@@ -144,6 +147,10 @@ export class Engine {
         onCatalogSwapped: (catalog) => {
           this.inputManager?.setCatalogData(catalog);
           this.gpuPicker?.setCatalogSize(catalog.length);
+          // DSO pick IDs sit above the TLE count → re-encode against the new count.
+          this.world.runLayerCommand(this.dsoLayer, 'resyncForCatalog', () =>
+            this.dsoLayer.resyncForCatalog(),
+          );
         },
         satellitesSetHidden: (hidden) =>
           this.world.runLayerCommand(this.satellitesLayer, 'setHidden', () =>
@@ -156,10 +163,6 @@ export class Engine {
         satellitesSnap: () =>
           this.world.runLayerCommand(this.satellitesLayer, 'requestImmediateSnap', () =>
             this.satellitesLayer.requestImmediateSnap(),
-          ),
-        dsoSetHidden: (hidden) =>
-          this.world.runLayerCommand(this.dsoLayer, 'setHidden', () =>
-            this.dsoLayer.setHidden(hidden),
           ),
         refreshOrbitTrail: () => this.refreshOrbitTrail(),
       },
@@ -562,6 +565,7 @@ export class Engine {
 
   private loop = (): void => {
     this.animationId = requestAnimationFrame(this.loop);
+    if (!this.pacer.shouldRun(performance.now())) return; // idle: keep the last picture
     const delta = this.clock.getDelta();
 
     // Pass 2: advance the "return to present" glide (eases simClock toward now)
@@ -625,6 +629,7 @@ export class Engine {
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
     if (width === 0 || height === 0) return;
+    this.pacer.markActivity(); // resizing clears the canvas: repaint at full rate
     this.renderer.instance.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.cameraRig.resize(width, height);
     this.renderer.setSize(width, height);
@@ -643,6 +648,7 @@ export class Engine {
     this.visualListPoller?.dispose();
     this.nav.dispose();
     this.fly.dispose();
+    this.pacer.dispose();
     this.passPlanner.dispose();
     this.trailUnsub?.();
     this.inputManager?.dispose();

@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyFacetCounts } from './types';
-import { TYPE_KEYS, STATUS_KEYS, SECTOR_KEYS, PURPOSE_KEYS, REGIME_KEYS } from '../query/executor';
 import { useStore } from '../store/useStore';
 
 // Pinned literals: the ordered key lists as hand-copied across the codebase before the registry.
@@ -12,18 +11,9 @@ const PURPOSE = [
   'communications', 'earth_observation', 'navigation', 'technology_dev',
   'space_science', 'space_observation', 'surveillance', 'meteorological', 'other',
 ];
-const REGIME = ['LEO', 'MEO', 'GEO', 'HEO', 'OTHER'];
 
 const on = (keys: string[]) => Object.fromEntries(keys.map((k) => [k, true]));
 const zero = (keys: string[]) => Object.fromEntries(keys.map((k) => [k, 0]));
-
-test('key lists equal the pinned ordered literals', () => {
-  assert.deepEqual([...TYPE_KEYS], TYPE);
-  assert.deepEqual([...STATUS_KEYS], STATUS);
-  assert.deepEqual([...SECTOR_KEYS], SECTOR);
-  assert.deepEqual([...PURPOSE_KEYS], PURPOSE);
-  assert.deepEqual([...REGIME_KEYS], REGIME);
-});
 
 test('emptyFacetCounts matches the pinned literal (key order included)', () => {
   const e = emptyFacetCounts();
@@ -55,7 +45,6 @@ test('registry key lists equal the pinned literals', () => {
   assert.deepEqual([...facets.STATUS_KEYS], STATUS);
   assert.deepEqual([...facets.SECTOR_KEYS], SECTOR);
   assert.deepEqual([...facets.PURPOSE_KEYS], PURPOSE);
-  assert.deepEqual([...facets.REGIME_KEYS], REGIME);
 });
 
 test('allOn / zeros build ordered fresh records', () => {

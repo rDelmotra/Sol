@@ -10,6 +10,13 @@ export interface DsoSink {
 const API_BASE = import.meta.env?.VITE_API_URL ?? '';
 const MANIFEST_POLL_MS = 60 * 1000;
 const CATALOG_BOOTSTRAP_POLL_MS = 5 * 1000;
+/** While the DSO API has no catalog (down, empty, no data), polling backs off to this. */
+export const CATALOG_BOOTSTRAP_MAX_POLL_MS = 5 * 60 * 1000;
+
+/** Next wait while the catalog is still unavailable: double it, never above 5 minutes. */
+export function nextBootstrapDelay(currentMs: number): number {
+  return Math.min(Math.max(currentMs, CATALOG_BOOTSTRAP_POLL_MS) * 2, CATALOG_BOOTSTRAP_MAX_POLL_MS);
+}
 
 /**
  * Tracks per-DSO snapshot versions so we only re-fetch ephemeris when
@@ -207,7 +214,9 @@ function startPolling(sink: DsoSink): void {
 
         sink.setObjects(dsoObjects);
       } else {
-        pollIntervalMs = CATALOG_BOOTSTRAP_POLL_MS;
+        // Catalog still unavailable: back off (5 s, 10 s, ... 5 min) instead of
+        // asking every 5 s forever. A good catalog resets it to the normal rate.
+        pollIntervalMs = nextBootstrapDelay(pollIntervalMs);
       }
 
       await pollManifest(sink, myGen);

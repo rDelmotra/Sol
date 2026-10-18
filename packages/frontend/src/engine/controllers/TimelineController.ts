@@ -19,13 +19,13 @@ export interface TimelineHost {
   /**
    * The loaded catalog changed (boot, swap, or emptied for the planetarium). Engine
    * fans this to inputManager.setCatalogData + gpuPicker.setCatalogSize(length).
-   * Plain field writes only. The controller's own catalog is already assigned.
+   * Also re-syncs the DSO pick IDs (encoded above the TLE count) — DSOs are never
+   * hidden by a swap. The controller's own catalog is already assigned.
    */
   onCatalogSwapped(catalog: EnrichedTLEObject[]): void;
   satellitesSetHidden(hidden: boolean): void;
   satellitesReseed(catalog: EnrichedTLEObject[], tles: TleCatalogResult['tles']): void;
   satellitesSnap(): void;
-  dsoSetHidden(hidden: boolean): void;
   refreshOrbitTrail(): void;
 }
 
@@ -171,8 +171,9 @@ export class TimelineController {
   }
 
   /**
-   * Planetarium: an uncovered-past view-time has no catalog → hide satellites +
-   * DSOs and keep the sky (Earth/sun/stars are pure functions of the clock). The
+   * Planetarium: an uncovered-past view-time has no catalog → hide satellites and
+   * keep the sky (Earth/sun/stars are pure functions of the clock). DSOs stay: they
+   * show by their own ephemeris window, and the selected DSO is kept. The
    * worker keeps running but its render/count paths early-out while hidden
    * (SatellitesLayer.setHidden), so no stale counts leak; restoring re-seeds.
    */
@@ -183,15 +184,13 @@ export class TimelineController {
     // so returning to a catalog can re-resolve it by noradId.
     const selectedNorad = store.selectedSatellite?.noradId ?? null;
     if (selectedNorad !== null) this.pendingSelectionNorad = selectedNorad;
-    // Own catalog is emptied BEFORE any layer/store write (DSO layer reads it).
+    // Own catalog is emptied BEFORE any layer/store write (the DSO re-sync reads it).
     this.catalogData = [];
 
     this.host.satellitesSetHidden(true);
-    this.host.dsoSetHidden(true);
     this.host.onCatalogSwapped(this.catalogData); // picker size 0 + input empty
 
     store.setSelectedSatellite(null, null);
-    store.setSelectedDso(null);
     store.setCatalogData([]);
     store.setCatalogInfo({
       objectCount: 0,
@@ -215,7 +214,7 @@ export class TimelineController {
   /**
    * Swap the rendered catalog (live ↔ a historical day). Reuses the A1–A5 re-seed
    * primitives, re-resolves the selection by noradId so "follow" survives the swap,
-   * and hides DSOs (current missions) while reviewing the past.
+   * DSOs are left alone (they follow their own ephemeris window).
    */
   private applyCatalog(result: TleCatalogResult, day: string | null): void {
     const { catalogData, tles, categoryCounts, regimeCounts, facetCounts } = result;
@@ -239,11 +238,6 @@ export class TimelineController {
 
     // Input + picker: TLE index space resized (geometry is shared + stable).
     this.host.onCatalogSwapped(this.catalogData);
-
-    // DSOs are current missions (ephemeris ~now) → hidden whenever the view-time is in
-    // the past (a covered day OR the recent gap shown with live elements), shown at now/future.
-    const isPast = utcDay(simClock.now()) < utcDay(Date.now());
-    this.host.dsoSetHidden(isPast);
 
     // Store: catalog + counts so HUD / search / filters reflect the viewed day.
     store.setCatalogData(catalogData);

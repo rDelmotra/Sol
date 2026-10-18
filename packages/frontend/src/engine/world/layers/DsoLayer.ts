@@ -1,9 +1,11 @@
 import type * as THREE from 'three';
 import { DsoRenderer } from '../../DsoRenderer';
 import { DsoWorkerClient } from '../../dso/DsoWorkerClient';
+import { resyncDsoCatalog } from '../../dso/dso-resync';
 import { useStore } from '../../../store/useStore';
 import type { DsoObject } from '../../../data/dso-types';
 import { dsoIndexOf } from '../../../data/dso-index';
+import { anyDsoActiveAt } from '../../dso/dso-window';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 
 /**
@@ -31,14 +33,12 @@ export class DsoLayer implements Layer {
 
   private _renderer: DsoRenderer | null = null;
   private client: DsoWorkerClient | null = null;
-  private camera: THREE.PerspectiveCamera | null = null;
-  private canvas: HTMLCanvasElement | null = null;
 
   private callbacks: DsoLayerCallbacks | null = null;
+  /** Was any DSO window covering the sim time on the previous frame? */
+  private wasActive = false;
   private dsoUnsub: (() => void) | null = null;
   private dsoEphemerisUnsub: (() => void) | null = null;
-  /** True while DSOs are hidden for a historical (past) time-scrub. */
-  private hidden = false;
 
   /**
    * The DSO renderer, or null if init hasn't run / failed. Nullable on purpose:
@@ -50,8 +50,6 @@ export class DsoLayer implements Layer {
   }
 
   init(ctx: LayerContext): void {
-    this.camera = ctx.camera;
-    this.canvas = ctx.renderer.domElement as HTMLCanvasElement;
     this._renderer = new DsoRenderer(ctx.scene);
   }
 
@@ -90,43 +88,55 @@ export class DsoLayer implements Layer {
     this.dsoUnsub = useStore.subscribe((state) => {
       if (state.dsoObjects === prevDsoObjects) return;
       prevDsoObjects = state.dsoObjects;
-      this.syncCatalog(state.dsoObjects);
+      // A throw here would abort the store's other listeners (satellites, UI): contain it.
+      try {
+        this.syncCatalog(state.dsoObjects);
+      } catch (err) {
+        console.warn('[dso] catalog sync failed (continuing):', err);
+      }
     });
 
     let prevDsoEphemeris = useStore.getState().dsoEphemerisById;
     this.dsoEphemerisUnsub = useStore.subscribe((state) => {
       if (state.dsoEphemerisById === prevDsoEphemeris) return;
-      this.client?.syncEphemerisDiff(prevDsoEphemeris, state.dsoEphemerisById);
+      const before = prevDsoEphemeris;
       prevDsoEphemeris = state.dsoEphemerisById;
-      if (state.showOrbitTrail && state.selectedDso) {
-        this.client?.requestTrail(state.selectedDso.dsoId);
+      try {
+        this.client?.syncEphemerisDiff(before, state.dsoEphemerisById);
+        if (state.showOrbitTrail && state.selectedDso) {
+          this.client?.requestTrail(state.selectedDso.dsoId);
+        }
+      } catch (err) {
+        console.warn('[dso] ephemeris sync failed (continuing):', err);
       }
     });
   }
 
   /** Rebuild DSO geometry + picker registration + worker ids for a catalog. */
-  private syncCatalog(dsoObjects: DsoObject[]): void {
-    if (!this._renderer || !this.callbacks || this.hidden) return;
-    this._renderer.init(dsoObjects, this.callbacks.getTleCount());
-    this.callbacks.onDsoGeometry(this._renderer.geometry, dsoObjects.length);
-    this.client?.syncIds(dsoObjects.map((dso) => dso.dsoId));
-    if (useStore.getState().showOrbitTrail) this.callbacks.onRefreshTrail();
+  private syncCatalog(dsoObjects: DsoObject[], refreshTrail = true): void {
+    if (!this._renderer || !this.callbacks) return;
+    resyncDsoCatalog(
+      {
+        renderer: this._renderer,
+        client: this.client,
+        getTleCount: this.callbacks.getTleCount,
+        onDsoGeometry: this.callbacks.onDsoGeometry,
+      },
+      dsoObjects,
+    );
+    if (refreshTrail && useStore.getState().showOrbitTrail) this.callbacks.onRefreshTrail();
   }
 
   update(frame: FrameContext): void {
-    if (!this._renderer || this.hidden) return;
+    if (!this._renderer) return;
 
-    this.client?.tick(frame.nowMs);
+    // Only ask the worker for positions while some mission's data window covers the
+    // sim time. On leaving the last window, one forced tick hides what was drawn.
+    const active = anyDsoActiveAt(useStore.getState().dsoEphemerisById, frame.nowMs);
+    if (active) this.client?.tick(frame.nowMs);
+    else if (this.wasActive) this.client?.triggerImmediateTick(frame.nowMs);
+    this.wasActive = active;
     this._renderer.updateUniforms(frame.pixelRatio);
-
-    if (this.camera && this.canvas) {
-      const labels = this._renderer.getScreenPositions(
-        this.camera,
-        this.canvas.clientWidth,
-        this.canvas.clientHeight,
-      );
-      useStore.getState().setDsoLabelPositions(labels);
-    }
 
     const selectedDso = useStore.getState().selectedDso;
     if (selectedDso !== null) {
@@ -160,25 +170,15 @@ export class DsoLayer implements Layer {
   }
 
   /**
-   * Hide/show DSOs for a historical time-scrub. DSOs are current missions whose
-   * ephemeris only covers ~now, and the unified TLE/DSO pick-ID space is keyed to
-   * the TLE count (which differs per historical day), so reviewing the past hides
-   * them: the point cloud goes invisible, ticks + label projection are skipped,
-   * and the DSO pick geometry is pulled from the picker (onDsoGeometry(_, 0)).
-   * Restoring re-syncs geometry + picker + worker ids from the current store, so
-   * DSO pick IDs re-encode against the restored live TLE count.
+   * The TLE catalog was swapped (live, a historical day, or emptied for the
+   * planetarium). DSO pick IDs are encoded above the TLE count, so re-encode them
+   * against the new count and re-register the pick geometry + worker ids. DSOs are
+   * never hidden here: whether one is drawn depends only on its own ephemeris
+   * window and the sim time (the worker's visibleFlags). The caller refreshes the
+   * orbit trail, so this does not. No-op before {@link activate}.
    */
-  setHidden(hidden: boolean): void {
-    if (hidden === this.hidden) return;
-    this.hidden = hidden;
-    if (this._renderer) this._renderer.mesh.visible = !hidden;
-
-    if (hidden) {
-      if (this._renderer) this.callbacks?.onDsoGeometry(this._renderer.geometry, 0);
-      useStore.getState().setDsoLabelPositions([]);
-    } else {
-      this.syncCatalog(useStore.getState().dsoObjects);
-    }
+  resyncForCatalog(): void {
+    this.syncCatalog(useStore.getState().dsoObjects, false);
   }
 
   dispose(): void {
@@ -191,8 +191,6 @@ export class DsoLayer implements Layer {
     this._renderer?.dispose();
     this._renderer = null;
     this.callbacks = null;
-    this.camera = null;
-    this.canvas = null;
   }
 }
 
