@@ -5,7 +5,7 @@ import compression from 'compression';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import tleRouter from './routes/tle.js';
-import dsoRouter, { readEndedDsoIds, summarizeDsoHealth } from './routes/dso.js';
+import dsoRouter, { readDsoHealth } from './routes/dso.js';
 import {
   metadataRouter,
   catalogRouter,
@@ -15,7 +15,6 @@ import {
 } from './routes/metadata.js';
 import { createQueryRouter } from './routes/query.js';
 import { readVersion } from './cache/file-cache.js';
-import { readDsoManifest } from './dso/snapshot/index.js';
 import { historyRouter } from './history/index.js';
 import { frontendDistDir } from './utils/paths.js';
 import { IMMUTABLE_CACHE_CONTROL, isHashedAsset } from './utils/static-cache.js';
@@ -103,8 +102,7 @@ export function createApp(deps: AppDeps = {}): Express {
   // GET /health — used by load balancers and uptime monitors
   app.get('/health', async (_req, res) => {
     const version = readVersion();
-    const dsoManifest = await readDsoManifest();
-    const dsoEndedIds = await readEndedDsoIds();
+    const dso = await readDsoHealth(); // never throws, bounded; reports dsoError instead
     const disk = await readDiskUsage(); // data volume; null if the platform can't say
     res.json({
       status: 'ok',
@@ -112,7 +110,7 @@ export function createApp(deps: AppDeps = {}): Express {
       objectCount: version?.count ?? 0,
       uptime: Math.floor(process.uptime()),
       disk,
-      ...summarizeDsoHealth(dsoManifest, dsoEndedIds),
+      ...dso,
     });
   });
 

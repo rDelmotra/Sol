@@ -9,9 +9,65 @@ import {
   readDsoManifest,
 } from '../dso/snapshot/index.js';
 import { readDsoEndedState } from '../dso/worker/ended-state.js';
+import type { DsoManifest } from '@orbitwatch/contracts';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
+
+/** Longest a DSO file read may take before the request gives up on it (hung or dead mount). */
+export const DSO_READ_TIMEOUT_MS = 2_000;
+
+/**
+ * Bound a DSO read. The DSO side must never slow or break the rest of the API, so
+ * every read on a request path goes through here: it rejects after `timeoutMs`
+ * and the timer never keeps the process alive.
+ */
+export function withDsoTimeout<T>(work: Promise<T>, timeoutMs: number = DSO_READ_TIMEOUT_MS): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`DSO read timed out after ${timeoutMs} ms`)), timeoutMs);
+    timer.unref();
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+/** A manifest read from disk, or null when absent. Throws when unreadable, corrupt or the wrong shape. */
+async function readManifestChecked(): Promise<DsoManifest | null> {
+  const manifest = await withDsoTimeout(readDsoManifest());
+  if (manifest === null) return null;
+  if (typeof manifest !== 'object' || !manifest.objects || typeof manifest.objects !== 'object') {
+    throw new Error('DSO manifest has an invalid shape');
+  }
+  return manifest;
+}
+
+/**
+ * Wrap a DSO route so nothing it does can escape: a throw or rejection (corrupt JSON,
+ * unreadable directory, timeout) becomes a fast 503 JSON, never an unhandled rejection.
+ */
+function safeRoute(
+  name: string,
+  handler: (req: Request, res: Response) => Promise<void>,
+): (req: Request, res: Response) => Promise<void> {
+  return async (req, res) => {
+    try {
+      await handler(req, res);
+    } catch (err) {
+      logger.warn(`${name}: DSO data unavailable (${(err as Error)?.message ?? String(err)})`);
+      if (!res.headersSent) {
+        res.status(503).json({ error: 'DSO data unavailable. Try again shortly.' });
+      }
+    }
+  };
+}
 
 function sendNotModifiedIfMatched(req: Request, res: Response, etag: string): boolean {
   if (req.headers['if-none-match'] === etag) {
@@ -22,8 +78,8 @@ function sendNotModifiedIfMatched(req: Request, res: Response, etag: string): bo
   return false;
 }
 
-router.get('/catalog', async (req: Request, res: Response) => {
-  const catalog = await readDsoCatalog();
+router.get('/catalog', safeRoute('GET /api/dso/catalog', async (req, res) => {
+  const catalog = await withDsoTimeout(readDsoCatalog());
   if (!catalog) {
     logger.warn('GET /api/dso/catalog: no catalog available yet');
     res.status(503).json({ error: 'DSO catalog not yet available. Try again shortly.' });
@@ -38,10 +94,10 @@ router.get('/catalog', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'public, max-age=300');
   res.setHeader('ETag', etag);
   res.json(catalog);
-});
+}));
 
-router.get('/manifest', async (req: Request, res: Response) => {
-  const manifest = await readDsoManifest();
+router.get('/manifest', safeRoute('GET /api/dso/manifest', async (req, res) => {
+  const manifest = await readManifestChecked();
   if (!manifest) {
     logger.warn('GET /api/dso/manifest: no manifest available yet');
     res.status(503).json({ error: 'DSO manifest not yet available. Try again shortly.' });
@@ -56,9 +112,9 @@ router.get('/manifest', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'public, max-age=60');
   res.setHeader('ETag', etag);
   res.json(manifest);
-});
+}));
 
-router.get('/ephemeris/:dsoId', async (req: Request, res: Response) => {
+router.get('/ephemeris/:dsoId', safeRoute('GET /api/dso/ephemeris', async (req, res) => {
   const dsoId = req.params.dsoId;
   const entry = getDsoRegistryEntry(dsoId);
 
@@ -67,7 +123,7 @@ router.get('/ephemeris/:dsoId', async (req: Request, res: Response) => {
     return;
   }
 
-  const manifest = await readDsoManifest();
+  const manifest = await readManifestChecked();
   const status = manifest?.objects[entry.dsoId];
   if (!manifest || !status?.currentSnapshotVersion) {
     logger.warn(`GET /api/dso/ephemeris/${entry.dsoId}: no published snapshot available yet`);
@@ -80,7 +136,7 @@ router.get('/ephemeris/:dsoId', async (req: Request, res: Response) => {
     return;
   }
 
-  const snapshot = await readCurrentDsoSnapshot(entry.dsoId, manifest);
+  const snapshot = await withDsoTimeout(readCurrentDsoSnapshot(entry.dsoId, manifest));
   if (!snapshot) {
     logger.warn(`GET /api/dso/ephemeris/${entry.dsoId}: manifest points to missing snapshot`);
     res.status(503).json({ error: 'DSO ephemeris unavailable. Try again shortly.' });
@@ -90,11 +146,41 @@ router.get('/ephemeris/:dsoId', async (req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.setHeader('ETag', etag);
   res.json(snapshot);
-});
+}));
 
 /** Ids of objects whose mission ended (the worker stopped asking). Never throws; no WARN spam from /health. */
 export async function readEndedDsoIds(): Promise<ReadonlySet<string>> {
   return new Set(Object.keys((await readDsoEndedState({ quiet: true })).objects));
+}
+
+/**
+ * The DSO part of /health. NEVER throws and is bounded by DSO_READ_TIMEOUT_MS: if the
+ * DSO data cannot be read in time (missing volume, corrupt manifest, hung disk) it
+ * returns zeros and `dsoError: true`, and the rest of /health is unaffected. It reads
+ * files only; it never waits on the worker.
+ */
+export async function readDsoHealth(
+  timeoutMs: number = DSO_READ_TIMEOUT_MS,
+): Promise<ReturnType<typeof summarizeDsoHealth> & { dsoError?: true }> {
+  try {
+    const [manifest, ended] = await withDsoTimeout(
+      Promise.all([readDsoManifest(), readEndedDsoIds()]),
+      timeoutMs,
+    );
+    return summarizeDsoHealth(manifest, ended);
+  } catch (err) {
+    logger.warn(`/health: DSO status unavailable (${(err as Error)?.message ?? String(err)})`);
+    return {
+      dsoEnabledCount: 0,
+      dsoFreshCount: 0,
+      dsoStaleCount: 0,
+      dsoDegradedCount: 0,
+      dsoUnavailableCount: 0,
+      dsoEndedCount: 0,
+      dsoWorkerLastRunAt: null,
+      dsoError: true,
+    };
+  }
 }
 
 /**

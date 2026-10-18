@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it, afterEach } from 'node:test';
-import { initDsoClient, stopDsoClient, type DsoSink } from './dso-client';
+import { initDsoClient, nextBootstrapDelay, stopDsoClient, type DsoSink } from './dso-client';
 
 const realFetch = globalThis.fetch;
 
@@ -91,5 +91,36 @@ describe('dso-client sink delivery', () => {
     release();
     await p;
     assert.deepEqual(calls, [['objects', ['a']]]);
+  });
+
+  it('while the catalog stays unavailable, polling backs off from 5 s up to 5 min', async () => {
+    globalThis.fetch = (async () => json({}, 503)) as typeof fetch;
+    const realSetTimeout = globalThis.setTimeout;
+    const scheduled: Array<{ fn: () => unknown; ms: number }> = [];
+    globalThis.setTimeout = ((fn: () => unknown, ms?: number) => {
+      scheduled.push({ fn, ms: ms ?? 0 });
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout;
+    try {
+      const { sink } = recordingSink();
+      await initDsoClient(sink);
+      for (let i = 0; i < 10; i += 1) {
+        const next = scheduled[scheduled.length - 1];
+        await next.fn();
+        await new Promise((r) => setImmediate(r));
+      }
+      assert.deepEqual(
+        scheduled.map((t) => t.ms),
+        [5_000, 10_000, 20_000, 40_000, 80_000, 160_000, 300_000, 300_000, 300_000, 300_000, 300_000],
+      );
+    } finally {
+      globalThis.setTimeout = realSetTimeout;
+    }
+  });
+
+  it('nextBootstrapDelay doubles and caps at 5 minutes', () => {
+    assert.equal(nextBootstrapDelay(5_000), 10_000);
+    assert.equal(nextBootstrapDelay(200_000), 300_000);
+    assert.equal(nextBootstrapDelay(300_000), 300_000);
   });
 });

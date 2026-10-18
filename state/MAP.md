@@ -47,7 +47,7 @@ Import rules between and inside packages live in `tests/architecture.test.ts`. R
 | App and routes table | `packages/backend/src/app.ts` |
 | Boot tasks | `packages/backend/src/boot.ts` |
 | Entry point | `packages/backend/src/index.ts` |
-| Production process supervisor: runs the API and the DSO worker, exits non-zero if either dies (`npm run start:prod -w @orbitwatch/backend`) | `packages/backend/src/supervisor.ts` |
+| Production process supervisor: runs the API and the DSO worker: exits non-zero if the API dies, restarts only the worker (with backoff) if it dies (`npm run start:prod -w @orbitwatch/backend`) | `packages/backend/src/supervisor.ts` |
 | Data-volume disk check: boot log, log after each raw archive write, `GET /health` | `packages/backend/src/utils/disk-usage.ts` |
 | Env access | `packages/backend/src/utils/config.ts` |
 | Space-Track attempt log: backoff, 5-a-day cap, alert memory | `packages/backend/src/cache/attempt-log.ts` |

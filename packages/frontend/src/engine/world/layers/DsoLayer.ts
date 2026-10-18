@@ -88,16 +88,26 @@ export class DsoLayer implements Layer {
     this.dsoUnsub = useStore.subscribe((state) => {
       if (state.dsoObjects === prevDsoObjects) return;
       prevDsoObjects = state.dsoObjects;
-      this.syncCatalog(state.dsoObjects);
+      // A throw here would abort the store's other listeners (satellites, UI): contain it.
+      try {
+        this.syncCatalog(state.dsoObjects);
+      } catch (err) {
+        console.warn('[dso] catalog sync failed (continuing):', err);
+      }
     });
 
     let prevDsoEphemeris = useStore.getState().dsoEphemerisById;
     this.dsoEphemerisUnsub = useStore.subscribe((state) => {
       if (state.dsoEphemerisById === prevDsoEphemeris) return;
-      this.client?.syncEphemerisDiff(prevDsoEphemeris, state.dsoEphemerisById);
+      const before = prevDsoEphemeris;
       prevDsoEphemeris = state.dsoEphemerisById;
-      if (state.showOrbitTrail && state.selectedDso) {
-        this.client?.requestTrail(state.selectedDso.dsoId);
+      try {
+        this.client?.syncEphemerisDiff(before, state.dsoEphemerisById);
+        if (state.showOrbitTrail && state.selectedDso) {
+          this.client?.requestTrail(state.selectedDso.dsoId);
+        }
+      } catch (err) {
+        console.warn('[dso] ephemeris sync failed (continuing):', err);
       }
     });
   }

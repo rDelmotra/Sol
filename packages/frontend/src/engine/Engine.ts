@@ -408,8 +408,16 @@ export class Engine {
       getInterpolationFactor: () => this.satellitesLayer.getInterpolationFactor(),
       getTleKinematics: (index, uT, outPos, outVel) =>
         this.satellitesLayer.getTleKinematics(index, uT, outPos, outVel),
-      getDsoKinematics: (dsoIndex, outPos, outVel) =>
-        this.dsoLayer.getDsoKinematics(dsoIndex, outPos, outVel),
+      getDsoKinematics: (dsoIndex, outPos, outVel) => {
+        // Called from the camera every frame while following a DSO: never let a DSO
+        // fault reach the render loop.
+        try {
+          return this.dsoLayer.getDsoKinematics(dsoIndex, outPos, outVel);
+        } catch (err) {
+          console.warn('[dso] kinematics failed (continuing):', err);
+          return false;
+        }
+      },
     };
   }
 
