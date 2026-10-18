@@ -6,6 +6,9 @@ import { gatedCelesTrakGet } from './celestrak-http.js';
 //
 // GROUP=active is the ~16.7k active satellites, in JSON. JSON is required: catalog
 // numbers of 100000 and up (issued since 2026-07-11) cannot be written in TLE format.
+// The JSON carries only the 17 OMM keys (CelesTrakGPElement in types/index.ts): no
+// OBJECT_TYPE, PERIOD, APOAPSIS, PERIAPSIS, COUNTRY_CODE, LAUNCH_DATE, RCS_SIZE or
+// DECAY_DATE, so the overlay keeps the cached values for those.
 // It is NOT the full catalog (no debris, no rocket bodies, no decayed objects), and
 // neither is any other CelesTrak group. The old `last-30-days` group is only the
 // RECENT LAUNCHES (hundreds of objects). So this is a fallback that is OVERLAID on the
@@ -42,7 +45,9 @@ async function fetchRaw(now: () => number): Promise<CelesTrakGPElement[]> {
  *
  * 1. Fetch from CelesTrak (gated to once per 2 hours, no retry on 4xx).
  * 2. Drop objects with a DECAY_DATE — they have re-entered; their TLEs are
- *    stale and their positions would be nonsensical.
+ *    stale and their positions would be nonsensical. CelesTrak's GP JSON has no
+ *    DECAY_DATE today (the active group holds only objects in orbit), so this only
+ *    acts if the field ever appears; nothing relies on it being there.
  * 3. Deduplicate by NORAD_CAT_ID, keeping the entry with the newest EPOCH.
  *    (The API should not return duplicates, but this is defensive.)
  *

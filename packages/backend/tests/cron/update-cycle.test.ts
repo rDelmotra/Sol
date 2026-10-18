@@ -231,10 +231,11 @@ describe('runUpdateCycle — Space-Track attempt log', () => {
   it('data fetched but not saved (disk full) stays a failure and backs off', async () => {
     // a directory where the temp file goes makes writeCache throw
     fs.mkdirSync(path.join(tmpDir, 'tle-cache.json.tmp'));
-    await assert.rejects(runUpdateCycle('boot', deps('ok', 'fail')));
+    await runUpdateCycle('boot', deps('ok', 'fail')); // the cycle itself does not throw any more
     const state = readAttemptState();
-    assert.equal(state?.lastOutcome, 'started');
+    assert.equal(state?.lastOutcome, 'failure');
     assert.equal(state?.consecutiveFailures, 1);
+    assert.equal(hasCache(), false, 'nothing was written');
     clock = T0 + 10 * 1000;
     await runUpdateCycle('boot', deps('ok', 'ok')).catch(() => undefined);
     assert.equal(stCalls, 1, 'second login held back');

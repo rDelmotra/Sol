@@ -6,9 +6,15 @@ import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 // CelesTrak has no group that holds the full catalog (GROUP=active is about 16.7k
 // active satellites), so its answer can never replace the cached catalog. It is
 // laid over it:
-//   - an id already cached: the CelesTrak record replaces it only if its epoch is
-//     strictly NEWER (equal or older never replaces)
-//   - an id not cached: added at the end
+//   - an id already cached: if the CelesTrak record's epoch is strictly NEWER (equal
+//     or older never counts), the cached object is passed through `mergeNewer`
+//     together with the CelesTrak object. CelesTrak's GP JSON has only the 17 OMM
+//     keys (no type, country, launch date, size, period or apsides), so the merge the
+//     caller supplies (mergeNewerOrbit in cron/tle-updater.ts) takes only the orbit
+//     from the CelesTrak object and keeps every other cached field. This module has
+//     no default merge on purpose: replacing the whole record would blank the
+//     metadata.
+//   - an id not cached: the CelesTrak object is added at the end, as built
 //   - every other cached object: kept as it is
 // So the result never has fewer objects than the cache. With no cache the result is
 // just the CelesTrak records.
@@ -18,7 +24,7 @@ import type { EnrichedTLEObject } from '@orbitwatch/contracts';
 
 export interface OverlayResult {
   catalog: EnrichedTLEObject[];
-  /** Cached objects replaced by a newer CelesTrak record. */
+  /** Cached objects updated from a newer CelesTrak record. */
   replaced: number;
   /** CelesTrak objects that were not cached. */
   added: number;
@@ -30,8 +36,15 @@ function epochMs(epoch: string | undefined): number {
   return Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY;
 }
 
+/** Combine a cached object with a CelesTrak object of a strictly newer epoch. Must not change its inputs. */
+export type MergeNewer = (cached: EnrichedTLEObject, newer: EnrichedTLEObject) => EnrichedTLEObject;
+
 /** Lay `fresh` (built from CelesTrak) over `cached`. Neither input is changed. */
-export function overlayCatalog(cached: EnrichedTLEObject[] | null, fresh: EnrichedTLEObject[]): OverlayResult {
+export function overlayCatalog(
+  cached: EnrichedTLEObject[] | null,
+  fresh: EnrichedTLEObject[],
+  mergeNewer: MergeNewer,
+): OverlayResult {
   // One record per id inside the fresh set too: the newest epoch wins.
   const freshById = new Map<number, EnrichedTLEObject>();
   for (const obj of fresh) {
@@ -51,7 +64,7 @@ export function overlayCatalog(cached: EnrichedTLEObject[] | null, fresh: Enrich
     used.add(old.noradId);
     if (epochMs(candidate.epoch) > epochMs(old.epoch)) {
       replaced++;
-      return candidate;
+      return mergeNewer(old, candidate);
     }
     return old;
   });

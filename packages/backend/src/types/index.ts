@@ -50,7 +50,16 @@ export interface SpaceTrackGPElement {
 // ── CelesTrak GP element ──────────────────────────────────────────────────────
 // CelesTrak returns proper JSON types (numbers are numbers, not strings).
 // Used as fallback when Space-Track is unavailable.
+//
+// CelesTrak's GP JSON (GROUP=active&FORMAT=json) carries ONLY the 17 OMM keys
+// below (the required ones). It has NO OBJECT_TYPE, PERIOD, APOAPSIS, PERIAPSIS,
+// COUNTRY_CODE, LAUNCH_DATE, RCS_SIZE or DECAY_DATE, and no TLE lines. Those are
+// typed as optional only so a different CelesTrak format that does carry them is
+// still read; the code must never rely on them being there (the overlay in
+// cache/catalog-overlay.ts keeps the cached values for them, and period/apsides
+// are derived from MEAN_MOTION and ECCENTRICITY).
 export interface CelesTrakGPElement {
+  // The 17 OMM keys CelesTrak really sends:
   OBJECT_NAME: string;
   OBJECT_ID: string;
   EPOCH: string;
@@ -68,24 +77,26 @@ export interface CelesTrakGPElement {
   BSTAR: number;
   MEAN_MOTION_DOT: number;
   MEAN_MOTION_DDOT: number;
-  TLE_LINE0: string;
-  TLE_LINE1: string;
-  TLE_LINE2: string;
-  OBJECT_TYPE: string;           // "PAYLOAD" | "ROCKET BODY" | "DEBRIS" | "UNKNOWN"
-  RCS_SIZE: string | null;
-  COUNTRY_CODE: string;
-  LAUNCH_DATE: string;
-  SITE: string;
-  DECAY_DATE: string | null;     // null = still in orbit (CelesTrak uses null, not "")
-  PERIOD: number;                // minutes (already a number)
-  APOAPSIS: number;              // km
-  PERIAPSIS: number;             // km
+  // Not in CelesTrak's GP JSON today. Optional, never assumed:
+  TLE_LINE0?: string;
+  TLE_LINE1?: string;
+  TLE_LINE2?: string;
+  OBJECT_TYPE?: string;          // "PAYLOAD" | "ROCKET BODY" | "DEBRIS" | "UNKNOWN"
+  RCS_SIZE?: string | null;
+  COUNTRY_CODE?: string;
+  LAUNCH_DATE?: string;
+  SITE?: string;
+  DECAY_DATE?: string | null;    // a value means the object has re-entered
+  PERIOD?: number;               // minutes
+  APOAPSIS?: number;             // km
+  PERIAPSIS?: number;            // km
 }
 
 // ── Classifier input ──────────────────────────────────────────────────────────
 // Normalised shape that classifyObject() accepts, independent of data source.
 // The tle-updater maps both SpaceTrackGPElement and CelesTrakGPElement to this
-// before calling the classifier.
+// before calling the classifier (the period is derived from MEAN_MOTION when the
+// source has no PERIOD, which is the CelesTrak case).
 export interface ClassifiableObject {
   period: number;       // orbital period in minutes (already parsed to number)
   eccentricity: number;

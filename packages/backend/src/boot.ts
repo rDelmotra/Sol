@@ -10,7 +10,7 @@ import {
   isHistoryReady,
 } from './history/index.js';
 import { logger } from './utils/logger.js';
-import { logDiskUsage } from './utils/disk-usage.js';
+import { reportDiskAndAlert } from './utils/volume-alert.js';
 
 export interface BootStep {
   name: string;
@@ -23,10 +23,11 @@ export const DISK_REPORT_TIMEOUT_MS = 5_000;
 /**
  * Start the disk usage report and return a promise that NEVER rejects and settles
  * within `timeoutMs` at the latest, even when the filesystem call hangs. The boot
- * step does not wait for it. Visibility only: it logs, it never deletes.
+ * step does not wait for it. It logs, and sends one volume alert per UTC day and level
+ * at >= 75% / >= 90% (not awaited: only the statfs is inside the guard). It never deletes.
  */
 export function startDiskReport(
-  logDisk: () => Promise<unknown> = () => logDiskUsage('boot'),
+  logDisk: () => Promise<unknown> = () => reportDiskAndAlert('boot'),
   timeoutMs: number = DISK_REPORT_TIMEOUT_MS,
 ): Promise<void> {
   return new Promise<void>((resolve) => {

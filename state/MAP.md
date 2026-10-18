@@ -53,8 +53,11 @@ Import rules between and inside packages live in `tests/architecture.test.ts`. R
 | Space-Track attempt log: backoff, 5-a-day cap, alert memory | `packages/backend/src/cache/attempt-log.ts` |
 | CelesTrak attempt log: 2 hour gate per group | `packages/backend/src/cache/celestrak-attempts.ts` |
 | Daily update cycle: Space-Track first, CelesTrak overlay fallback, alert | `packages/backend/src/cron/tle-updater.ts` |
-| CelesTrak overlay merge rules | `packages/backend/src/cache/catalog-overlay.ts` |
+| CelesTrak overlay merge rules (the orbit-only merge is `mergeNewerOrbit` in the update cycle) | `packages/backend/src/cache/catalog-overlay.ts` |
 | Alerts: ERROR log, optional webhook and Resend email | `packages/backend/src/utils/alert.ts` |
+| Volume alerts at 75% and 90% used, once per UTC day per level | `packages/backend/src/utils/volume-alert.ts` |
+| Memory of the volume and write-failure alerts (`alert-state.json`) | `packages/backend/src/cache/alert-state.ts` |
+| Period and apsides from mean motion and eccentricity (CelesTrak has none) | `packages/backend/src/utils/orbit-summary.ts` |
 | All filesystem paths | `packages/backend/src/utils/paths.ts` |
 | HTTP routes | `packages/backend/src/routes/` |
 | Data fetchers, NL compiler, prompt builder | `packages/backend/src/services/` |

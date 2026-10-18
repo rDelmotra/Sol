@@ -88,9 +88,9 @@ export async function readDiskUsage(
  * Measure and log. INFO normally, WARN at >= 75%, ERROR at >= 90%.
  * Never throws, so it is safe to call from boot and from write paths.
  */
-export async function logDiskUsage(context: string, dir?: string): Promise<DiskUsage | null> {
+export async function logDiskUsage(context: string, dir?: string, statfs?: StatfsFn): Promise<DiskUsage | null> {
   try {
-    const u = await readDiskUsage(dir);
+    const u = await readDiskUsage(dir, statfs);
     if (!u) {
       logger.warn(`Disk usage (${context}): unavailable`);
       return null;

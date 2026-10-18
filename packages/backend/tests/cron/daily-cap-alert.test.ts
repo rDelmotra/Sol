@@ -322,7 +322,9 @@ describe('runUpdateCycle — daily cap, alert and CelesTrak overlay', () => {
       const out = readCache()!;
       const byId = new Map(out.map((o) => [o.noradId, o]));
       assert.equal(out.length, 6, '4 cached + 2 added');
-      assert.equal(byId.get(80000)?.name, 'NEWER 80000');
+      assert.equal(byId.get(80000)?.name, 'CACHED 80000', 'the cached name stays');
+      assert.equal(byId.get(80000)?.epoch, '2026-10-13T00:00:00.000000Z', 'but the orbit is the newer one');
+      assert.equal(byId.get(80000)?.omm.OBJECT_NAME, 'NEWER 80000');
       assert.equal(byId.get(80001)?.name, 'CACHED 80001');
       assert.equal(byId.get(80002)?.name, 'CACHED 80002');
       assert.equal(byId.get(80003)?.name, 'CACHED 80003', 'untouched');
@@ -330,7 +332,7 @@ describe('runUpdateCycle — daily cap, alert and CelesTrak overlay', () => {
       assert.equal(byId.get(100001)?.name, 'SIX DIGIT');
       assert.equal(byId.get(100001)?.omm.NORAD_CAT_ID, 100001);
       assert.ok(lines.some((l) => l.includes('TLE update complete: 6 objects from celestrak')));
-      assert.ok(lines.some((l) => l.includes('1 cached objects replaced') && l.includes('2 added') && l.includes('3 kept')));
+      assert.ok(lines.some((l) => l.includes('1 cached objects updated to newer orbits') && l.includes('2 added') && l.includes('3 kept')));
     });
 
     it('no cache: the overlay is just the CelesTrak records, 6-digit id included', async () => {

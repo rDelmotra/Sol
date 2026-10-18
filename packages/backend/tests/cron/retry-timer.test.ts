@@ -204,19 +204,36 @@ describe('runUpdateCycle — retry timer after a Space-Track backoff', () => {
     assert.equal(pendingUpdateRetryAt(), null);
   });
 
-  it('a successful write cancels a pending timer', async () => {
+  it('a Space-Track success cancels a pending timer', async () => {
     seedStaleCache();
     backoffUntilPlus14Min();
     await runUpdateCycle('boot', deps('ok', 'fail'));
     assert.equal(live().length, 1);
 
-    // CelesTrak answers on the next cycle (Space-Track still held back) and fills the cache
+    // the wait is over, a cycle runs and Space-Track answers: the retry has nothing left to do
+    clock = T0 + 15 * MIN;
+    await runUpdateCycle('boot', deps('ok', 'fail'));
+    assert.equal(stCalls, 1);
+    assert.equal(hasCache(), true);
+    assert.equal(readAttemptState()?.lastOutcome, 'success');
+    assert.equal(live().length, 0);
+    assert.equal(pendingUpdateRetryAt(), null);
+  });
+
+  it('a CelesTrak write does NOT cancel the pending timer', async () => {
+    seedStaleCache();
+    backoffUntilPlus14Min();
+    await runUpdateCycle('boot', deps('ok', 'fail'));
+    assert.equal(live().length, 1);
+
+    // CelesTrak answers on the next cycle (Space-Track still held back) and refreshes the cache
     clock = T0 + MIN;
     await runUpdateCycle('boot', deps('ok', 'ok'));
     assert.equal(ctCalls, 2, 'one failed call before, one good call now');
     assert.equal(hasCache(), true);
-    assert.equal(live().length, 0);
-    assert.equal(pendingUpdateRetryAt(), null);
+    assert.equal(stCalls, 0, 'Space-Track is still held back');
+    assert.equal(live().length, 1, 'the Space-Track retry is still pending');
+    assert.equal(pendingUpdateRetryAt(), T0 + 14 * MIN);
   });
 
   it('both sources fail in this cycle: a timer is armed for the end of the new backoff (15 min)', async () => {
@@ -233,12 +250,13 @@ describe('runUpdateCycle — retry timer after a Space-Track backoff', () => {
     assert.equal(pendingUpdateRetryAt(), T0 + 15 * MIN);
   });
 
-  it('no timer when CelesTrak filled the cache', async () => {
+  it('CelesTrak filled the cache and Space-Track was held back: the retry for Space-Track is still armed', async () => {
     seedStaleCache();
     backoffUntilPlus14Min();
     await runUpdateCycle('boot', deps('ok', 'ok'));
     assert.equal(ctCalls, 1);
-    assert.equal(timers.length, 0);
+    assert.equal(timers.length, 1);
+    assert.equal(pendingUpdateRetryAt(), T0 + 14 * MIN);
   });
 
   it('no timer when the cache is fresh and the cycle is skipped', async () => {

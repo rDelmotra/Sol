@@ -48,6 +48,14 @@ function versionPath(): string {
   return path.join(getCacheDir(), 'version.json');
 }
 
+/**
+ * The two temp files writeCache uses (each is renamed over its target when complete).
+ * After a failed write the caller may delete exactly these, nothing else.
+ */
+export function cacheTempPaths(): string[] {
+  return [tleCachePath() + '.tmp', versionPath() + '.tmp'];
+}
+
 function visualCachePath(): string {
   return path.join(getCacheDir(), 'visual-cache.json');
 }
@@ -257,9 +265,13 @@ export function writeCache(data: EnrichedTLEObject[]): void {
   fs.writeFileSync(tleTmp, json, 'utf8');
   fs.renameSync(tleTmp, tleP);
 
-  // Write version metadata (small, non-critical — no need for atomic write)
+  // Write version metadata (small), also through a temp file so a full disk cannot leave
+  // a half-written version.json behind.
   const versionInfo: VersionInfo = { version, count: data.length, byteSize };
-  fs.writeFileSync(versionPath(), JSON.stringify(versionInfo, null, 2), 'utf8');
+  const versionP = versionPath();
+  const versionTmp = versionP + '.tmp';
+  fs.writeFileSync(versionTmp, JSON.stringify(versionInfo, null, 2), 'utf8');
+  fs.renameSync(versionTmp, versionP);
 
   logger.info(
     `Cache written: ${data.length} objects, ${(byteSize / 1_048_576).toFixed(1)} MB, version=${version}`,

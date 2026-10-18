@@ -7,7 +7,7 @@ Remove an item when it is fixed. None of these is scheduled unless the owner say
 - Rotate the Gemini key. It was rejected as leaked, so every Ask fails.
 - Rotate the key found in the history of `experiment/nl-to-ir`.
 - DSO validity window: `DEFAULT_VALID_PAST_WINDOW_SEC` is 10 days. Should it be "since launch"?
-- The raw history archive is never pruned and grows about 4.6 MB a day. The 500 MB volume fills in roughly 97 days, and the daily-cron fix doubles the old rate. Numbers and lossless options: `state/SRE_FINDINGS.md`, parts (a) and (b). Watch `GET /health` (`disk`) after deploy.
+- The raw history archive is never pruned and grows about 4.6 MB a day. The 500 MB volume fills in roughly 97 days, and the daily-cron fix doubles the old rate. Numbers and lossless options: `state/SRE_FINDINGS.md`, parts (a) and (b). Watch `GET /health` (`disk`) after deploy. An alert now goes out through the same channel at 75% and 90% used (D16), so the first warn alert will appear in a few days (production was about 71.5% used, 317 MB of 444 MB). The owner still has to resize the Railway volume.
 - Object category is always `unknown` because Space-Track's SATCAT has no operational-status field. Needs another source.
 - Dead branch cleanup. Many old branches exist.
 
@@ -59,7 +59,7 @@ None of these is a problem today. The owner decided the work is finished for now
 **Decisions for the owner:**
 - **The Ask / analytic stack** (about 14,000 lines, the `analytic` package, backend compiler and query route, the Ask bar). The Gemini key was rejected, so it does not work. Remove it or keep it dormant.
 - **Other deep-space missions.** JWST, DSCOVR, LRO and Chandrayaan-3 are off in `packages/backend/src/dso/registry/entries.ts`. A mission with a long life is a long list of points (JWST at 10-minute steps is about 250,000 points, about 12 MB). If they are switched on later, use hourly steps and check the volume first. Chandrayaan-3 waits for confirmed NASA coverage. `packages/backend/src/dso/NOTES.md` still lists three of them as enabled, which is out of date.
-- **A reminder alert each day** while an outage lasts. Today it alerts once, on the day's 5th failed Space-Track attempt, and not at all if the process dies during that attempt.
+- **An alert if the process dies in the middle of the day's 5th attempt.** The daily alert is sent when the 5th failure is recorded, so a crash during that attempt sends nothing that day (the next day's cycle starts a new count). A "dead man" check from outside would be needed to cover this.
 - **More cockpit decoration still in place** that a minimal view would not need: the reticle ring (`packages/frontend/src/ui/cockpit/hud/Reticle.tsx`), the edge arcs (`packages/frontend/src/ui/cockpit/hud/EdgeArc.tsx`), the ring of facts (`packages/frontend/src/ui/cockpit/hud/ObjectDisc.tsx`), the voice-wave bar (`packages/frontend/src/ui/cockpit/hud/Waveform.tsx`), the glass panes (`packages/frontend/src/ui/cockpit/primitives/GlassPane.tsx`), the dock (`packages/frontend/src/ui/cockpit/dock/Dock.tsx`), the gamepad drawing, and the "MODE" and "TRACKING n OBJ" lines (`packages/frontend/src/ui/cockpit/time/ConsoleReadouts.tsx`). The orbit diagram stays by decision. The cockpit panes have no deep-space info card, which is fine for now.
 
 **Safe cleanup, found by the audit, not done:**
@@ -68,14 +68,14 @@ None of these is a problem today. The owner decided the work is finished for now
 - A 0-byte `packages/frontend/public/favicon.svg`, the unused dev dependency `@rollup/pluginutils`, and 26 MB of master images in `packages/frontend/texture-src` (never shipped, only used by the texture script).
 
 **Unverified in the real world:**
-- The CelesTrak fallback has never run against the real CelesTrak. It now lays `GROUP=active` over the saved catalog by newer epoch (`packages/backend/src/cache/catalog-overlay.ts`). The old group, `last-30-days`, was recent launches only. If Space-Track ever fails, read the first fallback in the logs.
+- The CelesTrak fallback has never run against the real CelesTrak. It lays `GROUP=active` over the saved catalog by newer epoch and takes only the orbit from a newer record, keeping the cached type, country, launch date and size (`packages/backend/src/cache/catalog-overlay.ts`, `packages/backend/src/cron/tle-updater.ts`, D16). The tests use fixtures with the 17 keys CelesTrak is documented to send; the real answer was not fetched. The computed period and apsides were checked against Space-Track's own definition only on an ISS-like fixture. An id that CelesTrak has and the cache does not is added with type, country and size unknown until the next Space-Track fetch. If Space-Track ever fails, read the first fallback in the logs.
+- The new alerts (write failure, volume, and the daily Space-Track one) go through the existing `sendAlert`; the delivery to ntfy was not seen end to end in production. Set `ALERT_WEBHOOK_URL` with `ALERT_WEBHOOK_FORMAT=ntfy` and watch for the first volume warn.
 - Heat and idle power after the turning orbit arc, the blur removal and the scanline removal were not measured in the owner's Chrome.
-- In a long Space-Track outage the retry waits can reach 6 hours and can delay the 02:00 run. It was like this before the 5-a-day cap (`packages/backend/src/cache/attempt-log.ts`).
 
 **Performance notes:**
 - First load is limited by the satellite list: about 2.3 MB with brotli, close to the floor for JSON. A binary format could get it near 1.3 MB, but it is a large rewrite. Repeat visits use the copy stored in the browser.
 - Railway's edge ignores `Vary`, so `/api/tle/all` is marked `private` (`packages/backend/src/routes/tle.ts`). Do not turn it back to `public` without checking.
-- The volume is about 71% full and grows about 4.6 MB a day. The owner resizes it. `GET /health` shows `disk`; ntfy is not wired to it yet.
+- The volume is about 71% full and grows about 4.6 MB a day. The owner resizes it. `GET /health` shows `disk`; alerts at 75% and 90% are wired through `sendAlert` (D16).
 - Harmless warning at every boot: the TimescaleDB extension is not available, so the history table is a plain Postgres table.
 
 ## Known weaknesses (left alone by decision D2)

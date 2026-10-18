@@ -53,7 +53,11 @@ export function spaceTrackGp(n: number, firstId = 90_000): SpaceTrackGPElement[]
   }));
 }
 
-/** `n` valid CelesTrak GP records (real JSON numbers). */
+/**
+ * `n` valid CelesTrak GP records (real JSON numbers). ONLY the 17 OMM keys CelesTrak's
+ * GP JSON really has: no OBJECT_TYPE, PERIOD, APOAPSIS, PERIAPSIS, COUNTRY_CODE,
+ * LAUNCH_DATE, RCS_SIZE, DECAY_DATE or TLE lines.
+ */
 export function celesTrakGp(n: number, firstId = 80_000): CelesTrakGPElement[] {
   return Array.from({ length: n }, (_, i) => ({
     OBJECT_NAME: `FAKE CT ${firstId + i}`,
@@ -73,19 +77,62 @@ export function celesTrakGp(n: number, firstId = 80_000): CelesTrakGPElement[] {
     BSTAR: 0.0001,
     MEAN_MOTION_DOT: 0,
     MEAN_MOTION_DDOT: 0,
-    TLE_LINE0: '0 FAKE',
-    TLE_LINE1: '1 00000U 24000B   24001.00000000  .00000000  00000-0  00000-0 0  9990',
-    TLE_LINE2: '2 00000  53.0000 100.0000 0001000  90.0000 270.0000 15.00000000    10',
-    OBJECT_TYPE: 'PAYLOAD',
-    RCS_SIZE: 'LARGE',
-    COUNTRY_CODE: 'US',
-    LAUNCH_DATE: '2024-01-01',
-    SITE: 'AFETR',
-    DECAY_DATE: null,
-    PERIOD: 96,
-    APOAPSIS: 540,
-    PERIAPSIS: 530,
   }));
+}
+
+/** The 17 keys CelesTrak sends (tests check a fixture has no others). */
+export const CELESTRAK_KEYS = [
+  'OBJECT_NAME', 'OBJECT_ID', 'EPOCH', 'MEAN_MOTION', 'ECCENTRICITY', 'INCLINATION', 'RA_OF_ASC_NODE',
+  'ARG_OF_PERICENTER', 'MEAN_ANOMALY', 'EPHEMERIS_TYPE', 'CLASSIFICATION_TYPE', 'NORAD_CAT_ID',
+  'ELEMENT_SET_NO', 'REV_AT_EPOCH', 'BSTAR', 'MEAN_MOTION_DOT', 'MEAN_MOTION_DDOT',
+] as const;
+
+/**
+ * An ISS-like Space-Track record (id 100001): the numbers are what Space-Track derives for
+ * mean motion 15.5 rev/day and eccentricity 0.0005 (period 92.903 min, altitudes in km
+ * above the surface, Earth radius 6378.135 and mu 398600.8).
+ */
+export function issLikeSpaceTrack(): SpaceTrackGPElement {
+  return {
+    ...spaceTrackGp(1, 100_001)[0],
+    OBJECT_NAME: 'ISS LIKE',
+    OBJECT_ID: '1998-067A',
+    EPOCH: '2026-10-10T12:00:00.000000',
+    MEAN_MOTION: '15.5',
+    ECCENTRICITY: '0.0005',
+    INCLINATION: '51.64',
+    SEMIMAJOR_AXIS: '6794.865',
+    PERIOD: '92.903',
+    APOAPSIS: '420.128',
+    PERIAPSIS: '413.333',
+    RCS_SIZE: 'LARGE',
+    COUNTRY_CODE: 'ISS',
+    LAUNCH_DATE: '1998-11-20',
+  };
+}
+
+/** The CelesTrak record for the same object, a day newer, a slightly different orbit, 17 keys only. */
+export function issLikeCelesTrak(over: Partial<CelesTrakGPElement> = {}): CelesTrakGPElement {
+  return {
+    OBJECT_NAME: 'ISS LIKE',
+    OBJECT_ID: '1998-067A',
+    EPOCH: '2026-10-11T12:00:00.000000',
+    MEAN_MOTION: 15.5,
+    ECCENTRICITY: 0.0005,
+    INCLINATION: 51.65,
+    RA_OF_ASC_NODE: 120.5,
+    ARG_OF_PERICENTER: 85.25,
+    MEAN_ANOMALY: 275.5,
+    EPHEMERIS_TYPE: 0,
+    CLASSIFICATION_TYPE: 'U',
+    NORAD_CAT_ID: 100_001,
+    ELEMENT_SET_NO: 999,
+    REV_AT_EPOCH: 12345,
+    BSTAR: 0.0002,
+    MEAN_MOTION_DOT: 0.0001,
+    MEAN_MOTION_DDOT: 0,
+    ...over,
+  };
 }
 
 /** A stand-in for a cached catalog of `n` objects. writeCache only serialises it. */

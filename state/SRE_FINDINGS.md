@@ -133,7 +133,7 @@ Rules in force:
 
 Open gaps:
 
-- During a multi-day Space-Track outage the backoff reaches 6 h, so a later day fits only 4 attempts and never reaches the cap: the alert fires on the first bad day, not on every day.
+- During a multi-day Space-Track outage the backoff reaches 6 h, so a later day fits only 4 attempts and never reaches the cap: the alert fires on the first bad day, not on every day. (Fixed on 2026-10-18, D16: the backoff is now computed per UTC day, so every day of an outage gets 5 attempts and one alert.)
 - Two API replicas would each run the cron and each fetch. Today there is one.
 
 Other upstream fetches, for completeness:
