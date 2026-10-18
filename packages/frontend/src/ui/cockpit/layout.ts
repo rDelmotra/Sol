@@ -10,14 +10,8 @@ export const DOCK_H = 40;
 /** Gap between the dock's top edge and whatever floats just above it. */
 export const DOCK_GAP = 12;
 
-/** Inset of the corner readouts (top-left console, top-right telemetry, NAV/AI). */
+/** Inset of the corner readouts (top-left console, top-right telemetry). */
 export const HUD_CORNER_INSET = 24;
-/** Top of the centred "ORBITAL / SSA-01" title. */
-export const TITLE_TOP = 12;
-/** Height the ask bar reserves above the dock; the NAV/AI block sits above it. */
-export const ASK_BAR_RESERVE = 72;
-/** Bottom of the NAV/AI status block. */
-export const STATUS_BOTTOM = DOCK_H + DOCK_GAP + ASK_BAR_RESERVE;
 
 // ── Reticle ──────────────────────────────────────────────────────────────────
 // The box size and ring radius come from constants/reticle.ts (RETICLE_BOX_PX,

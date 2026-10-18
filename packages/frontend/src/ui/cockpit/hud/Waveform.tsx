@@ -25,8 +25,6 @@ export function Waveform({ active, onClick }: { active: boolean; onClick: () => 
         padding: '0 16px',
         background: 'var(--hud-glass)',
         border: '1px solid var(--hud-glass-edge)',
-        backdropFilter: 'blur(14px)',
-        WebkitBackdropFilter: 'blur(14px)',
       }}
     >
       {bars.map((b, i) => (

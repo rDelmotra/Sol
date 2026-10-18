@@ -7,14 +7,11 @@ import { Dock } from './dock/Dock';
 import { EdgeArc } from './hud/EdgeArc';
 import { FocusPanes } from './panes/FocusPanes';
 import { HudErrorBoundary } from './primitives/HudErrorBoundary';
-import { HudTitle } from './primitives/HudTitle';
 import { ObjectDisc } from './hud/ObjectDisc';
 import { PassReadout } from './ground/PassReadout';
 import { Reticle } from './hud/Reticle';
 import { TimeConsole } from './time/TimeConsole';
-import { TelemetryBL } from './hud/TelemetryBL';
 import { TelemetryTR } from './hud/TelemetryTR';
-import { VignetteAndScan } from './primitives/VignetteAndScan';
 import { useCockpitKeys } from './useCockpitKeys';
 
 /**
@@ -37,7 +34,6 @@ export default function CockpitHud() {
   useCockpitKeys();
   return (
     <div style={ROOT_STYLE}>
-      <VignetteAndScan />
 
       <HudErrorBoundary region="reticle">
         <Reticle />
@@ -70,14 +66,12 @@ export default function CockpitHud() {
 
       <HudErrorBoundary region="telemetry">
         <TelemetryTR />
-        <TelemetryBL />
       </HudErrorBoundary>
 
       <HudErrorBoundary region="ask bar">
         <AskBar />
       </HudErrorBoundary>
 
-      <HudTitle />
 
       <HudErrorBoundary region="dock">
         <Dock />

@@ -29,8 +29,6 @@ export function Dock() {
         padding: `0 ${DOCK_PAD_X}px`,
         background: 'var(--hud-glass)',
         borderTop: '1px solid var(--hud-glass-edge)',
-        backdropFilter: 'blur(14px) saturate(120%)',
-        WebkitBackdropFilter: 'blur(14px) saturate(120%)',
         boxShadow: 'var(--hud-inner-glow)',
         pointerEvents: 'auto',
       }}
