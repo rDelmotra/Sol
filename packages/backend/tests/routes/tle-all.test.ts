@@ -120,7 +120,8 @@ describe('GET /api/tle/all encodings', () => {
     assert.equal(br.body.length, 0);
     assert.equal(br.headers.etag, BR_TAG);
     assert.match(String(br.headers.vary), /Accept-Encoding/i);
-    assert.match(String(br.headers['cache-control']), /max-age=3600/);
+    // private: the shared edge ignores Vary and would hand every client one encoding.
+    assert.match(String(br.headers['cache-control']), /^private, max-age=3600$/);
 
     const gz = await get(base, { 'accept-encoding': 'gzip', 'if-none-match': GZIP_TAG });
     assert.equal(gz.status, 304);

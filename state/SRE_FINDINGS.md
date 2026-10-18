@@ -160,3 +160,6 @@ How it works now (`packages/backend/src/dso/providers/horizons.ts`, `packages/ba
 - `DSO_RETRY_ENDED=1` forces one try per ended object per boot. Unset it afterwards.
 - `GET /health` counts an ended object that still has its ephemeris as `dsoEndedCount`, not as fresh. The per-object `freshnessState` in the manifest and catalog is left as the last publish set it, because the shared type has no `ended` value. See `state/OPEN.md`.
 - The current stored ephemeris is never deleted. Only superseded older snapshot versions are deleted (part a).
+
+## Edge cache served gzip to brotli clients (2026-10-18)
+Seen live: `/api/tle/all` came back `content-encoding: gzip`, `x-cache: HIT`, `age: 475` although brotli was built (2.32 MB against 3.04 MB gzip) and the client asked for it. Railway's edge stored the gzip copy right after the restart, ignores `Vary`, and kept serving it. Fix: `Cache-Control: private, max-age=3600` on `/api/tle/all` (browsers still cache it). With a cache-busting URL the origin did serve brotli (2.43 MB on the wire). Check after deploy: `curl -sI -H "Accept-Encoding: br" .../api/tle/all` must show `content-encoding: br` and no `x-cache: HIT`.

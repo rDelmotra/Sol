@@ -68,7 +68,7 @@ function sendVisualResponse(
 // parse + serialize path for clients with neither.
 //
 // Headers:
-//   Cache-Control: public, max-age=3600   (clients may cache for 1 hour)
+//   Cache-Control: private, max-age=3600  (the browser may cache it for 1 hour; the shared edge may not)
 //   ETag: one per encoding ("<version>" gzip, "<version>-br", "<version>-identity")
 //   Vary: Accept-Encoding
 //
@@ -92,7 +92,10 @@ router.get('/all', (req: Request, res: Response) => {
   });
   const etag = tleEtag(payload.version, encoding);
 
-  res.setHeader('Cache-Control', 'public, max-age=3600');
+  // private: Railway's edge cache ignores Vary, and stored the gzip copy right after a
+  // restart (before the brotli copy was built) and then sent it to every client.
+  // Browsers still cache it for an hour; the origin serves it from memory.
+  res.setHeader('Cache-Control', 'private, max-age=3600');
   res.setHeader('ETag', etag);
   res.setHeader('Vary', 'Accept-Encoding');
 
