@@ -13,6 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it, beforeEach, afterEach, mock } from 'node:test';
 import {
+  buildCelesTrakFallbackAlert,
   buildDailyFailureAlert,
   buildWriteFailureAlert,
   cancelUpdateRetry,
@@ -55,6 +56,8 @@ describe('Space-Track retries, daily alert and write failures', () => {
   let ctDownloads: number;
   let ctLastDownload: number;
   let alerts: AlertMessage[];
+  // the separate 'CelesTrak was used as the fallback' alerts (the other alerts stay in `alerts`)
+  let fallbackAlerts: AlertMessage[];
   let timers: FakeTimer[];
   let stBehaviour: 'fail' | 'ok';
   let ctBehaviour: 'ok' | 'down';
@@ -93,7 +96,7 @@ describe('Space-Track retries, daily alert and write failures', () => {
         return celesTrakGp(3);
       },
       sendAlert: (a) => {
-        alerts.push(a);
+        (/used as the fallback/.test(a.title) ? fallbackAlerts : alerts).push(a);
       },
       schedule: (fn, delayMs) => {
         const t: FakeTimer = { fn, delayMs, cancelled: false, fired: false };
@@ -157,6 +160,7 @@ describe('Space-Track retries, daily alert and write failures', () => {
     ctDownloads = 0;
     ctLastDownload = Number.NEGATIVE_INFINITY;
     alerts = [];
+    fallbackAlerts = [];
     timers = [];
     stBehaviour = 'fail';
     ctBehaviour = 'ok';
@@ -580,6 +584,75 @@ describe('Space-Track retries, daily alert and write failures', () => {
       assert.match(a.title, /DISK or WRITE/);
       assert.match(a.body, /about 5 hours old/);
       assert.match(a.body, /CACHE_DIR/);
+    });
+  });
+
+  describe('CelesTrak used as the fallback: one alert per UTC day', () => {
+    it('is sent once when the CelesTrak data is saved, and says why Space-Track did not supply it', async () => {
+      staleCache(clock);
+      await cycle(at(`${DAY1}T02:00:00.000Z`));
+      assert.equal(fallbackAlerts.length, 1);
+      const a = fallbackAlerts[0];
+      assert.match(a.title, /CelesTrak was used as the fallback/);
+      assert.match(a.body, /Space-Track login rejected \(HTTP 500\)/);
+      assert.match(a.body, /retried \(up to 5 times a day\)/);
+      assert.match(a.body, /history database is not changed/);
+    });
+
+    it('is not repeated by the retries or restarts of the same UTC day, and comes again the next day', async () => {
+      staleCache(clock);
+      await cycle(at(`${DAY1}T02:00:00.000Z`));
+      await runRetries(4); // attempts 2 to 5 of the day; the next timer waits for midnight
+      await cycle(at(`${DAY1}T20:00:00.000Z`), 'boot');
+      assert.equal(fallbackAlerts.length, 1, 'once for the whole day');
+      await cycle(at('2026-10-15T02:00:00.000Z'));
+      assert.equal(fallbackAlerts.length, 2, 'again the next day');
+    });
+
+    it('is not sent when Space-Track supplied the catalog', async () => {
+      stBehaviour = 'ok';
+      staleCache(clock);
+      await cycle(at(`${DAY1}T02:00:00.000Z`));
+      assert.equal(fallbackAlerts.length, 0);
+    });
+
+    it('is not sent when CelesTrak failed too (nothing was saved from it)', async () => {
+      ctBehaviour = 'down';
+      staleCache(clock);
+      await cycle(at(`${DAY1}T02:00:00.000Z`));
+      assert.equal(fallbackAlerts.length, 0);
+    });
+
+    it('is not sent when the CelesTrak data could not be written to disk (the write-failure alert covers that)', async () => {
+      writer = () => {
+        throw new Error('ENOSPC: no space left on device');
+      };
+      staleCache(clock);
+      await cycle(at(`${DAY1}T02:00:00.000Z`));
+      assert.equal(fallbackAlerts.length, 0);
+    });
+
+    it('a sender that throws does not break the cycle', async () => {
+      const prev = deps;
+      staleCache(clock);
+      clock = at(`${DAY1}T02:00:00.000Z`);
+      await runUpdateCycle('cron', {
+        ...prev(),
+        sendAlert: () => {
+          throw new Error('boom');
+        },
+      });
+      assert.ok(readCache(), 'the catalog was still written');
+    });
+
+    it('the alert text is bounded and has no URLs or secrets', () => {
+      const a = buildCelesTrakFallbackAlert({
+        spaceTrackProblem: 'x'.repeat(5000),
+        overlay: { replaced: 10, added: 2, total: 100 },
+      });
+      assert.ok(a.body.length < 1200);
+      assert.doesNotMatch(a.body, /https?:\/\//);
+      assert.match(a.body, /10 satellites got newer orbits, 2 were added, the other 88 stay/);
     });
   });
 });

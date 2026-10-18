@@ -7,12 +7,13 @@ import { readStateFile, writeStateFile } from './state-file.js';
 // one (that one is remembered in spacetrack-attempts.json, see attempt-log.ts).
 //
 //   <CACHE_DIR>/alert-state.json
-//   { volumeWarnDay?, volumeErrorDay?, writeFailureDay? }
+//   { volumeWarnDay?, volumeErrorDay?, writeFailureDay?, celestrakFallbackDay? }
 //
 // Each value is the UTC day ('YYYY-MM-DD') on which that alert last went out, so a
 // restart does not repeat it and each alert goes out at most once per UTC day:
 //   - volumeWarnDay / volumeErrorDay: the data volume is at >= 75% / >= 90% full
 //   - writeFailureDay: the catalog could not be written to disk
+//   - celestrakFallbackDay: CelesTrak was used as the fallback and its data was saved
 //
 // Same file rules as the other state files (state-file.ts): a missing, corrupt or
 // unwritable file only logs a WARN and reads as "nothing sent yet". Because a full
@@ -20,12 +21,13 @@ import { readStateFile, writeStateFile } from './state-file.js';
 // also kept in memory, so a full disk does not repeat an alert within one run.
 // ============================================================
 
-export type AlertKind = 'volumeWarn' | 'volumeError' | 'writeFailure';
+export type AlertKind = 'volumeWarn' | 'volumeError' | 'writeFailure' | 'celestrakFallback';
 
 export interface AlertState {
   volumeWarnDay?: string;
   volumeErrorDay?: string;
   writeFailureDay?: string;
+  celestrakFallbackDay?: string;
 }
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -34,6 +36,7 @@ const FIELD: Record<AlertKind, keyof AlertState> = {
   volumeWarn: 'volumeWarnDay',
   volumeError: 'volumeErrorDay',
   writeFailure: 'writeFailureDay',
+  celestrakFallback: 'celestrakFallbackDay',
 };
 
 /** Days sent by this process, in case the file cannot be written. Keyed by file path. */

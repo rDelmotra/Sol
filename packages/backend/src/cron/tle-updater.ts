@@ -7,7 +7,7 @@ import { CelesTrakSkippedError } from '../services/celestrak-http.js';
 import { overlayCatalog } from '../cache/catalog-overlay.js';
 import { alertSentOn, markAlertSent } from '../cache/alert-state.js';
 import { readCelesTrakAttempts } from '../cache/celestrak-attempts.js';
-import { sendAlert, type AlertSender } from '../utils/alert.js';
+import { sendAlert, type AlertMessage, type AlertSender } from '../utils/alert.js';
 import { formatDiskUsage, readDiskUsage } from '../utils/disk-usage.js';
 import { reportDiskAndAlert } from '../utils/volume-alert.js';
 import { classifyObject, classifyObjectType } from '../services/classifier.js';
@@ -468,6 +468,27 @@ export function buildWriteFailureAlert(facts: {
   };
 }
 
+/** The alert for 'CelesTrak was used as the fallback'. Plain text, bounded, no secrets. */
+export function buildCelesTrakFallbackAlert(facts: {
+  spaceTrackProblem: string;
+  overlay: { replaced: number; added: number; total: number } | null;
+}): AlertMessage {
+  const problem = facts.spaceTrackProblem.replace(/\s+/g, ' ').slice(0, 300);
+  const what = facts.overlay
+    ? `${facts.overlay.replaced} satellites got newer orbits, ${facts.overlay.added} were added, the other ` +
+      `${facts.overlay.total - facts.overlay.replaced - facts.overlay.added} stay as they were. ` +
+      'Their type, country and launch data were kept.'
+    : 'The saved catalog was updated with newer orbits.';
+  return {
+    title: 'OrbitWatch: CelesTrak was used as the fallback',
+    body:
+      `Space-Track did not supply today's catalog (${problem}), so the catalog was refreshed from CelesTrak instead. ` +
+      `${what} Debris and objects CelesTrak does not list keep their last Space-Track values. ` +
+      'Space-Track is still retried (up to 5 times a day) and takes over when it works. ' +
+      'The satellite history database is not changed by this.',
+  };
+}
+
 /** Send without waiting; a sender that throws or rejects is logged at WARN and ignored. */
 function sendFireAndForget(deps: UpdateCycleDeps, alert: { title: string; body: string }): void {
   try {
@@ -606,6 +627,9 @@ export async function runUpdateCycle(
   let attempt: SpaceTrackAttempt | null = null;
   // Set when Space-Track fails this cycle and that failure was the day's last.
   let dailyAlert: { failed: AttemptState; error: string } | null = null;
+  // Why Space-Track did not supply this cycle's catalog (for the CelesTrak fallback alert).
+  let spaceTrackProblem = 'Space-Track was not tried';
+  let lastOverlay: { replaced: number; added: number; total: number } | null = null;
 
   // Size of the catalog on disk, read once and only if a fetch returns data (it is a
   // 25 MB parse). null = no readable cache. Used to refuse implausible results.
@@ -640,6 +664,7 @@ export async function runUpdateCycle(
 
   if (!gate.allowed) {
     logger.info(describeSkippedAttempt(gate, deps.now()));
+    spaceTrackProblem = describeSkippedAttempt(gate, deps.now());
     if (trigger === 'retry') {
       // The timer fired early (a clock jump). This cycle exists only for Space-Track.
       settleWithoutSpaceTrack(false);
@@ -661,6 +686,7 @@ export async function runUpdateCycle(
       rawGp = gp;
       source = 'space-track';
     } catch (primaryErr) {
+      spaceTrackProblem = (primaryErr as Error).message;
       // A refused catalog counts as a Space-Track failure, so the backoff applies.
       const failedAt = attempt ? recordSpaceTrackFailure(attempt, deps.now()) : null;
       attempt = null;
@@ -699,6 +725,7 @@ export async function runUpdateCycle(
           );
           enriched = overlay.catalog;
           source = 'celestrak';
+          lastOverlay = { replaced: overlay.replaced, added: overlay.added, total: overlay.catalog.length };
           // rawGp stays null: the raw archive is Space-Track-only.
         } else {
           logger.error(
@@ -775,6 +802,13 @@ export async function runUpdateCycle(
   // If anything above threw (parse bug, disk full), the pending record stays a
   // failure and the next login backs off instead of re-downloading at once.
   if (attempt) recordSpaceTrackSuccess(deps.now(), attempt);
+  if (source === 'celestrak') {
+    const today = utcDay(deps.now());
+    if (!alertSentOn('celestrakFallback', today)) {
+      markAlertSent('celestrakFallback', today);
+      sendFireAndForget(deps, buildCelesTrakFallbackAlert({ spaceTrackProblem, overlay: lastOverlay }));
+    }
+  }
   if (source === 'space-track') {
     // Only a Space-Track success ends the retries. A CelesTrak write does not.
     cancelUpdateRetry();
