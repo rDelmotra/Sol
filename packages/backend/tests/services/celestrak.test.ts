@@ -277,4 +277,40 @@ describe('CelesTrak calling rules', () => {
       assert.deepEqual(Object.keys(readCelesTrakAttempts() ?? {}).sort(), ['active', 'visual']);
     });
   });
+
+  describe('ntfy alert on every real CelesTrak call', () => {
+    it('is sent once with the record count when the request succeeds', async () => {
+      mock.method(axios, 'get', async () => ({ data: celesTrakGp(3) }));
+      const sent: { title: string; body: string }[] = [];
+      await fetchCelesTrakTLEs(() => T0, (a) => void sent.push(a));
+      assert.equal(sent.length, 1);
+      assert.match(sent[0].title, /CelesTrak was called$/);
+      assert.match(sent[0].body, /3 records/);
+    });
+
+    it('is sent when the request fails, with the reason, and the error still propagates', async () => {
+      mock.method(axios, 'get', async () => {
+        throw httpError(403);
+      });
+      const sent: { title: string; body: string }[] = [];
+      await assert.rejects(fetchCelesTrakTLEs(() => T0, (a) => void sent.push(a)));
+      assert.equal(sent.length, 1);
+      assert.match(sent[0].title, /called and failed/);
+      assert.match(sent[0].body, /403/);
+    });
+
+    it('is NOT sent when the 2 hour gate skips the call (no request was made)', async () => {
+      mock.method(axios, 'get', async () => ({ data: celesTrakGp(3) }));
+      await fetchCelesTrakTLEs(() => T0, () => undefined);
+      const sent: unknown[] = [];
+      await assert.rejects(fetchCelesTrakTLEs(() => T0 + 10 * MIN, (a) => void sent.push(a)), CelesTrakSkippedError);
+      assert.equal(sent.length, 0);
+    });
+
+    it('a sender that rejects never breaks the fetch', async () => {
+      mock.method(axios, 'get', async () => ({ data: celesTrakGp(2) }));
+      const out = await fetchCelesTrakTLEs(() => T0, () => Promise.reject(new Error('down')).catch(() => undefined));
+      assert.equal(out.length, 2);
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import { CelesTrakGPElement } from '../types/index.js';
 import { logger } from '../utils/logger.js';
-import { gatedCelesTrakGet } from './celestrak-http.js';
+import { CelesTrakSkippedError, gatedCelesTrakGet } from './celestrak-http.js';
+import { sendAlert, type AlertSender } from '../utils/alert.js';
 
 // CelesTrak's public GP element set endpoint — no auth required.
 //
@@ -53,8 +54,29 @@ async function fetchRaw(now: () => number): Promise<CelesTrakGPElement[]> {
  *
  * NORAD_CAT_ID stays a plain JSON number, so 6-digit ids pass through unchanged.
  */
-export async function fetchCelesTrakTLEs(now: () => number = Date.now): Promise<CelesTrakGPElement[]> {
-  const raw = await fetchRaw(now);
+export async function fetchCelesTrakTLEs(
+  now: () => number = Date.now,
+  notify: AlertSender = sendAlert,
+): Promise<CelesTrakGPElement[]> {
+  // CelesTrak is only called when Space-Track did not supply the catalog, so every real
+  // request here sends one ntfy alert (with the outcome). A call the 2 hour gate skips
+  // makes no request and sends nothing. The visual list is a different path and never alerts.
+  let raw: CelesTrakGPElement[];
+  try {
+    raw = await fetchRaw(now);
+  } catch (err) {
+    if (!(err instanceof CelesTrakSkippedError)) {
+      void notify({
+        title: 'OrbitWatch: CelesTrak was called and failed',
+        body: `Space-Track did not supply the catalog, so CelesTrak was asked. The request failed: ${String((err as Error)?.message ?? err).slice(0, 200)}. The site keeps serving the saved catalog.`,
+      });
+    }
+    throw err;
+  }
+  void notify({
+    title: 'OrbitWatch: CelesTrak was called',
+    body: `Space-Track did not supply the catalog, so CelesTrak was asked for the active satellites. It answered with ${raw.length} records.`,
+  });
 
   // Remove objects that have already re-entered the atmosphere
   const extant = raw.filter((obj) => !obj.DECAY_DATE);
