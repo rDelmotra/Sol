@@ -4,7 +4,6 @@ Remove an item when it is fixed. None of these is scheduled unless the owner say
 
 ## Needs the owner
 
-- Change the Railway start command to `node packages/backend/dist/supervisor.js` when ready. It replaces `sh -c "node packages/backend/dist/index.js & node packages/backend/dist/dso-worker.js & wait"`. The supervisor restarts the container if either the API or the DSO worker dies. (`npm run start:prod -w @orbitwatch/backend` runs the same file.)
 - Rotate the Gemini key. It was rejected as leaked, so every Ask fails.
 - Rotate the key found in the history of `experiment/nl-to-ir`.
 - DSO validity window: `DEFAULT_VALID_PAST_WINDOW_SEC` is 10 days. Should it be "since launch"?
@@ -22,7 +21,7 @@ Remove an item when it is fixed. None of these is scheduled unless the owner say
 
 ## Cockpit port (deferred)
 
-- **Idle frame governor needs a browser check.** Measure Chrome CPU and GPU with an idle cockpit, with and without `?perf=full`. Check that camera damping, follow, joyride, ground view, time scrub, and gamepad input never look steppy. Rules and flag: `state/STATE.md`, first milestone.
+- **Idle frame governor: hand-test the feel.** Idle CPU and GPU were measured (about 4 times lower than before). Still to check by hand: camera damping, follow, joyride, ground view, time scrub and gamepad input never look steppy. Rules and flag: `state/STATE.md`, first milestone.
 - **No unfollow trigger for the UI.** Dock ORBIT leaves a joyride via `cameraMode` 'returning' (eases home). A store trigger slot for `NavigationController.unfollow` would let it stop in place instead.
 - **Place naming after landing.** `NavigationController.landWhereLooking` only sets lat/lon (and clears `observerPlaceName`). Naming the place is left to the UI.
 - **No pad look on the ground.** In the dome view pad buttons work, but the right stick does not turn the gaze (the spike had no binding either).
@@ -42,16 +41,42 @@ The dead-code pass after the swap removed the old keyword query engine, `fuse.js
 
 ## Ops gaps found by the SRE pass (details in `state/SRE_FINDINGS.md`)
 
-- The CelesTrak fallback has no attempt log. With a stale cache and a crash loop it is still tried on every restart (3 tries, 5 s apart). Space-Track is now held back by `packages/backend/src/cache/attempt-log.ts`. The retry timer in `packages/backend/src/cron/tle-updater.ts` also tries CelesTrak each time it fires (15 min, 30 min, 1 h, 2 h, 4 h, then every 6 h), but only while nothing could be written.
 - **A hung history migration would delay the TLE updater at boot.** The `history-init` step in `packages/backend/src/boot.ts` is awaited before `tle-freshness`, which schedules the cron. The DB pool has a 10 s connect timeout, but the migration queries have no statement timeout. Only the disk report was made fire-and-forget.
-- **No alert when the catalog stays stale.** A refused catalog is only an ERROR line in the log (`catalog refused`). If Space-Track and CelesTrak keep answering empty or too small, the old cache serves on, and the only outside sign is `lastUpdate` in `GET /health` getting old. If the real catalog ever shrinks by more than half on purpose, set `CATALOG_MIN_RATIO` lower, then unset it.
+- **Catalog staleness alerts are partial.** A refused catalog counts as a Space-Track failure, so the day's 5th failed attempt sends one alert (`packages/backend/src/utils/alert.ts`, to ntfy). Nothing else warns about a stale catalog: watch `lastUpdate` in `GET /health`. If the real catalog ever shrinks by more than half on purpose, set `CATALOG_MIN_RATIO` lower, then unset it.
 - **An ended DSO still says `fresh` in the manifest and catalog.** `GET /health` reports it as `dsoEndedCount`, but the per-object `freshnessState` comes from the shared `DsoFreshnessState` type in `packages/contracts/src/dso.ts`, which has no `ended` value. Adding one is a contract change (frontend included), so it was not done.
-- `GET /api/tle/visual` has no negative cache. While CelesTrak is down, every request starts a new 3-try fetch.
 - The NL compiler cache and gap log live in `<backend>/data`, not on the volume. The gap log has no rotation.
 - Unpruned `.tmp` files from a crashed write (cache, raw archive) stay on the volume.
 - **Only the newest DSO snapshot is served, and older versions are deleted (decision 2026-10-15: correct, continuous data matters, not old data).** Readers use only the snapshot the manifest points to, so a newer snapshot replaces the older values for the same times. After a publish the manifest is updated first; only then does the worker delete older snapshot files in `<CACHE_DIR>/dso/snapshots/<id>/`, keeping the newest 3 (and the one the manifest names). A delete that fails is logged and retried on the next publish; it never fails the publish. Code: `packages/backend/src/dso/snapshot/store.ts`. The size stays bounded at about 3 files per object, about 0.6 MB per Artemis II (estimate).
 - The gzip copy of `/api/tle/all` is still built with the sync `gzipSync` (about 0.5 s on the fake catalog), at boot and after each daily fetch. The brotli copy is async. `/api/history/at` builds its day snapshots with the same sync gzip and has no brotli yet.
 - A missing `/assets/...` file falls through to the SPA fallback and returns `index.html` with status 200. A tab left open across a deploy that lazy-loads a removed chunk gets HTML instead of a clean 404.
+
+## Later, not pressing (noted 2026-10-18 so nothing is forgotten)
+
+None of these is a problem today. The owner decided the work is finished for now.
+
+**Goal for the future (owner direction, 2026-10-18):** a minimal, hyper-realistic space view, not a cockpit. Sun-lit silvery satellites, a Moon, a Sun disc, real stars, 3D clouds, Takram atmosphere, map tiles. Suggested order: fix the colour and tone-mapping path, GPU sun-lit satellites, Sun disc with bloom, Moon, real stars, Takram, tiles. The scene is built from layers, so each piece has a place to plug in (Earth layer, satellite shaders, a new Moon layer next to the stars layer, the renderer's post-processing slot). No Moon, no Sun disc and no lighting on satellites exist today.
+
+**Decisions for the owner:**
+- **The Ask / analytic stack** (about 14,000 lines, the `analytic` package, backend compiler and query route, the Ask bar). The Gemini key was rejected, so it does not work. Remove it or keep it dormant.
+- **Other deep-space missions.** JWST, DSCOVR, LRO and Chandrayaan-3 are off in `packages/backend/src/dso/registry/entries.ts`. A mission with a long life is a long list of points (JWST at 10-minute steps is about 250,000 points, about 12 MB). If they are switched on later, use hourly steps and check the volume first. Chandrayaan-3 waits for confirmed NASA coverage. `packages/backend/src/dso/NOTES.md` still lists three of them as enabled, which is out of date.
+- **A reminder alert each day** while an outage lasts. Today it alerts once, on the day's 5th failed Space-Track attempt, and not at all if the process dies during that attempt.
+- **More cockpit decoration still in place** that a minimal view would not need: the reticle ring (`packages/frontend/src/ui/cockpit/hud/Reticle.tsx`), the edge arcs (`packages/frontend/src/ui/cockpit/hud/EdgeArc.tsx`), the ring of facts (`packages/frontend/src/ui/cockpit/hud/ObjectDisc.tsx`), the voice-wave bar (`packages/frontend/src/ui/cockpit/hud/Waveform.tsx`), the glass panes (`packages/frontend/src/ui/cockpit/primitives/GlassPane.tsx`), the dock (`packages/frontend/src/ui/cockpit/dock/Dock.tsx`), the gamepad drawing, and the "MODE" and "TRACKING n OBJ" lines (`packages/frontend/src/ui/cockpit/time/ConsoleReadouts.tsx`). The orbit diagram stays by decision. The cockpit panes have no deep-space info card, which is fine for now.
+
+**Safe cleanup, found by the audit, not done:**
+- Server routes the website never calls: metadata, launch, org and decayed (`packages/backend/src/routes/metadata.ts`) with their data files in `packages/backend/enrichment-data/` (`decayed-catalog.json` 4.6 MB, `launches.json` 2.0 MB, `orgs.json` 420 KB).
+- The query vocabulary chain: `packages/backend/enrichment-data/query-vocab.json` (368 KB) plus its route and client.
+- A 0-byte `packages/frontend/public/favicon.svg`, the unused dev dependency `@rollup/pluginutils`, and 26 MB of master images in `packages/frontend/texture-src` (never shipped, only used by the texture script).
+
+**Unverified in the real world:**
+- The CelesTrak fallback has never run against the real CelesTrak. It now lays `GROUP=active` over the saved catalog by newer epoch (`packages/backend/src/cache/catalog-overlay.ts`). The old group, `last-30-days`, was recent launches only. If Space-Track ever fails, read the first fallback in the logs.
+- Heat and idle power after the turning orbit arc, the blur removal and the scanline removal were not measured in the owner's Chrome.
+- In a long Space-Track outage the retry waits can reach 6 hours and can delay the 02:00 run. It was like this before the 5-a-day cap (`packages/backend/src/cache/attempt-log.ts`).
+
+**Performance notes:**
+- First load is limited by the satellite list: about 2.3 MB with brotli, close to the floor for JSON. A binary format could get it near 1.3 MB, but it is a large rewrite. Repeat visits use the copy stored in the browser.
+- Railway's edge ignores `Vary`, so `/api/tle/all` is marked `private` (`packages/backend/src/routes/tle.ts`). Do not turn it back to `public` without checking.
+- The volume is about 71% full and grows about 4.6 MB a day. The owner resizes it. `GET /health` shows `disk`; ntfy is not wired to it yet.
+- Harmless warning at every boot: the TimescaleDB extension is not available, so the history table is a plain Postgres table.
 
 ## Known weaknesses (left alone by decision D2)
 
