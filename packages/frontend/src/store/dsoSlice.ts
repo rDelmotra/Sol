@@ -3,7 +3,6 @@ import type { DsoSlice, Slice } from './types';
 export const createDsoSlice: Slice<DsoSlice> = (set) => ({
   dsoObjects: [],
   dsoEphemerisById: {},
-  dsoLabelPositions: [],
   setDsoObjects: (objects) =>
     set((state) => ({
       dsoObjects: objects,
@@ -19,5 +18,4 @@ export const createDsoSlice: Slice<DsoSlice> = (set) => ({
     set((state) => ({
       dsoEphemerisById: { ...state.dsoEphemerisById, [dsoId]: snapshot },
     })),
-  setDsoLabelPositions: (positions) => set({ dsoLabelPositions: positions }),
 });

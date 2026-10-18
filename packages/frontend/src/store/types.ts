@@ -2,7 +2,7 @@ import type { StateCreator } from 'zustand';
 import type { CatalogType, FacetCounts, GeodeticObserver } from '../data/types';
 import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime, Purpose, OrbitalStatus, DsoSnapshot } from '@orbitwatch/contracts';
 import type { SectorFilterKey } from '../data/metadata-types';
-import type { DsoObject, DsoLabelPosition } from '../data/dso-types';
+import type { DsoObject } from '../data/dso-types';
 import type { VisualListSource, VisualListStatus } from '../data/visualList';
 import type { HistoryCoverage } from '../data/history-client';
 import type { AnalyticProgram, ExecuteOutcome, AnalyticResult } from '@orbitwatch/analytic';
@@ -340,10 +340,8 @@ export interface HudSlice {
 export interface DsoSlice {
   dsoObjects: DsoObject[];
   dsoEphemerisById: Record<string, DsoSnapshot>;
-  dsoLabelPositions: DsoLabelPosition[];
   setDsoObjects: (objects: DsoObject[]) => void;
   setDsoEphemeris: (dsoId: string, snapshot: DsoSnapshot) => void;
-  setDsoLabelPositions: (positions: DsoLabelPosition[]) => void;
 }
 
 export type AppState = BootSlice &

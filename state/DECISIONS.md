@@ -76,3 +76,6 @@ One exception to D10: on the orbit card the arc and its dot turn slowly about th
 - CelesTrak has no group that is the full catalog, and `last-30-days` is only recent launches. So its `GROUP=active` JSON is laid over the cached catalog (newer epoch wins, new ids added, nothing removed). It is never a replacement.
 - CelesTrak is asked at most once per 2 hours per group, and a 3xx/4xx answer is never retried, because repeating can get the IP blocked.
 - History stays Space-Track-only: an overlay result is not ingested into the history database or the raw archive.
+
+## D15 — Deep-space objects cost nothing outside their data window (2026-10-18)
+`DsoLayer.update` asks the DSO worker for positions only while some mission's ephemeris window covers the sim time (`anyDsoActiveAt`, `packages/frontend/src/engine/dso/dso-window.ts`); leaving the last window sends one forced tick so nothing stays drawn. The per-frame screen-label projection and the `dsoLabelPositions` store key (nothing read it) are removed. Measured in the browser: 0 worker ticks outside Artemis II's dates, 60 a second inside.

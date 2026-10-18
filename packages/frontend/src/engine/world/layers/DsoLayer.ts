@@ -5,6 +5,7 @@ import { resyncDsoCatalog } from '../../dso/dso-resync';
 import { useStore } from '../../../store/useStore';
 import type { DsoObject } from '../../../data/dso-types';
 import { dsoIndexOf } from '../../../data/dso-index';
+import { anyDsoActiveAt } from '../../dso/dso-window';
 import type { FrameContext, Layer, LayerContext } from '../../render/Layer';
 
 /**
@@ -32,10 +33,10 @@ export class DsoLayer implements Layer {
 
   private _renderer: DsoRenderer | null = null;
   private client: DsoWorkerClient | null = null;
-  private camera: THREE.PerspectiveCamera | null = null;
-  private canvas: HTMLCanvasElement | null = null;
 
   private callbacks: DsoLayerCallbacks | null = null;
+  /** Was any DSO window covering the sim time on the previous frame? */
+  private wasActive = false;
   private dsoUnsub: (() => void) | null = null;
   private dsoEphemerisUnsub: (() => void) | null = null;
 
@@ -49,8 +50,6 @@ export class DsoLayer implements Layer {
   }
 
   init(ctx: LayerContext): void {
-    this.camera = ctx.camera;
-    this.canvas = ctx.renderer.domElement as HTMLCanvasElement;
     this._renderer = new DsoRenderer(ctx.scene);
   }
 
@@ -121,17 +120,13 @@ export class DsoLayer implements Layer {
   update(frame: FrameContext): void {
     if (!this._renderer) return;
 
-    this.client?.tick(frame.nowMs);
+    // Only ask the worker for positions while some mission's data window covers the
+    // sim time. On leaving the last window, one forced tick hides what was drawn.
+    const active = anyDsoActiveAt(useStore.getState().dsoEphemerisById, frame.nowMs);
+    if (active) this.client?.tick(frame.nowMs);
+    else if (this.wasActive) this.client?.triggerImmediateTick(frame.nowMs);
+    this.wasActive = active;
     this._renderer.updateUniforms(frame.pixelRatio);
-
-    if (this.camera && this.canvas) {
-      const labels = this._renderer.getScreenPositions(
-        this.camera,
-        this.canvas.clientWidth,
-        this.canvas.clientHeight,
-      );
-      useStore.getState().setDsoLabelPositions(labels);
-    }
 
     const selectedDso = useStore.getState().selectedDso;
     if (selectedDso !== null) {
@@ -186,8 +181,6 @@ export class DsoLayer implements Layer {
     this._renderer?.dispose();
     this._renderer = null;
     this.callbacks = null;
-    this.camera = null;
-    this.canvas = null;
   }
 }
 

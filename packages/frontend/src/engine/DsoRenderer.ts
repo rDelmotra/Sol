@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import dsoVertexShader from '../shaders/dso.vert.glsl?raw';
 import dsoFragmentShader from '../shaders/dso.frag.glsl?raw';
-import type { DsoObject, DsoLabelPosition } from '../data/dso-types';
+import type { DsoObject } from '../data/dso-types';
 import { writeSourceToScene } from './scene/frames';
 
 const INITIAL_DSO_CAPACITY = 64;
@@ -18,7 +18,6 @@ export class DsoRenderer {
   private sizeAttr: THREE.BufferAttribute;
   private pickIdAttr: THREE.BufferAttribute;
 
-  private dsoObjects: DsoObject[] = [];
   private tleCount = 0;
   private activeCount = 0;
   private capacity = 0;
@@ -93,7 +92,6 @@ export class DsoRenderer {
    * Safe to call multiple times as DSO catalog loads / updates.
    */
   init(dsoObjects: DsoObject[], tleCount: number): void {
-    this.dsoObjects = dsoObjects;
     this.tleCount   = tleCount;
     this.ensureCapacity(dsoObjects.length);
 
@@ -163,42 +161,6 @@ export class DsoRenderer {
   isVisible(dsoIndex: number): boolean {
     const sizeArr = this.sizeAttr.array as Float32Array;
     return sizeArr[dsoIndex] > 0;
-  }
-
-  /**
-   * Projects all visible DSO world positions to screen coordinates.
-   * Called once per frame by Engine; result is stored for the label overlay.
-   */
-  getScreenPositions(
-    camera: THREE.Camera,
-    width: number,
-    height: number,
-  ): DsoLabelPosition[] {
-    const v      = new THREE.Vector3();
-    const result: DsoLabelPosition[] = [];
-
-    for (let i = 0; i < this.activeCount; i++) {
-      const dso     = this.dsoObjects[i];
-      const visible = this.isVisible(i);
-
-      v.copy(this.getPositionAt(i));
-      v.project(camera);
-
-      // v.z > 1 means the point is behind the camera's near plane
-      const behind  = v.z > 1.0;
-      const screenX = ((v.x + 1) / 2) * width;
-      const screenY = ((1 - v.y) / 2) * height;
-
-      result.push({
-        dsoId:   dso.dsoId,
-        name:    dso.name,
-        screenX,
-        screenY,
-        visible: visible && !behind,
-      });
-    }
-
-    return result;
   }
 
   setSelectedDsoIndex(index: number): void {

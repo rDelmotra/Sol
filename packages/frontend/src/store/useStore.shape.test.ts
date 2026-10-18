@@ -39,7 +39,6 @@ const STATE_KEYS = [
   'cycleReticleCandidate',
   'dataTimestamp',
   'dsoEphemerisById',
-  'dsoLabelPositions',
   'dsoObjects',
   'facetCounts',
   'focusPanelOpen',
@@ -92,7 +91,6 @@ const STATE_KEYS = [
   'setControlsSheetOpen',
   'setCountryFilter',
   'setDsoEphemeris',
-  'setDsoLabelPositions',
   'setDsoObjects',
   'setGamepadConnected',
   'setHistoryCoverage',
@@ -191,7 +189,6 @@ const INITIAL_VALUES: Record<string, unknown> = {
   dsoObjects: [],
   dsoEphemerisById: {},
   selectedDso: null,
-  dsoLabelPositions: [],
   observerLocation: null,
   observerPlaceName: null,
   nextPasses: [],
@@ -241,7 +238,7 @@ const INITIAL_VALUES: Record<string, unknown> = {
 
 test('store exposes exactly today\'s keys (state + actions)', () => {
   assert.deepEqual(Object.keys(initial).sort(), [...STATE_KEYS].sort());
-  assert.equal(STATE_KEYS.length, 138);
+  assert.equal(STATE_KEYS.length, 136);
 });
 
 test('initial values of every non-function key', () => {
