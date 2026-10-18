@@ -17,6 +17,15 @@ npm workspaces. Builds are chained by hand in the root `package.json` (`build:li
 
 Import rules between and inside packages live in `tests/architecture.test.ts`. Read the rules there, not here.
 
+## Design docs: `design/`
+
+Plans, not facts. They may name files that do not exist yet, so they live outside `state/`.
+
+| Path | What |
+|---|---|
+| `design/marvin/FABRIC.md` | Marvin ground floor: the world-model blueprint (design only) |
+| `design/marvin/research/` | The research the blueprint is built from (code inventory, ontology standards) |
+
 ## Physics: `packages/orbital-core/src`
 
 | File | Owns |

@@ -99,3 +99,10 @@ Owner rule: the deep-space feature is parallel and async. If it fails, hangs, is
 - Frontend: the DSO layer is non-critical, its store subscriptions are wrapped, the catalog poll backs off to 5 min while the DSO API has no data (`packages/frontend/src/data/dso-client.ts`), and the DSO worker restarts with the same kind of backoff, which resets only after the worker has stayed up 10 s (`packages/frontend/src/engine/dso/restart-backoff.ts`). The supervisor never starts a second worker when `kill()` fails on a live one (only a child with no pid counts as a failed spawn).
 
 Addendum 2 (2026-10-18): every real CelesTrak call for the fallback group (`packages/backend/src/services/celestrak.ts`) sends one ntfy alert with the outcome ("CelesTrak was called" with the record count, or "called and failed" with the reason). A call skipped by the 2 hour gate sends nothing, and the separate visual-list fetch never alerts. This is on top of the once-a-day "used as the fallback" alert, so the first fallback of a day sends two messages.
+
+## D18 — The Marvin road: the Perceptor redesign starts with the fabric (2026-10-19)
+The owner chose the god / Perceptor redesign (the separate project in D3) as the main track, ahead of the realism work.
+- Work happens on branch `marvin/fabric`. It was made from `spike/god1` after `sre/hardening` was merged into it (merge commit `fa7f4c3`).
+- The first floor is the fabric: the world model of entities, links, a log, events, situations, frames and sources. The blueprint is `design/marvin/FABRIC.md`.
+- Design docs are tracked under `design/`, not `state/`, because they name files that do not exist yet.
+- Research reports are kept next to the blueprint. A report recovered from a crashed session transcript was set aside as untrusted and is not in git.

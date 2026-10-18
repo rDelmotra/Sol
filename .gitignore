@@ -57,6 +57,9 @@ pnpm-debug.log*
 *.md
 # Project state files are tool-neutral and tracked (see state/README.md)
 !/state/*.md
+# Design docs (plans, not facts) are tool-neutral and tracked
+!/design/**/*.md
+/design/marvin/research/_untrusted/
 my_plans
 # Large gzipped build artifact is committed as .json.gz; never the plain JSON
 packages/backend/enrichment-data/metadata-enrichment.json
