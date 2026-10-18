@@ -95,4 +95,3 @@ None of these is a problem today. The owner decided the work is finished for now
 - **No CI, no linter.** README is 16 lines.
 - **Two propagation engines** differ slightly. See STATE.md.
 - **Globe is a unit sphere.** See STATE.md.
-- The Railway start command still has to be changed to `npm run start:prod -w @orbitwatch/backend` (the supervisor). With it, a dead DSO worker is restarted alone with backoff (D17) and a dead API restarts the container. Until then the old `sh -c` start line gives neither.
