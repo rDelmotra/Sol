@@ -33,3 +33,10 @@ SELECT create_hypertable('starmap.track_run', 'bucket',
 
 CREATE INDEX IF NOT EXISTS track_run_cell_bucket ON starmap.track_run (cell, bucket);
 CREATE INDEX IF NOT EXISTS track_run_norad_tin   ON starmap.track_run (norad_id, t_in);
+-- Q2 filters on bucket (+ t_in/t_out) with no cell predicate: this lets it skip a scan of the chunk.
+CREATE INDEX IF NOT EXISTS track_run_bucket_tin  ON starmap.track_run (bucket, t_in);
+
+-- Compression (apply once, then compress finished day-chunks). segmentby=bucket is what makes Q2/Q3 fast:
+-- a bucket predicate then skips whole segments. The (bucket, t_in) btree above only serves UNCOMPRESSED chunks.
+ALTER TABLE starmap.track_run SET (timescaledb.compress, timescaledb.compress_segmentby = 'bucket', timescaledb.compress_orderby = 'cell, t_in');
+-- SELECT compress_chunk(c) FROM show_chunks('starmap.track_run') c;   -- or decompress_chunk + compress_chunk to re-apply settings

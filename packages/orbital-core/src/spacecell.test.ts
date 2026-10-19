@@ -14,6 +14,7 @@ import {
   keyRangeAtMaxOrder,
   alignedKey,
   SHELL_DELTA0,
+  coverBall,
 } from './spacecell.js';
 
 function mulberry32(seed: number): () => number {
@@ -193,5 +194,55 @@ describe('spacecell: octree keys', () => {
     // angular width ~110 km vs shell thickness ~110 km
     assert.ok(ratio > 1 / 1.3 && ratio < 1.3, `ang ${ang.toFixed(1)} km, shell ${thick.toFixed(1)} km`);
     assert.ok(Math.abs(cellWidthKm(k, r) - ang) / ang < 0.1);
+  });
+});
+
+describe('spacecell: coverBall', () => {
+  const cases: Array<{ order: number; r: number; R: number }> = [
+    { order: 3, r: 6800, R: 500 }, { order: 4, r: 6800, R: 100 }, { order: 5, r: 6800, R: 50 },
+    { order: 4, r: 7200, R: 500 }, { order: 3, r: 42164, R: 2000 }, { order: 4, r: 42164, R: 1000 },
+    { order: 5, r: 42164, R: 3000 }, { order: 4, r: 26560, R: 800 },
+  ];
+
+  it('contains every random point inside the ball (100k points over several balls)', () => {
+    const rnd = mulberry32(777);
+    const perBall = Math.ceil(100_000 / cases.length);
+    let total = 0;
+    for (const c of cases) {
+      for (let rep = 0; rep < 2; rep++) {
+        const d = randDir(rnd);
+        const s = Math.sqrt(1 - d.z * d.z);
+        const cx = c.r * s * Math.cos(d.phi), cy = c.r * s * Math.sin(d.phi), cz = c.r * d.z;
+        const cover = new Set(coverBall(c.order, cx, cy, cz, c.R));
+        for (let i = 0; i < perBall / 2; i++) {
+          // uniform in ball by rejection
+          let px: number, py: number, pz: number;
+          do { px = (rnd() * 2 - 1); py = (rnd() * 2 - 1); pz = (rnd() * 2 - 1); } while (px * px + py * py + pz * pz > 1);
+          const k = cellKey(c.order, cx + px * c.R, cy + py * c.R, cz + pz * c.R);
+          assert.ok(k !== null && cover.has(k), `missed point: order ${c.order} r ${c.r} R ${c.R}`);
+          total++;
+        }
+      }
+    }
+    assert.ok(total >= 100_000 - cases.length * 2);
+  });
+
+  it('a tiny ball covers 1..8 cells', () => {
+    const rnd = mulberry32(5);
+    for (let i = 0; i < 50; i++) {
+      const d = randDir(rnd);
+      const s = Math.sqrt(1 - d.z * d.z);
+      const r = 6800;
+      const n = coverBall(4, r * s * Math.cos(d.phi), r * s * Math.sin(d.phi), r * d.z, 1).length;
+      assert.ok(n >= 1 && n <= 8, `got ${n}`);
+    }
+  });
+
+  it('cover size grows with radius (order 4, ~420 km altitude)', () => {
+    const r = WGS84_A_KM + 420;
+    const sizes = [50, 100, 500].map((R) => coverBall(4, r * 0.6, r * 0.64, r * 0.48, R).length);
+    console.log(`coverBall order 4 near 420 km altitude: R=50 -> ${sizes[0]}, R=100 -> ${sizes[1]}, R=500 -> ${sizes[2]} cells`);
+    assert.ok(sizes[0]! <= sizes[1]! && sizes[1]! <= sizes[2]!);
+    assert.ok(sizes[2]! > sizes[0]!);
   });
 });

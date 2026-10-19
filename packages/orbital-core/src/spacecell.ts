@@ -255,6 +255,63 @@ export function cellWidthKm(order: number, rKm: number): number {
 }
 
 // ------------------------------------------------------------
+// Ball cover (neighbour query)
+// ------------------------------------------------------------
+
+/** Upper bound on grid points coverBall will enumerate before refusing. */
+const COVER_MAX_POINTS = 4_000_000;
+
+/**
+ * Distinct cell keys at `order` that (conservatively) intersect the sphere of
+ * `radiusKm` around (x,y,z). NOT exact: a SAMPLING cover. We lay a 3D grid over
+ * the ball inflated by one grid step, plus a Fibonacci sample of the surface and
+ * of an inner sphere, and collect the key of every sample. Grid spacing is a
+ * quarter of the narrowest cell width inside the ball (cellWidthKm at the ball's
+ * minimum radius), so a cell can only be missed if the ball clips less than a
+ * sliver of its corner. Over-inclusion is intended (callers refine afterwards).
+ * Samples outside the radial range are skipped. Order is limited to 0..15.
+ */
+export function coverBall(order: number, x: number, y: number, z: number, radiusKm: number): number[] {
+  checkOrder(order, MAX_KEY_ORDER);
+  if (!(radiusKm >= 0) || !Number.isFinite(radiusKm)) throw new RangeError('spacecell: bad radius');
+  const rc = Math.sqrt(x * x + y * y + z * z);
+  const rMin = Math.max(rc - radiusKm, WGS84_A_KM * Math.exp(-SHELL_DELTA0) * 1.0001);
+  const h = cellWidthKm(order, rMin) / 4;
+  const reach = radiusKm + h; // inflated ball
+  const n = Math.ceil(reach / h);
+  if ((2 * n + 1) ** 3 > COVER_MAX_POINTS) {
+    throw new RangeError(`spacecell: ball cover too large (${(2 * n + 1) ** 3} grid points)`);
+  }
+  const keys = new Set<number>();
+  const add = (px: number, py: number, pz: number): void => {
+    const k = cellKey(order, px, py, pz);
+    if (k !== null) keys.add(k);
+  };
+  add(x, y, z);
+  const reach2 = reach * reach;
+  for (let i = -n; i <= n; i++) {
+    for (let j = -n; j <= n; j++) {
+      for (let k = -n; k <= n; k++) {
+        const dx = i * h, dy = j * h, dz = k * h;
+        if (dx * dx + dy * dy + dz * dz <= reach2) add(x + dx, y + dy, z + dz);
+      }
+    }
+  }
+  // Fibonacci spheres at R and R+h, and at R/2 (fine structure for tiny balls).
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const SURF = 512;
+  for (const rad of [radiusKm, radiusKm + h, radiusKm / 2]) {
+    for (let i = 0; i < SURF; i++) {
+      const zz = 1 - (2 * (i + 0.5)) / SURF;
+      const s = Math.sqrt(1 - zz * zz);
+      const ph = i * golden;
+      add(x + rad * s * Math.cos(ph), y + rad * s * Math.sin(ph), z + rad * zz);
+    }
+  }
+  return [...keys];
+}
+
+// ------------------------------------------------------------
 // Storage alignment (Postgres int8)
 // ------------------------------------------------------------
 

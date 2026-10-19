@@ -11,8 +11,9 @@ export interface CatObj {
 
 const CACHE = fileURLToPath(new URL('../../data/tle-cache.json', import.meta.url));
 
-export function loadCatalog(): CatObj[] {
-  return JSON.parse(readFileSync(CACHE, 'utf8')) as CatObj[];
+/** Load a catalog JSON array (default: the backend tle-cache.json; pass a path for a historical snapshot). */
+export function loadCatalog(path: string = CACHE): CatObj[] {
+  return JSON.parse(readFileSync(path, 'utf8')) as CatObj[];
 }
 
 /** Tiny `--flag value` parser. */

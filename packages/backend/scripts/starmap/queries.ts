@@ -3,7 +3,7 @@
 // against brute-force SGP4 truth (same catalog, same TEME frame, 1 s sampling unless stated).
 //
 //   npx tsx packages/backend/scripts/starmap/queries.ts [--table starmap.track_run] [--bucket 30]
-//     [--day 2026-10-20] [--hours 6] [--exclude 54922] [--explain] [--label name] [--reps 3]
+//     [--day 2026-10-20] [--catalog path.json] [--hours 6] [--step 20] [--radii 50,100,500] [--margin 100] [--exclude 54922] [--explain] [--label name] [--reps 3]
 //
 // Q1 who is in this order-2 box in a 10-minute window     (range scan on cell + bucket)
 // Q2 occupancy per order-2 box / base shell at one instant (aggregate over a stabbing predicate)
@@ -15,7 +15,7 @@
 import pg from 'pg';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import * as satellite from 'satellite.js';
-import { cellKey, keyRangeAtMaxOrder } from '@orbitwatch/orbital-core';
+import { cellKey, keyRangeAtMaxOrder, coverBall, alignedKey } from '@orbitwatch/orbital-core';
 import { loadCatalog, parseArgs } from './catalog.js';
 import { makeProp, windowInCap, type Prop } from './runs.js';
 
@@ -25,6 +25,10 @@ const BUCKET_MS = Number(a.get('bucket') ?? 30) * 60_000;
 const DAY = a.get('day') ?? '2026-10-20';
 const HOURS = Number(a.get('hours') ?? 6);
 const EXCLUDE = new Set((a.get('exclude') ?? '54922').split(',').map(Number));
+const STEP_S = Number(a.get('step') ?? 20);
+const RADII = (a.get('radii') ?? '50,100,500').split(',').map(Number);
+// Margin on the cover ball: B within R of ISS(t) for t in a slice, ISS moves <= ~7.8 km/s * (step/2 + 1 s bisect slop).
+const MARGIN_KM = Number(a.get('margin') ?? 100);
 const EXPLAIN = a.has('explain');
 const REPS = Number(a.get('reps') ?? 3);
 const LABEL = a.get('label') ?? TABLE;
@@ -40,7 +44,7 @@ const bucketOf = (ms: number) => Math.floor(ms / BUCKET_MS) * BUCKET_MS;
 // ---- objects that the index covers ----
 interface Obj { norad: number; p: Prop }
 const objs: Obj[] = [];
-for (const o of loadCatalog()) {
+for (const o of (a.has('catalog') ? loadCatalog(a.get('catalog')!) : loadCatalog())) {
   if (EXCLUDE.has(o.noradId)) continue;
   const p = makeProp(o.omm);
   if (p && windowInCap(p, t0Ms, t0Ms + HOURS * 3_600_000)) objs.push({ norad: o.noradId, p });
@@ -148,41 +152,16 @@ async function q2(): Promise<void> {
 }
 
 async function q3(): Promise<void> {
-  const wS = at(1), wE = at(2), bLo = bucketOf(wS);
-  const sql = `SELECT b.norad_id, GREATEST(a.t_in, b.t_in) AS s, LEAST(a.t_out, b.t_out) AS e
-    FROM ${TABLE} a JOIN ${TABLE} b ON b.cell = a.cell AND b.bucket = a.bucket AND b.norad_id <> a.norad_id AND b.t_in < a.t_out AND a.t_in < b.t_out
-    WHERE a.norad_id = ${ISS} AND a.bucket >= $1 AND a.bucket < $2 AND a.t_in < $2 AND a.t_out > $3`;
-  const params = [iso(bLo), iso(wE), iso(wS)];
-  await explain('Q3', sql, params);
-  const q = await timed<{ norad_id: number; s: Date; e: Date }>(sql, params);
-  const cand = new Map<number, Array<[number, number]>>();
-  for (const r of q.rows) {
-    const s = Math.max(r.s.getTime(), wS), e = Math.min(r.e.getTime(), wE);
-    if (e <= s) continue;
-    (cand.get(r.norad_id) ?? cand.set(r.norad_id, []).get(r.norad_id)!).push([s, e]);
-  }
-  // ISS track at 1 s
-  const issObj = objs.find((o) => o.norad === ISS)!;
+  const wS = at(1), wE = at(2);
+  const stepMs = STEP_S * 1000;
+  const issObj = objs.find((o) => o.norad === ISS);
+  if (!issObj) { console.log('ISS not in catalog'); return; }
+  // ISS at 1 s (for refine + truth)
   const n1 = (wE - wS) / 1000 + 1;
   const iss = new Float64Array(n1 * 3);
   for (let i = 0; i < n1; i++) { const x = pos(issObj.p, wS + i * 1000)!; iss.set(x, i * 3); }
-  const byId = new Map(objs.map((o) => [o.norad, o.p]));
   const dist = (x: [number, number, number], i: number) => Math.hypot(x[0] - iss[i * 3]!, x[1] - iss[i * 3 + 1]!, x[2] - iss[i * 3 + 2]!);
-
-  const rs = Date.now();
-  const refined: Array<{ norad: number; d: number; t: number }> = [];
-  for (const [n, ivs] of cand) {
-    const p = byId.get(n); if (!p) continue;
-    let best = Infinity, bt = 0;
-    for (const [s, e] of ivs) for (let t = Math.ceil(s / 1000) * 1000; t <= e; t += 1000) {
-      const x = pos(p, t); if (!x) continue;
-      const d = dist(x, (t - wS) / 1000);
-      if (d < best) { best = d; bt = t; }
-    }
-    if (best < Infinity) refined.push({ norad: n, d: best, t: bt });
-  }
-  const refineSecs = (Date.now() - rs) / 1000;
-  refined.sort((x, y) => x.d - y.d);
+  const byId = new Map(objs.map((o) => [o.norad, o.p]));
 
   const STEP = 5;
   const bf = cached<Array<[number, number]>>(`q3-${DAY}`, () => {
@@ -199,19 +178,65 @@ async function q3(): Promise<void> {
     }
     return out;
   });
-  const row = (thr: number) => {
-    const near = bf.v.filter(([, d]) => d < thr);
-    const caught = near.filter(([n]) => cand.has(n)).length;
-    return `<${thr} km: ${near.length} objects, ${caught} in same-box list (${near.length ? (100 * caught / near.length).toFixed(1) : '-'}%)`;
-  };
-  console.log(`\n[${LABEL}] Q3 ISS (${ISS}) same order-4 box, ${iso(wS)}..${iso(wE)}`);
-  console.log(`  candidates ${cand.size} (${q.rows.length} overlap rows); query first ${ms(q.first)} median ${ms(q.med)}; refine (1 s SGP4 in overlaps) ${refineSecs.toFixed(2)} s`);
-  console.log('  10 closest same-box (min dist km @ time):');
-  for (const r of refined.slice(0, 10)) console.log(`    ${r.norad}  ${r.d.toFixed(1)} km  ${iso(r.t)}`);
-  console.log(`  brute force whole catalog vs ISS at ${STEP} s sampling (truth ${bf.secs.toFixed(1)} s${bf.hit ? ', cached' : ''}):`);
-  for (const thr of [500, 100, 50]) console.log('    ' + row(thr));
-  const inside = refined.filter((r) => r.d < 500).length;
-  console.log(`  same-box candidates that came within 500 km: ${inside} of ${refined.length}`);
+  console.log(`\n[${LABEL}] Q3 v2 objects within R km of ISS (${ISS}), ${iso(wS)}..${iso(wE)}; ball cover order 4 per ${STEP_S} s slice, margin ${MARGIN_KM} km (brute-force truth at ${STEP} s sampling: ${bf.secs.toFixed(1)} s${bf.hit ? ', cached' : ''})`);
+  console.log('  R km | cover cells/slice | tuples | candidates | caught/truth (catch) | refined<R | extra vs truth | false pos (cand not <R) | cover s | query first/median | refine s');
+
+  for (const R of RADII) {
+    const cs = Date.now();
+    const sTs: string[] = [], eTs: string[] = [], bks: string[] = [], cells: string[] = [];
+    let cellsTotal = 0, slices = 0;
+    const align = new Map<number, string>();
+    for (let s = wS; s < wE; s += stepMs, slices++) {
+      const e = Math.min(s + stepMs, wE);
+      const c = issObj.p && pos(issObj.p, (s + e) / 2)!;
+      const keys = coverBall(4, c[0], c[1], c[2], R + MARGIN_KM);
+      cellsTotal += keys.length;
+      for (const k of keys) {
+        let al = align.get(k);
+        if (al === undefined) { al = alignedKey(4, k).toString(); align.set(k, al); }
+        sTs.push(iso(s)); eTs.push(iso(e)); bks.push(iso(bucketOf(s))); cells.push(al);
+      }
+    }
+    const coverSecs = (Date.now() - cs) / 1000;
+    // Step 1 (MATERIALIZED CTE) lets the planner prune on constants (bucket range, cell list) instead of
+    // hash-joining the whole table; step 2 joins the few matching rows to the per-slice tuples.
+    const sql = `WITH c AS MATERIALIZED (
+        SELECT cell, bucket, norad_id, t_in, t_out FROM ${TABLE}
+        WHERE bucket >= $5 AND bucket < $6 AND cell = ANY($7::int8[]) AND t_in < $6 AND t_out > $5 AND norad_id <> ${ISS})
+      SELECT c.norad_id, GREATEST(c.t_in, s.ts) AS s, LEAST(c.t_out, s.te) AS e
+      FROM c JOIN unnest($1::timestamptz[], $2::timestamptz[], $3::timestamptz[], $4::int8[]) AS s(ts, te, bk, cell)
+        ON c.cell = s.cell AND c.bucket = s.bk AND c.t_in < s.te AND c.t_out > s.ts`;
+    const params = [sTs, eTs, bks, cells, iso(bucketOf(wS)), iso(wE), [...new Set(cells)]];
+    if (R === RADII[0]) await explain('Q3v2', sql, params);
+    const q = await timed<{ norad_id: number; s: Date; e: Date }>(sql, params);
+    const cand = new Map<number, Array<[number, number]>>();
+    for (const r of q.rows) {
+      const s = Math.max(r.s.getTime(), wS), e = Math.min(r.e.getTime(), wE);
+      if (e <= s) continue;
+      (cand.get(r.norad_id) ?? cand.set(r.norad_id, []).get(r.norad_id)!).push([s, e]);
+    }
+    const rs = Date.now();
+    const refined = new Map<number, number>();
+    for (const [n, ivs] of cand) {
+      const p = byId.get(n); if (!p) continue;
+      let best = Infinity;
+      for (const [s, e] of ivs) for (let t = Math.ceil(s / 1000) * 1000; t <= e; t += 1000) {
+        const x = pos(p, t); if (!x) continue;
+        const d = dist(x, (t - wS) / 1000);
+        if (d < best) best = d;
+      }
+      if (best < Infinity) refined.set(n, best);
+    }
+    const refineSecs = (Date.now() - rs) / 1000;
+    const truth = bf.v.filter(([, d]) => d < R).map(([n]) => n);
+    const caught = truth.filter((n) => (refined.get(n) ?? Infinity) < R);
+    const missed = truth.filter((n) => !((refined.get(n) ?? Infinity) < R));
+    const within = [...refined].filter(([, d]) => d < R).length;
+    const truthSet = new Set(truth);
+    const extra = [...refined].filter(([n, d]) => d < R && !truthSet.has(n)).length;
+    console.log(`  ${R} | ${(cellsTotal / slices).toFixed(1)} | ${cells.length} | ${cand.size} | ${caught.length}/${truth.length} (${truth.length ? (100 * caught.length / truth.length).toFixed(1) : '-'}%) | ${within} | ${extra} | ${cand.size - within} | ${coverSecs.toFixed(2)} | ${ms(q.first)} / ${ms(q.med)} | ${refineSecs.toFixed(2)}`);
+    if (missed.length) console.log(`    MISSED: ${missed.slice(0, 20).join(',')}`);
+  }
 }
 
 await client.connect();

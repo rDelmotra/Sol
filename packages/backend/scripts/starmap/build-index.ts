@@ -7,7 +7,7 @@
 //
 //   npx tsx packages/backend/scripts/starmap/build-index.ts \
 //     [--order 4] [--step 30] [--hours 3] [--bucket 30] [--start ISO] \
-//     [--max-rows-per-object 5000] [--limit N] [--regime LEO] [--out file.csv] [--workers N]
+//     [--max-rows-per-object 5000] [--catalog path.json] [--limit N] [--regime LEO] [--out file.csv] [--workers N]
 //
 // CSV columns: bucket,cell,ord,norad_id,t_in,t_out,elset_epoch
 // (ISO-8601 UTC timestamps; cell = aligned int8 key as a decimal string).
@@ -72,7 +72,7 @@ async function main(): Promise<void> {
   const maxRows = Math.ceil(Number(a.get('max-rows-per-object') ?? 5000) * hours / 24);
   const t0 = Date.now();
 
-  const full = loadCatalog();
+  const full = a.has('catalog') ? loadCatalog(a.get('catalog')!) : loadCatalog();
   let cat = full;
   if (a.has('regime')) cat = cat.filter((o) => o.regime === a.get('regime'));
   if (a.has('limit')) cat = cat.slice(0, Number(a.get('limit')));
