@@ -7,7 +7,7 @@
 //
 //   npx tsx packages/backend/scripts/starmap/build-index.ts \
 //     [--order 4] [--step 30] [--hours 3] [--bucket 30] [--start ISO] \
-//     [--limit N] [--regime LEO] [--out file.csv] [--workers N]
+//     [--max-rows-per-object 5000] [--limit N] [--regime LEO] [--out file.csv] [--workers N]
 //
 // CSV columns: bucket,cell,ord,norad_id,t_in,t_out,elset_epoch
 // (ISO-8601 UTC timestamps; cell = aligned int8 key as a decimal string).
@@ -27,7 +27,7 @@ import { loadCatalog, parseArgs } from './catalog.js';
 const CHUNK = 150;
 const COLS = 5; // bucket, cell, tIn, tOut, objIndex
 
-interface Job { base: number; omms: Array<Record<string, unknown>>; order: number; startMs: number; endMs: number; stepMs: number; bucketMs: number }
+interface Job { base: number; omms: Array<Record<string, unknown>>; order: number; startMs: number; endMs: number; stepMs: number; bucketMs: number; maxRows: number }
 interface Done {
   base: number; rows: Float64Array; skips: Array<[number, string]>;
   propCalls: number; noCell: number; epochs: Array<[number, number]>;
@@ -48,6 +48,7 @@ if (!isMainThread) {
       epochs.push([idx, p.epochMs]);
       const runs = splitAtBuckets(buildRuns(p, j.order, j.startMs, j.endMs, j.stepMs, st), j.bucketMs);
       if (runs.length === 0) { skips.push([idx, 'no-valid-position']); return; }
+      if (runs.length > j.maxRows) { skips.push([idx, `over-row-cap:${runs.length}`]); return; }
       for (const r of runs) rows.push(r.bucket, r.cell, r.tIn, r.tOut, idx);
     });
     const arr = Float64Array.from(rows);
@@ -67,6 +68,8 @@ async function main(): Promise<void> {
   const endMs = startMs + hours * 3_600_000;
   const nWorkers = Number(a.get('workers') ?? availableParallelism());
   const outPath = a.get('out');
+  // Discontinuity guard: an object with more rows than this (default 5000 per 24 h) is dropped and listed.
+  const maxRows = Math.ceil(Number(a.get('max-rows-per-object') ?? 5000) * hours / 24);
   const t0 = Date.now();
 
   const full = loadCatalog();
@@ -85,6 +88,7 @@ async function main(): Promise<void> {
   const rowsByRegime = new Map<string, number>();
   const objsByRegime = new Map<string, number>();
   const skipReasons = new Map<string, number>();
+  const dropped: string[] = [];
   const rowsPerObj = new Uint32Array(cat.length);
   let rows = 0, propCalls = 0, noCell = 0;
   const iso = (ms: number) => new Date(ms).toISOString();
@@ -97,7 +101,7 @@ async function main(): Promise<void> {
     if (next >= cat.length) return false;
     const base = next;
     next = Math.min(cat.length, next + CHUNK);
-    const job: Job = { base, omms: cat.slice(base, next).map((o) => o.omm), order, startMs, endMs, stepMs, bucketMs };
+    const job: Job = { base, omms: cat.slice(base, next).map((o) => o.omm), order, startMs, endMs, stepMs, bucketMs, maxRows };
     w.postMessage(job);
     return true;
   };
@@ -110,7 +114,12 @@ async function main(): Promise<void> {
         propCalls += d.propCalls;
         noCell += d.noCell;
         for (const [i, e] of d.epochs) epochOf[i] = e;
-        for (const [, reason] of d.skips) skipReasons.set(reason, (skipReasons.get(reason) ?? 0) + 1);
+        for (const [i, reason] of d.skips) {
+          if (reason.startsWith('over-row-cap')) {
+            dropped.push(`${cat[i]!.noradId} ${cat[i]!.name} (${reason.split(':')[1]} rows)`);
+            skipReasons.set('over-row-cap', (skipReasons.get('over-row-cap') ?? 0) + 1);
+          } else skipReasons.set(reason, (skipReasons.get(reason) ?? 0) + 1);
+        }
         const n = d.rows.length / COLS;
         rows += n;
         let buf = '';
@@ -146,6 +155,7 @@ async function main(): Promise<void> {
 
   console.log(`window ${iso(startMs)} .. ${iso(endMs)}  order=${order} step=${stepMs / 1000}s bucket=${bucketMs / 60000}min workers=${nWorkers}`);
   console.log(`objects in: ${objectsIn}  indexed: ${indexed}  skipped: ${skipped} ${JSON.stringify(Object.fromEntries(skipReasons))}`);
+  if (dropped.length) console.log(`dropped by --max-rows-per-object (cap ${maxRows} rows): ${dropped.join('; ')}`);
   console.log(`rows: ${rows}  propagation calls: ${propCalls} (no-cell evaluations: ${noCell})`);
   console.log('rows per object per hour by regime:');
   for (const [reg, n] of [...rowsByRegime].sort()) {
