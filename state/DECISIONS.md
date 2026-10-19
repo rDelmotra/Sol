@@ -32,7 +32,7 @@ The Earth model is WGS84. No WGS72 switch now or later.
 ## D6 — Tooling rules for agents (standing)
 - No `Co-Authored-By` trailer on commits.
 - One compact commit per step.
-- Never read, print or commit `packages/backend/.env`.
+- Never print or commit secrets from `packages/backend/.env`. Since 2026-10-20 agents may edit it (e.g. add the local `DATABASE_URL`) and may run the local Docker database.
 - Do not touch Railway or the production database.
 - Verify in the browser only when behaviour is rewired. Pure moves are verified by tests.
 - Talk in short plain sentences. Define terms.

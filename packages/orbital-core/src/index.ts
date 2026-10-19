@@ -17,3 +17,4 @@ export * from './illumination.js';
 export * from './visibility.js';
 export * from './elements.js';
 export * from './live-plane.js';
+export * from './spacecell.js';
