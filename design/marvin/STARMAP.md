@@ -81,3 +81,44 @@ element-set error.
   element sets. Not investigated.
 - One extra object in Q1 on 2026-07-15 (precision 99.9%) is likely the ~1 s boundary
   resolution. Not traced.
+
+## Round 2 (2026-10-21): orbital-invariant filters vs grids
+
+Question: is "index the orbit's shape" (perigee/apogee, MOID; B-tree/GiST) what SSA uses, and
+does it beat our boxes? Public literature: every screener descends from the Hoots, Crawford &
+Roehrich 1984 filters, but run as in-memory maths; large-catalog papers compare in-memory grids
+and k-d trees, not database indexes. Operators' internals are not public.
+
+**Database indexes on invariants** (`invariants-db.*`; history table is 4.89M SYNTHETIC rows):
+
+| | best | time | note |
+|---|---|---|---|
+| catalog (65k rows) | 2D GiST on point(perigee, apogee) | ~1 ms | plain scan ~2 ms; btree(perigee) worse than a scan |
+| history, one day | btree(epoch, perigee, apogee) | ~1 ms | BRIN(epoch) 2 ms, 40 kB; GiST(alt range) 180 ms, slower than a scan (62 ms) |
+| history, 30 days | BRIN(epoch) / composite btree | 23–26 ms | 1-day hypertable 42 ms |
+
+Time must lead any history index; the height filter adds little.
+
+**In-memory filters** (`calibrate.ts`, `moid.ts`, `screen-*.ts`), all 100% recall:
+
+- Mean elements are not where SGP4 puts objects: LEO p99 19 km off the mean ellipse, HEO up to
+  265 km, some objects thousands of km. Safe pads must be per object, which weakens the filters.
+- ISS within 50/100/500 km over 1 h: height+MOID filters keep 40–77% of the catalog; coarse
+  time filter (SGP4 every 30 s, 20 km/s pad, then 1 s near hits) answers in 0.3 s vs 6.6 s
+  brute force and 2.3–4.2 s with filters. Around a GEO target the filters do cut to 3–5%.
+- All-vs-all < 10 km over 1 h: 21,661 pairs. In-memory grid rebuilt every 5 s: 3.0 s total.
+  Height filter keeps 28.6% of 531M pairs, MOID keeps 82% of those; the filter pipeline needs
+  ~10 CPU-minutes. Grid wins ~1,500×. Height filter + grid: no measurable gain.
+- Region boxes: the height filter trims propagation to 5–8% for MEO/GEO boxes, nothing in LEO.
+- Shared element sets: 4 groups, 19 objects (ISS stack, Tiangong stack, Intelsat 1002 + MEV-2,
+  two PRC test objects).
+
+**Verdict.** In the crowded low-orbit shells, where most of the catalog lives, orbit-shape
+filters barely prune, and a time-stepped in-memory grid wins. Orbit-shape filters pay off for
+high-altitude targets and as a free prefilter there. Database indexes matter only for history
+scale, keyed by time first.
+
+**Updated recommendation.** The database stores element sets (indexed by time) and results
+(events). Proximity and region questions run in memory: a coarse time filter for one-vs-all, a
+per-step grid for all-vs-all, the box index for region-in-time, and the height filter in front
+when the target is above LEO.
