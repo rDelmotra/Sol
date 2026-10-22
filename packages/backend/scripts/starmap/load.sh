@@ -4,7 +4,9 @@
 set -euo pipefail
 CSV="${1:?csv path}"; TABLE="${2:-starmap.track_run}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-PSQL=(docker exec -i orbitwatch-timescaledb psql -v ON_ERROR_STOP=1 -U orbitwatch -d orbitwatch)
+# STARMAP_DB set → plain psql (cloud, no Docker); unset → psql inside the local docker container.
+if [ -n "${STARMAP_DB:-}" ]; then PSQL=(psql "$STARMAP_DB" -v ON_ERROR_STOP=1)
+else PSQL=(docker exec -i orbitwatch-timescaledb psql -v ON_ERROR_STOP=1 -U orbitwatch -d orbitwatch); fi
 "${PSQL[@]}" -q < "$HERE/schema.sql"
 if [ "$TABLE" != "starmap.track_run" ]; then
   "${PSQL[@]}" -q -c "CREATE TABLE IF NOT EXISTS $TABLE (LIKE starmap.track_run INCLUDING DEFAULTS)" \

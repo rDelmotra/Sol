@@ -4,10 +4,15 @@ import { readFileSync, createWriteStream, writeFileSync, openSync } from 'node:f
 import { execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 
-const PSQL = ['exec', '-i', 'orbitwatch-timescaledb', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'orbitwatch', '-d', 'orbitwatch'];
+// STARMAP_DB set → plain `psql <url>` (cloud, no Docker); unset → psql inside the local docker container.
+const DB = process.env.STARMAP_DB;
+const PSQL_BIN = DB ? 'psql' : 'docker';
+const PSQL = DB
+  ? [DB, '-v', 'ON_ERROR_STOP=1']
+  : ['exec', '-i', 'orbitwatch-timescaledb', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'orbitwatch', '-d', 'orbitwatch'];
 const here = new URL('.', import.meta.url).pathname;
 const sh = (args: string[], input?: string): string =>
-  execFileSync('docker', [...PSQL, ...args], { input, encoding: 'utf8', maxBuffer: 1 << 28 });
+  execFileSync(PSQL_BIN, [...PSQL, ...args], { input, encoding: 'utf8', maxBuffer: 1 << 28 });
 
 interface Obj { noradId: number; perigee: number; apogee: number; inclination: number;
   omm: { EPOCH: string; RA_OF_ASC_NODE: number; ECCENTRICITY: number; MEAN_MOTION: number } }
@@ -43,7 +48,7 @@ function load(): void {
   const cols = '(norad_id,epoch,perigee_km,apogee_km,incl_deg,raan_deg,ecc,a_km)';
   for (const [t, f] of [['orbit_invariant', 'oi-real'], ['orbit_invariant_hist', 'oi-hist']] as const) {
     const s = Date.now();
-    execFileSync('docker', [...PSQL, '-q', '-c', `\\copy starmap.${t} ${cols} from stdin with csv`], { stdio: [openSync(`/tmp/starmap/${f}.csv`, 'r'), 'inherit', 'inherit'] });
+    execFileSync(PSQL_BIN, [...PSQL, '-q', '-c', `\\copy starmap.${t} ${cols} from stdin with csv`], { stdio: [openSync(`/tmp/starmap/${f}.csv`, 'r'), 'inherit', 'inherit'] });
     console.log(t, 'load s', (Date.now() - s) / 1000);
   }
   sh(['-q', '-c', 'ANALYZE starmap.orbit_invariant', '-c', 'ANALYZE starmap.orbit_invariant_hist']);

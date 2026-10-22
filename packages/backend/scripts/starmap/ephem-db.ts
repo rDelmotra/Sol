@@ -1,5 +1,5 @@
 // SPIKE — not production. Shared DB constants for build-ephem / bench-ephem.
-export const DB_URL = 'postgres://orbitwatch:orbitwatch@localhost:5432/orbitwatch';
+export const DB_URL = process.env.STARMAP_DB ?? 'postgres://orbitwatch:orbitwatch@localhost:5432/orbitwatch';
 
 export const DDL = `
 CREATE TABLE IF NOT EXISTS starmap.ephem_day (
