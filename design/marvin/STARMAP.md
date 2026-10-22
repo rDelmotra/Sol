@@ -122,3 +122,31 @@ scale, keyed by time first.
 (events). Proximity and region questions run in memory: a coarse time filter for one-vs-all, a
 per-step grid for all-vs-all, the box index for region-in-time, and the height filter in front
 when the target is above LEO.
+
+## Round 3 (2026-10-22): stored day lines instead of re-running SGP4
+
+Idea: when elements arrive, run SGP4 once per object per UTC day, store the path as piecewise
+Chebyshev polynomials (like SPICE SPK), and answer "where was it at t" from the stored line.
+Files: `ephem.ts`, `build-ephem.ts`, `bench-ephem.ts`, `ephem-db.ts`. Bench used the live
+2026-10-20 catalog (the 2026-07-15 file had been cleared from /tmp).
+
+- Size at 100 m tolerance, float32 coefficients: LEO 2.1 KB, HEO 3.7 KB, MEO 0.9 KB, GEO 0.2 KB
+  per object per day. 67 MB/day raw, 85 MB/day in Postgres (~31 GB/year) vs 20.7 MB/day for
+  elements. Coefficients barely compress (gzip 65 MB vs 3.45 MB for the elements JSON).
+- Build: ~2 min per day on 9 workers. Accuracy: within 100 m of SGP4 everywhere (LEO median 32 m).
+  33 objects fenced (SGP4 errors, mostly decayed Starlinks; 54922 by size).
+- End to end, single thread, both fetched from the same Postgres:
+
+| Scenario | SGP4 from elements | Stored lines | Lines vs SGP4 |
+|---|---|---|---|
+| one instant, all objects | 163 ms | 263 ms | 0.6× (loses: fetch) |
+| 1 h at 10 s, all objects | 4.9 s | 2.0 s | 2.4× |
+| 1 day at 60 s, all objects | 19.8 s | 7.4 s | 2.7× |
+| ISS at 1,000 instants | 0.6 ms | 0.4 ms | tie |
+| 985 objects, one instant | 6.3 ms | 9.4 ms | 0.7× |
+
+Verdict: SGP4 costs ~0.4 µs per call here, so the line only saves 2–3× on evaluation, and its
+fetch is 4× heavier. Lines win only for long scans over all objects (~2.5×), lose for single
+instants, and would be a 19× regression for the browser. Parallel SGP4 across cores buys the same
+2.5× without 25 GB/year. Not recommended as the default; possibly useful as a cache for repeated
+heavy scans, or as the common format for non-SGP4 sources (Horizons, operator ephemerides).
