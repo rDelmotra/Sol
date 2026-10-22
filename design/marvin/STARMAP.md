@@ -188,3 +188,21 @@ heavy shared load (load average 11–14 on 10 cores).
   Storage ~32.5 MB/day, ~59 GB per 5 years with packed passes.
 - Lookups: 1–10 ms (ISS over India 6.1 ms, 44 passes, matching brute force within 5 s except one
   5 s corner clip; 5 recomputed close approaches agree to 0.001 km).
+
+## Round 4 — T0 (cloud, 2026-10-22): setup and sanity
+
+Machine: cloud container, 4 cores, 15 GB RAM, no swap, Node 22.22.0, ~29 GB disk free. No other
+jobs running (load average ~2 during the runs, all from the runs themselves). Data: live catalog
+plus 42 history days (weekly 2026-06-23..09-15, daily 2026-09-20..10-18), ~1 GB, all fetched
+with `fetch-data.sh`, no failed days. Local TimescaleDB in Docker.
+
+- `build-index.ts --order 4 --step 20 --hours 3`: 32,778 objects in, 32,768 indexed, 10 skipped
+  (no valid position), 7,072,328 rows, 51M SGP4 calls, 56.6M rows/day extrapolated. Wall 12.6 s
+  on 4 workers, peak RSS 571 MB. Round 1 had ~7M rows and ~56M/day, so the numbers reproduce.
+  This machine is about 3× slower than the 10-core Mac for whole-catalog jobs (the Mac did 3 h in
+  ~4 s at 30 s steps).
+- `measure.ts --hours 1` (480 sampled objects): order 4 at 20 s misses 17 of 27,117 visits
+  (0.06%), all 1 s corner clips; mean entry/exit error 0.28 s. Order 3 at 20 s misses 0.03%.
+  Same range as round 1.
+
+Verdict: the environment reproduces the Mac's numbers. Check passes.
