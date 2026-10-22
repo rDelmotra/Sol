@@ -72,18 +72,19 @@ last N days, and when".
      - Merge the lists → candidates → refine with SGP4 (sub-satellite point inside the polygon;
        20 s + bisection).
    - Report candidates, refine time, total, #objects, #passes, for each order × granularity.
-3. **Truth:**
+3. **Graze fix:** the Mac refine missed sub-20 s grazes (49 India / 42 box object-days). `coverage-worker.ts` now keys on cell + pass flag, but this was NOT re-run. Re-run and confirm recall is 100%.
+4. **Truth:**
    - The Mac has one day (2026-10-12) of brute force for Q-L1 and box 9138, in
      `packages/backend/data/coverage/truth-*`, only if you rebuild it here.
    - Brute force here: ALL objects over at least 2 days at 10 s, parallel on all cores. On the Mac
      it took about 20 min per day, so budget for it. Measure the first day before committing to
      more.
    - Recall must be 100%.
-4. **Q-L3, the orbit-shape shortcut:** predict Q-L1/Q-L2 from elements alone (latitude band reachable
+5. **Q-L3, the orbit-shape shortcut:** predict Q-L1/Q-L2 from elements alone (latitude band reachable
    = i or 180−i; GEO by longitude; height band vs the box's shell). Report false negatives and false
    positives vs truth by regime. Long windows may make the shortcut as good as the summaries; say
    so if they do.
-5. Extrapolate to 1,826 days: storage per option and query time.
+6. Extrapolate to 1,826 days: storage per option and query time.
 
 **Done when:**
 - recall is 100% on the truth days;
@@ -120,6 +121,7 @@ Needs `STARMAP_DB`.
 3. `close.approach` < 5 km all-vs-all over the day, via the per-step grid (screen-all's approach):
    - exclude identical element sets;
    - add a separate `close.formation` kind for pairs within 50 km for more than 50% of the day;
+   - **Mac finding (12 days, see STARMAP.md Round 4):** the 70–77k/day are REAL geometry (97% relative speed > 2 km/s, consistent with LEO density), not duplicates. So redefine what gets stored (e.g. < 1 km, or ranked by miss distance × relative speed), measure the count, and keep the full < 5 km set on-demand only.
    - **then categorise the remainder.** The Mac saw 70–77k approaches/day, which is not
      believable as conjunctions. Break them down by: same constellation/name prefix, near-identical
      elements (Δa < 1 km, Δi < 0.01°, ΔΩ < 0.01°), same launch (OBJECT_ID prefix), duration of
