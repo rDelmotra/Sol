@@ -150,3 +150,41 @@ fetch is 4× heavier. Lines win only for long scans over all objects (~2.5×), l
 instants, and would be a 19× regression for the browser. Parallel SGP4 across cores buys the same
 2.5× without 25 GB/year. Not recommended as the default; possibly useful as a cache for repeated
 heavy scans, or as the common format for non-SGP4 sources (Horizons, operator ephemerides).
+
+## Round 4 (Mac, partial, 2026-10-23): layers 2 and 3
+
+Cut short to free the Mac; the cloud handbook (`design/marvin/cloud/`) finishes it. Measured under
+heavy shared load (load average 11–14 on 10 cores).
+
+**Layer 2: coverage summaries** (`coverage*.ts`; 7 days, 2026-10-12..18)
+
+- Star map, MB/day: order 2 1.0, order 3 2.6, order 4 6.3 (1.8 / 4.8 / 11.5 GB per 5 years).
+  A LEO object visits only 34 / 73 / 162 star cells per day, because its orbit is a nearly fixed
+  ring against the stars.
+- Space box question (order-3 LEO box, 7 days): 38,884 candidate object-days at 99.8% precision,
+  refine 22 s, ~10× faster than brute force. Recall is 100% on unfenced objects. The orbit-shape
+  shortcut alone reached 79.6% precision.
+- Earth-frame cells were also built, against the owner's design (satellites are indexed only in
+  the star map; the Earth map is a separate later store). They pruned nothing: 99.8% of 208k India
+  candidates were real. Dropped.
+- India via the shortcut alone: recall 99.99%, precision 97.9% (LEO 99.7%, GEO 22%). Over long
+  windows, almost every LEO object whose inclination reaches India's latitude passes over it.
+- Grazes shorter than 20 s were missed by the refine key (49 India and 42 box object-days vs the
+  10 s truth). The worker now keys on cell + pass flag; the fix has NOT been re-run.
+- Build: ~250–450 s per day for one SGP4 pass feeding all orders. Peak RSS 2.8 GB.
+
+**Layer 3: derived events** (`events*.ts`, `derive-day.ts`, `jump-dist.ts`, `ca-composition.ts`;
+12 days, 2026-09-20..10-01)
+
+| Kind | Rows/day | Verdict |
+|---|---|---|
+| object.appeared / disappeared | 5–49 | keep forever. All 196 disappearances were stale elements aging out of the 30-day window, not decays; decay detection was not validated |
+| elements.jump (position error > 16.3 km and Δa > 1 km) | ~450 (61% Starlink) | keep forever. The ISS reboost on 09-27 was caught (+1.83 km) |
+| close.formation | ~220 | keep forever |
+| close.approach < 5 km | 69–78k | real geometry (97% have relative speed > 2 km/s; matches a uniform-density estimate), but too many. Store only a tighter or ranked subset (e.g. < 1 km) |
+| region.pass, 8 regions | 873k naive / 30.9k packed | compute on demand or keep packed (17 MB/day) |
+
+- Derive time: 3–4 min/day on 5 threads (close approaches 130–200 s, region passes 28–53 s).
+  Storage ~32.5 MB/day, ~59 GB per 5 years with packed passes.
+- Lookups: 1–10 ms (ISS over India 6.1 ms, 44 passes, matching brute force within 5 s except one
+  5 s corner clip; 5 recomputed close approaches agree to 0.001 km).

@@ -1,0 +1,344 @@
+// ============================================================
+// SPIKE — not production. Daily "Layer 3" job: derive the day's events once and append them to starmap.event.
+//   npx tsx packages/backend/scripts/starmap/derive-day.ts --from 2026-09-20 --to 2026-10-18 [--dry] [--ca-hours H] [--only region,ca,diff]
+// Day D = UTC [D 00:00, D+1 00:00) using the catalog file of day D (its element sets end at D+1 00:00).
+// diff kinds (appeared / disappeared / jump) compare with the previous day's catalog (skipped for the first day).
+// ============================================================
+import { readFileSync, appendFileSync, existsSync, writeFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
+import pg from 'pg';
+import { geodeticLatAltFromEr, ER_KM } from '@orbitwatch/orbital-core';
+import { parseArgs } from './catalog.js';
+import { makeProp, type Prop } from './runs.js';
+import { EvPool } from './events-pool.js';
+import {
+  REGION_CODES, DAY_MS, DDL, DB_URL, HISTORY_DIR, REGIONS, contiguousDays, dayStartMs, prevDay, loadDayCatalog, identicalGroups,
+  jumpMetrics, posAt, epochMsOf, insertEvents, type EventRow, type CatFull,
+} from './events.js';
+import type { CaOut } from './events-worker.js';
+
+const args = parseArgs(process.argv.slice(2));
+const ALL_DAYS = contiguousDays();
+const FROM = args.get('from') ?? ALL_DAYS[0]!, TO = args.get('to') ?? FROM;
+const DRY = args.has('dry');
+const ONLY = new Set((args.get('only') ?? 'diff,region,ca').split(','));
+const CA_HOURS = args.has('ca-hours') ? Number(args.get('ca-hours')) : 24;
+const CA_DT_S = Number(args.get('ca-dt') ?? 5);
+const WORKERS = 5;
+const REGION_MODE = args.get('region-mode') ?? 'raw'; // raw | packed
+const REGION_SET = args.get('region-set') ?? 'all'; // all | payload (objectType not debris/rocket_body)
+
+// ---- thresholds (see jump-dist.ts: LEO p50 dpos = 1.63 km -> 10x = 16.3 km) ----
+export const JUMP_DPOS_KM = 16.3;
+export const JUMP_DA_KM = 1.0;
+export const CA_KM = 5;
+export const FORM_KM = 50;
+export const FORM_FRAC = 0.5;
+
+const secs = (t: number) => +((Date.now() - t) / 1000).toFixed(2);
+
+// ---- lazily built context: first-seen day per NORAD id (all catalog files) and SATCAT status (hindsight) ----
+let firstSeen: Map<number, string> | null = null;
+function getFirstSeen(): Map<number, string> {
+  if (firstSeen) return firstSeen;
+  const f = '/tmp/starmap/firstseen.json';
+  if (existsSync(f)) return (firstSeen = new Map(Object.entries(JSON.parse(readFileSync(f, 'utf8')) as Record<string, string>).map(([k, v]) => [Number(k), v])));
+  const days = readFileSyncDays();
+  const m = new Map<number, string>();
+  for (const d of days) for (const o of loadDayCatalog(d)) if (!m.has(o.noradId)) m.set(o.noradId, d);
+  writeFileSync(f, JSON.stringify(Object.fromEntries(m)));
+  return (firstSeen = m);
+}
+function readFileSyncDays(): string[] {
+  return readFileSync(HISTORY_DIR + 'days.txt', 'utf8').split('\n').filter(Boolean).concat(ALL_DAYS).filter((d, i, a) => a.indexOf(d) === i).sort();
+}
+let satcat: Map<number, string> | null = null;
+function getSatcat(): Map<number, string> {
+  if (satcat) return satcat;
+  const d = JSON.parse(gunzipSync(readFileSync(new URL('../../enrichment-data/metadata-enrichment.json.gz', import.meta.url))).toString()) as { objects: Record<string, { noradId: number; orbitalStatus: string }> };
+  satcat = new Map(Object.values(d.objects).map((o) => [o.noradId, o.orbitalStatus]));
+  return satcat;
+}
+
+// ---- 1. appeared / disappeared / jump ----
+function diffEvents(day: string, prev: CatFull[], cur: CatFull[]) {
+  const t0 = dayStartMs(day);
+  const tAll = Date.now();
+  const rows: EventRow[] = [];
+  const pm = new Map(prev.map((o) => [o.noradId, o])), cm = new Map(cur.map((o) => [o.noradId, o]));
+  const fs = getFirstSeen(), sc = getSatcat();
+  let tt = Date.now();
+  const stat: Record<string, unknown> = {};
+  // appeared
+  const appClass: Record<string, number> = {};
+  for (const o of cur) {
+    if (pm.has(o.noradId)) continue;
+    const seen = fs.get(o.noradId);
+    const launch = o.launchDate ? Date.parse(o.launchDate) : NaN;
+    const cls = Number.isFinite(launch) && t0 - launch < 31 * DAY_MS ? 'new_launch' : seen && seen < day ? 'returned' : 'newly_cataloged';
+    appClass[cls] = (appClass[cls] ?? 0) + 1;
+    rows.push({ kind: 'object.appeared', subjects: [o.noradId], tStart: epochMsOf(o.omm), tEnd: epochMsOf(o.omm), payload: { cls, reg: o.regime, perigee: o.perigee, apogee: o.apogee, launch: o.launchDate, name: o.name } });
+  }
+  const nApp = rows.length;
+  const tApp = secs(tt); tt = Date.now();
+  // disappeared
+  const disClass: Record<string, number> = {};
+  const confusion: Record<string, number> = {};
+  for (const o of prev) {
+    if (cm.has(o.noradId)) continue;
+    const ep = epochMsOf(o.omm);
+    const ageDays = (t0 - ep) / DAY_MS;
+    const p = makeProp(o.omm);
+    let altKm: number | null = null;
+    const pos = p ? posAt(p, t0) : null;
+    if (pos) altKm = geodeticLatAltFromEr({ x: pos[0] / ER_KM, y: pos[1] / ER_KM, z: pos[2] / ER_KM }).altKm;
+    const perigee = o.perigee ?? NaN;
+    const cls = ageDays >= 28 ? 'stale_window' : altKm === null || altKm < 140 || perigee < 250 ? 'decay_likely' : 'unexplained';
+    const truth = sc.get(o.noradId) ?? 'unknown';
+    disClass[cls] = (disClass[cls] ?? 0) + 1;
+    confusion[`${cls}|${truth}`] = (confusion[`${cls}|${truth}`] ?? 0) + 1;
+    rows.push({ kind: 'object.disappeared', subjects: [o.noradId], tStart: t0, tEnd: t0, payload: {
+      cls, satcat: truth, reg: o.regime, ageDays: +ageDays.toFixed(2), perigee: o.perigee, apogee: o.apogee,
+      bstar: Number(o.omm.BSTAR), mmdot: Number(o.omm.MEAN_MOTION_DOT), altKm: altKm === null ? null : +altKm.toFixed(1), lastEpoch: o.omm.EPOCH, name: o.name } });
+  }
+  const nDis = rows.length - nApp;
+  const tDis = secs(tt); tt = Date.now();
+  // jumps
+  const jm = jumpMetrics(prev, cur);
+  let nJump = 0;
+  const byDir: Record<string, number> = {};
+  for (const m of jm.metrics) {
+    if (!(m.dposKm > JUMP_DPOS_KM && Math.abs(m.daKm) > JUMP_DA_KM)) continue;
+    nJump++;
+    const dir = m.daKm > 0 ? 'raise' : 'lower';
+    byDir[dir] = (byDir[dir] ?? 0) + 1;
+    rows.push({ kind: 'elements.jump', subjects: [m.norad], tStart: m.prevEpochMs, tEnd: m.newEpochMs, payload: {
+      dpos: +m.dposKm.toFixed(2), da: +m.daKm.toFixed(3), dinc: +m.dIncDeg.toFixed(4), along: +m.dAlong.toFixed(2), gap: +m.gapDays.toFixed(2), dir, reg: m.regime, name: m.name } });
+  }
+  const tJump = secs(tt);
+  stat.diff = { appeared: nApp, disappeared: nDis, jumps: nJump, changedElsets: jm.metrics.length, jumpFailed: jm.failed, appClass, disClass, confusion, jumpDir: byDir };
+  return { rows, nApp, nDis, nJump, secs: { appeared: tApp, disappeared: tDis, jump: tJump, total: secs(tAll) }, stat };
+}
+
+// ---- 2. propagation context for the pool ----
+function buildCtx(cur: CatFull[], t0: number, t1: number) {
+  const objs: CatFull[] = [];
+  let fenced = 0, failed = 0;
+  for (const o of cur) {
+    const p: Prop | null = makeProp(o.omm);
+    if (!p) { failed++; continue; }
+    // garbage-orbit fence: radius below the surface (or absurd) at start / middle / end of the day
+    let bad = false;
+    for (const tm of [t0, (t0 + t1) / 2, t1]) {
+      const r = posAt(p, tm);
+      if (!r) { bad = true; break; }
+      const rad = Math.hypot(r[0], r[1], r[2]);
+      if (rad < 6340 || rad > 1e6) { bad = true; break; }
+    }
+    if (bad) { fenced++; continue; }
+    objs.push(o);
+  }
+  return { objs, fenced, failed };
+}
+
+async function main(): Promise<void> {
+  const client = new pg.Client({ connectionString: DB_URL });
+  if (!DRY) { await client.connect(); await client.query(DDL); }
+  const days = ALL_DAYS.filter((d) => d >= FROM && d <= TO);
+  if (ONLY.has('diff')) { const tl = Date.now(); getFirstSeen(); getSatcat(); console.log(`one-time context load (first-seen index, SATCAT status): ${secs(tl)}s`); }
+  for (const day of days) {
+    const T = Date.now();
+    const t0 = dayStartMs(day), t1 = t0 + DAY_MS;
+    const cur = loadDayCatalog(day);
+    const hasPrev = day > ALL_DAYS[0]!;
+    const prev = hasPrev ? loadDayCatalog(prevDay(day)) : [];
+    const timing: Record<string, number | Record<string, number>> = { load: secs(T) };
+    const stats: Record<string, unknown> = { day, objects: cur.length, workers: WORKERS };
+    const rows: EventRow[] = [];
+    const perKind: Record<string, number> = {};
+
+    if (ONLY.has('diff') && hasPrev) {
+      const d = diffEvents(day, prev, cur);
+      rows.push(...d.rows);
+      Object.assign(stats, d.stat);
+      timing.diff = d.secs;
+      perKind['object.appeared'] = d.nApp; perKind['object.disappeared'] = d.nDis; perKind['elements.jump'] = d.nJump;
+    }
+
+    let pool: EvPool | null = null;
+    if (ONLY.has('region') || ONLY.has('ca')) {
+      const tc = Date.now();
+      const { objs, fenced, failed } = buildCtx(cur, t0, t1);
+      const { group, groups } = identicalGroups(objs);
+      pool = new EvPool(WORKERS);
+      await pool.start({ type: 'init', omm: objs.map((o) => o.omm), group });
+      timing.poolInit = secs(tc);
+      Object.assign(stats, { propagated: objs.length, fencedGarbage: fenced, unusable: failed, identicalGroups: groups.length, identicalObjects: groups.reduce((s, g) => s + g.length, 0) });
+      const N = objs.length;
+
+      // ---- region passes ----
+      if (ONLY.has('region')) {
+        const tr = Date.now();
+        const sel: number[] = [];
+        for (let i = 0; i < N; i++) {
+          const ot = (objs[i] as unknown as { objectType: string }).objectType;
+          if (REGION_SET === 'all' || (ot !== 'debris' && ot !== 'rocket_body')) sel.push(i);
+        }
+        const idx = Int32Array.from(sel);
+        const CH = 400, tasks = [];
+        for (let o = 0; o < idx.length; o += CH) tasks.push({ type: 'region', o0: o, o1: Math.min(idx.length, o + CH), idx, t0Ms: t0, t1Ms: t1, stepMs: 20_000 });
+        const outs = await pool.map<Float64Array>(tasks);
+        const byRegion = new Array(REGIONS.length).fill(0) as number[];
+        let nPass = 0, nRows = 0;
+        const byClass: Record<string, number> = {};
+        const grouped = new Map<number, number[]>(); // obj*8+region -> flat [in,out,flags,...]
+        for (const out of outs) for (let k = 0; k < out.length; k += 5) {
+          const o = out[k]!, r = out[k + 1]!, fl = out[k + 4]!;
+          byRegion[r]!++; nPass++;
+          const ck = `${(objs[o] as unknown as { objectType: string }).objectType}|${objs[o]!.regime}`;
+          byClass[ck] = (byClass[ck] ?? 0) + 1;
+          if (REGION_MODE === 'raw') {
+            const payload: Record<string, unknown> = { r: REGIONS[r]!.key };
+            if (fl & 1) payload.cs = 1;
+            if (fl & 2) payload.ce = 1;
+            rows.push({ kind: 'region.pass', subjects: [objs[o]!.noradId], tStart: out[k + 2]!, tEnd: out[k + 3]!, payload });
+            nRows++;
+          } else {
+            const key = o;
+            const l = grouped.get(key);
+            if (l) l.push(r, out[k + 2]!, out[k + 3]!); else grouped.set(key, [r, out[k + 2]!, out[k + 3]!]);
+          }
+        }
+        if (REGION_MODE !== 'raw') {
+          // one row per object per day: payload { IN: "in-out;in-out", US: ... } offsets in whole seconds from the day start
+          for (const [o, l] of grouped) {
+            const byR = new Map<number, string[]>();
+            let tS = Infinity, tE = 0;
+            for (let q = 0; q < l.length; q += 3) {
+              const r = l[q]!;
+              tS = Math.min(tS, l[q + 1]!); tE = Math.max(tE, l[q + 2]!);
+              const s0 = `${Math.round((l[q + 1]! - t0) / 1000)}-${Math.round((l[q + 2]! - t0) / 1000)}`;
+              (byR.get(r) ?? byR.set(r, []).get(r)!).push(s0);
+            }
+            const payload: Record<string, string> = {};
+            for (const [r, v] of byR) payload[REGION_CODES[r]!] = v.join(';');
+            rows.push({ kind: 'region.pass', subjects: [objs[o]!.noradId], tStart: tS, tEnd: tE, payload });
+            nRows++;
+          }
+        }
+        const n = nPass;
+        stats.regionRows = nRows; stats.regionMode = REGION_MODE; stats.regionSet = REGION_SET; stats.regionObjects = idx.length;
+        stats.regionByClass = byClass;
+        stats.regionByRegion = Object.fromEntries(REGIONS.map((r, i) => [r.key, byRegion[i]]));
+        timing.region = secs(tr);
+        perKind['region.pass'] = nRows;
+        stats.regionByClass = byClass;
+        stats.regionByRegion = Object.fromEntries(REGIONS.map((r, i) => [r.key, byRegion[i]]));
+      }
+
+      // ---- close approaches ----
+      if (ONLY.has('ca')) {
+        const tg = Date.now();
+        const dtMs = CA_DT_S * 1000;
+        const nSteps = Math.round((CA_HOURS * 3600) / CA_DT_S);
+        const slack = 0.5;
+        const L = CA_KM + 2 + 20 * (CA_DT_S / 2 + slack) + 1;
+        const formEvery = Math.round(1800 / CA_DT_S);
+        const SL = Math.round(600 / CA_DT_S);
+        const tasks = [];
+        for (let s = 0; s <= nSteps; s += SL) tasks.push({ type: 'ca', s0: s, s1: Math.min(nSteps + 1, s + SL), t0Ms: t0, dtMs, L, thr: CA_KM, slack, formEvery, formKm: FORM_KM });
+        const outs = await pool.map<CaOut>(tasks);
+        const gridWall = secs(tg);
+        const cpu = outs.reduce((s, o) => s + o.ms, 0) / 1000;
+        const tests = outs.reduce((s, o) => s + o.tests, 0);
+        // formation: pairs within 50 km at any half-hourly sample, then fraction of the day at 60 s
+        const tf = Date.now();
+        const formSet = new Set<number>();
+        for (const o of outs) for (let k = 0; k < o.form.length; k += 2) formSet.add(o.form[k]! * N + o.form[k + 1]!);
+        const fp = new Int32Array(formSet.size * 2);
+        let q = 0;
+        for (const key of formSet) { fp[q++] = Math.floor(key / N); fp[q++] = key % N; }
+        const FCH = 400, ftasks = [];
+        for (let p = 0; p < fp.length; p += FCH * 2) ftasks.push({ type: 'formFrac', pairs: fp.subarray(p, Math.min(fp.length, p + FCH * 2)), t0Ms: t0, t1Ms: t0 + nSteps * dtMs, stepMs: 60_000, km: FORM_KM });
+        const fouts = await pool.map<Float64Array>(ftasks);
+        const formation = new Set<number>();
+        let nForm = 0;
+        for (const f of fouts) for (let k = 0; k < f.length; k += 4) {
+          if (f[k + 2]! > FORM_FRAC) {
+            formation.add(f[k]! * N + f[k + 1]!); nForm++;
+            rows.push({ kind: 'close.formation', subjects: [objs[f[k]!]!.noradId, objs[f[k + 1]!]!.noradId].sort((a, b) => a - b), tStart: t0, tEnd: t0 + nSteps * dtMs, payload: { frac: +f[k + 2]!.toFixed(3), minKm: +f[k + 3]!.toFixed(3) } });
+          }
+        }
+        const formWall = secs(tf);
+        // approach candidates -> one per encounter -> exact refine
+        const tm = Date.now();
+        const byPair = new Map<number, number[]>();
+        let nCand = 0;
+        for (const o of outs) for (let k = 0; k < o.cand.length; k += 5) {
+          const key = o.cand[k]! * N + o.cand[k + 1]!;
+          if (formation.has(key)) continue;
+          nCand++;
+          const l = byPair.get(key);
+          const rec = [o.cand[k + 2]!, o.cand[k + 3]!, o.cand[k + 4]!];
+          if (l) l.push(...rec); else byPair.set(key, rec);
+        }
+        const GAP = Math.round(30 / CA_DT_S);
+        const enc: number[] = [];
+        let longClusters = 0;
+        for (const [key, l] of byPair) {
+          const recs: Array<[number, number, number]> = [];
+          for (let k = 0; k < l.length; k += 3) recs.push([l[k]!, l[k + 1]!, l[k + 2]!]);
+          recs.sort((a, b) => a[0] - b[0]);
+          let best = recs[0]!, last = recs[0]![0], len = 1;
+          const flush = () => { enc.push(Math.floor(key / N), key % N, t0 + best[0] * dtMs + best[1] * 1000); if (len > 10) longClusters++; };
+          for (let k = 1; k < recs.length; k++) {
+            const r = recs[k]!;
+            if (r[0] - last > GAP) { flush(); best = r; len = 0; }
+            else if (r[2] < best[2]) best = r;
+            last = r[0]; len++;
+          }
+          flush();
+        }
+        const rtasks = [];
+        for (let p = 0; p < enc.length; p += 3 * 1500) rtasks.push({ type: 'refine', buf: Float64Array.from(enc.slice(p, p + 3 * 1500)), win: 4000 });
+        const routs = await pool.map<Float64Array>(rtasks);
+        const found: Array<[number, number, number, number, number]> = [];
+        for (const r of routs) for (let k = 0; k < r.length; k += 5) if (r[k + 2]! < CA_KM) found.push([r[k]!, r[k + 1]!, r[k + 2]!, r[k + 3]!, r[k + 4]!]);
+        found.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[3] - b[3]);
+        let nCa = 0, dup = 0;
+        let lastKey = -1, lastT = 0;
+        for (const f of found) {
+          const key = f[0] * N + f[1];
+          if (key === lastKey && Math.abs(f[3] - lastT) < 10_000) { dup++; continue; }
+          lastKey = key; lastT = f[3];
+          if (f[3] < t0 || f[3] >= t0 + nSteps * dtMs) continue; // belongs to the neighbouring day
+          nCa++;
+          rows.push({ kind: 'close.approach', subjects: [objs[f[0]]!.noradId, objs[f[1]]!.noradId].sort((a, b) => a - b), tStart: Math.round(f[3]), tEnd: Math.round(f[3]), payload: { d: +f[2].toFixed(3), v: +f[4].toFixed(2) } });
+        }
+        timing.ca = { grid: gridWall, gridCpu: +cpu.toFixed(1), formation: formWall, refine: secs(tm) };
+        perKind['close.approach'] = nCa; perKind['close.formation'] = nForm;
+        Object.assign(stats, { ca: { steps: nSteps + 1, dtS: CA_DT_S, cellKm: L, pairTests: tests, candidates: nCand, encounters: enc.length / 3, refinedFound: found.length, dupDropped: dup, longClusters, formationCandidates: formSet.size, formationPairs: nForm } });
+      }
+      await pool.close();
+    }
+
+    if (args.has('dump')) writeFileSync(args.get('dump')!, JSON.stringify(rows));
+    const total = secs(T);
+    timing.total = total;
+    stats.timing = timing; stats.rows = perKind;
+    if (!DRY) {
+      const tw = Date.now();
+      await client.query('DELETE FROM starmap.event WHERE day = $1', [day]);
+      const sz0 = Number((await client.query("SELECT pg_total_relation_size('starmap.event') AS s")).rows[0].s);
+      await insertEvents(client, day, rows);
+      const sz1 = Number((await client.query("SELECT pg_total_relation_size('starmap.event') AS s")).rows[0].s);
+      stats.dbWriteSecs = secs(tw);
+      stats.tableDeltaMB = +((sz1 - sz0) / 1e6).toFixed(1);
+      await client.query('INSERT INTO starmap.event_stats(day, stats) VALUES ($1, $2) ON CONFLICT (day) DO UPDATE SET stats = EXCLUDED.stats', [day, JSON.stringify(stats)]);
+    }
+    appendFileSync('/tmp/starmap/events-stats.jsonl', JSON.stringify(stats) + '\n');
+    console.log(`${day}  total ${total}s  rows ${JSON.stringify(perKind)}  timing ${JSON.stringify(timing)}${DRY ? '' : `  db ${stats.dbWriteSecs}s  +${stats.tableDeltaMB} MB`}`);
+  }
+  if (!DRY) await client.end();
+}
+await main();

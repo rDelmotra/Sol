@@ -99,9 +99,12 @@ DB access: scripts read `STARMAP_DB`. If it is unset they assume the local Docke
 
 1. **Truth: element sets kept forever, indexed by time first.** About 7 MB/day. Every other layer
    can be rebuilt from it.
-2. **Daily coverage summaries kept forever.** Once per day, SGP4 every object over the day and
-   record only which coarse cells it visited: star-map boxes and Earth-map ground cells. Store
-   them inverted, as (cell, day) → list of objects. A long-window question becomes "merge lists →
+2. **Coverage summaries kept forever, in the STAR MAP ONLY.** Once per day, SGP4 every object
+   and record only which coarse star-map cells it visited in each period (day/hour). Store them
+   inverted, as (cell, period) → list of objects. **Owner rule: space objects are never indexed in
+   the rotating Earth map.** The Earth map is a separate store for ground data (regions,
+   weather, airfields), built later. Ground questions rotate the ground region into the star map
+   at the needed times. A long-window question becomes "merge lists →
    candidate (object, day) → exact SGP4 only on those". Long-window idea: astronomy's IVOA
    Space-Time MOC.
 3. **Derived events kept forever.** Each day, compute the facts people keep asking about once:
@@ -158,7 +161,9 @@ Machine: Mac, 10 cores, 16 GB.
 
 ## 6. Round 4 status (layers 2 and 3, prototyped on the Mac, cut short to free it)
 
-**Layer 2 (coverage)**
+**Layer 2 (coverage)**: the Mac prototype also built Earth-frame cells, against the owner's
+design. That path is dropped; it only confirmed that Earth-fixed daily cells prune nothing
+(99.8% of 208k India candidates were real).
 - 7 days built (2026-10-12..18), with star orders 2/3/4 and Earth orders 4/5/6 in one SGP4 pass.
 - About 7 min/day on the Mac: about 1.2 billion SGP4 calls/day, because bisection runs for six cell
   systems.

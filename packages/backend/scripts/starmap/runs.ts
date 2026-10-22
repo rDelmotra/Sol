@@ -90,9 +90,27 @@ interface Event {
   cell: number;
 }
 
+/**
+ * Key function: the "cell" an object is in at tMs (NO_CELL for none). buildRuns uses the SpaceCell
+ * key at one order; coverage.ts uses a joint star+Earth key and a polygon/box membership flag.
+ */
+export type KeyFn = (p: Prop, tMs: number, st: RunStats) => number;
+
+/** Count one SGP4 call and return the TEME position (km), or null on failure. */
+export function posAt(p: Prop, tMs: number, st: RunStats): { x: number; y: number; z: number } | null {
+  st.propCalls++;
+  const pv = satellite.sgp4(p.satrec, (tMs - p.epochMs) / 60_000);
+  const pos = pv ? pv.position : null;
+  if (!pos || typeof pos === 'boolean' || !Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) {
+    st.noCell++;
+    return null;
+  }
+  return pos;
+}
+
 /** Push, in time order, the transition events inside (tLo,tHi] where cell goes cLo -> cHi. */
 function resolve(
-  p: Prop, order: number, tLo: number, cLo: number, tHi: number, cHi: number,
+  p: Prop, keyAt: KeyFn, tLo: number, cLo: number, tHi: number, cHi: number,
   st: RunStats, out: Event[],
 ): void {
   if (cLo === cHi) return;
@@ -101,9 +119,9 @@ function resolve(
     return;
   }
   const tMid = Math.floor((tLo + tHi) / 2);
-  const cMid = cellAt(p, order, tMid, st);
-  if (cMid !== cLo) resolve(p, order, tLo, cLo, tMid, cMid, st, out);
-  if (cMid !== cHi) resolve(p, order, tMid, cMid, tHi, cHi, st, out);
+  const cMid = keyAt(p, tMid, st);
+  if (cMid !== cLo) resolve(p, keyAt, tLo, cLo, tMid, cMid, st, out);
+  if (cMid !== cHi) resolve(p, keyAt, tMid, cMid, tHi, cHi, st, out);
 }
 
 /**
@@ -113,15 +131,22 @@ function resolve(
 export function buildRuns(
   p: Prop, order: number, startMs: number, endMs: number, stepMs: number, st: RunStats,
 ): Run[] {
+  return buildRunsBy(p, (pp, t, s) => cellAt(pp, order, t, s), startMs, endMs, stepMs, st);
+}
+
+/** Same stepped + bisected run builder for ANY key function (cell key, joint key, membership flag). */
+export function buildRunsBy(
+  p: Prop, keyAt: KeyFn, startMs: number, endMs: number, stepMs: number, st: RunStats,
+): Run[] {
   const events: Event[] = [];
   let tPrev = startMs;
-  let cPrev = cellAt(p, order, tPrev, st);
+  let cPrev = keyAt(p, tPrev, st);
   events.push({ t: startMs, cell: cPrev });
   for (let i = 1; ; i++) {
     const t = Math.min(startMs + i * stepMs, endMs);
     if (t === tPrev) break;
-    const c = cellAt(p, order, t, st);
-    if (c !== cPrev) resolve(p, order, tPrev, cPrev, t, c, st, events);
+    const c = keyAt(p, t, st);
+    if (c !== cPrev) resolve(p, keyAt, tPrev, cPrev, t, c, st, events);
     tPrev = t;
     cPrev = c;
     if (t >= endMs) break;
