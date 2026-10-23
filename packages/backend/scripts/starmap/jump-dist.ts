@@ -1,6 +1,6 @@
 // SPIKE — not production. Distribution of epoch-to-epoch jump metrics over all contiguous days (threshold calibration).
 import { writeFileSync } from 'node:fs';
-import { contiguousDays, prevDay, loadDayCatalog, jumpMetrics, type JumpMetric } from './events.js';
+import { EVENTS_DIR, contiguousDays, prevDay, loadDayCatalog, jumpMetrics, type JumpMetric } from './events.js';
 
 const days = contiguousDays();
 const all: Array<JumpMetric & { day: string }> = [];
@@ -12,7 +12,7 @@ for (const day of days.slice(1)) {
   console.log(day, 'both', r.both, 'unchanged', r.unchanged, 'changed', r.metrics.length, 'failed', r.failed);
   prev = cur;
 }
-writeFileSync('/tmp/starmap/jump-metrics.json', JSON.stringify(all));
+writeFileSync(EVENTS_DIR + 'jump-metrics.json', JSON.stringify(all));
 const q = (a: number[], p: number) => a[Math.min(a.length - 1, Math.floor(p * a.length))]!;
 for (const reg of ['LEO', 'MEO', 'GEO', 'HEO', 'OTHER']) {
   const s = all.filter((m) => m.regime === reg);

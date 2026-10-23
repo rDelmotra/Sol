@@ -11,9 +11,12 @@ import * as satellite from 'satellite.js';
 import { gmst, temeToEcef, geodeticLatAltFromEr, ER_KM } from '@orbitwatch/orbital-core';
 import { makeProp, type Prop } from './runs.js';
 import type { CatObj } from './catalog.js';
+import { INDIA_POLY } from './coverage-lib.js';
+import { NEAR_SHIFT } from './events-region.js';
 
 export const DB_URL = process.env.STARMAP_DB ?? 'postgres://orbitwatch:orbitwatch@localhost:5432/orbitwatch';
 export const HISTORY_DIR = fileURLToPath(new URL('../../data/history/', import.meta.url));
+export const EVENTS_DIR = fileURLToPath(new URL('../../data/events/', import.meta.url));
 export const DAY_MS = 86_400_000;
 const DEG = 180 / Math.PI;
 const MU = 398600.4418;
@@ -80,7 +83,7 @@ const BLR = { lat: 12.9716, lon: 77.5946, km: 500 };
 
 /** Rough polygons (lat, lon). Good enough to be a fixed test of the event machinery, not a border survey. */
 export const REGIONS: RegionDef[] = [
-  poly('india', [[8, 77.3], [15, 73.8], [20, 72.7], [23, 68.2], [24.5, 71], [28, 70], [31, 74], [35.5, 74.5], [35, 78.5], [30.5, 81], [27.5, 88.5], [27.5, 92], [29, 97], [24, 94.5], [22, 92.5], [21.5, 88.5], [19.5, 85.5], [16, 82], [13, 80.3], [10, 79.8]]),
+  poly('india', INDIA_POLY), // identical to the Layer 2 (T1) polygon so results can be cross-checked
   poly('usa_conus', [[49, -125], [49, -95], [49, -89], [46.5, -84.5], [47.5, -69], [45, -67], [41.5, -70], [35, -75.5], [30.5, -81], [25, -80], [25.5, -97.4], [29, -103], [31.3, -106.5], [32.5, -117], [34.5, -120.6], [40.3, -124.4]]),
   poly('europe', [[36, -10], [36, 26], [41, 45], [70, 45], [70, -10]]),
   poly('china', [[18, 108], [21.5, 101], [22, 98], [28, 97.5], [28.5, 88], [31, 79], [36, 74], [40, 74.5], [45, 80], [49, 87.5], [47.5, 90], [49, 116], [53.5, 123], [48, 135], [43, 131], [42, 128], [39.5, 124], [34, 121], [30, 122], [25, 119.5], [21.5, 111]]),
@@ -111,20 +114,46 @@ export function regionContains(r: RegionDef, latDeg: number, lonDeg: number): bo
   return r.poly ? pip(r.poly, latDeg, lonDeg) : hav(latDeg, lonDeg, r.circle!.lat, r.circle!.lon) <= r.circle!.km;
 }
 
-/** Bit mask of regions containing the sub-satellite point of a TEME position (km) at sidereal angle theta. */
-export function regionMask(theta: number, x: number, y: number, z: number): number {
+/** Margin (degrees of arc, ~278 km) inside which a sample counts as "near" a region edge: a coarse 20 s step moves the
+ *  sub-satellite point at most ~200 km, so any pass that starts and ends between two samples has a sample this close. */
+export const NEAR_DEG = 2.5;
+function distToRegionDeg(r: RegionDef, lat: number, lon: number): number {
+  if (!r.poly) return Math.abs(hav(lat, lon, r.circle!.lat, r.circle!.lon) - r.circle!.km) / 111.2;
+  const p = r.poly, c = Math.max(0.2, Math.cos(lat / DEG));
+  let best = Infinity;
+  for (let i = 0; i < p.length; i++) {
+    const [y0, x0] = p[i]!, [y1, x1] = p[(i + 1) % p.length]!;
+    const dx = (x1 - x0) * c, dy = y1 - y0, px = (lon - x0) * c, py = lat - y0;
+    const t = Math.max(0, Math.min(1, (px * dx + py * dy) / (dx * dx + dy * dy || 1)));
+    best = Math.min(best, Math.hypot(px - t * dx, py - t * dy));
+  }
+  return best;
+}
+
+/** Low 8 bits: regions containing the sub-satellite point of a TEME position (km) at sidereal angle theta.
+ *  Bits 8..15: regions whose edge is within NEAR_DEG (see events-region.ts). */
+/** Geodetic lat/lon (deg) of the sub-satellite point of the latest regionMask() call that got far enough to compute it. */
+export const lastLL = new Float64Array(2);
+export function regionMask(theta: number, x: number, y: number, z: number, wantNear = true): number {
   const e = temeToEcef({ x, y, z }, theta);
   const lon = Math.atan2(e.y, e.x) * DEG;
   const r = Math.sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
   const gc = Math.asin(e.z / r) * DEG;
-  let mask = 0, lat = NaN;
+  let mask = 0, near = 0, lat = NaN;
+  const gcR = Math.asin(e.z / r);
   for (let k = 0; k < N_REGIONS; k++) {
     const b = REGIONS[k]!.bbox;
-    if (gc < b[0] - LAT_MARGIN || gc > b[1] + LAT_MARGIN || lon < b[2] || lon > b[3]) continue;
-    if (lat !== lat) lat = geodeticLatAltFromEr({ x: e.x / ER_KM, y: e.y / ER_KM, z: e.z / ER_KM }).latDeg ?? gc;
+    const lonM = NEAR_DEG / Math.max(0.2, Math.cos(Math.min(85, Math.max(Math.abs(b[0]), Math.abs(b[1]))) / DEG));
+    if (gc < b[0] - NEAR_DEG - LAT_MARGIN || gc > b[1] + NEAR_DEG + LAT_MARGIN || lon < b[2] - lonM || lon > b[3] + lonM) continue;
+    if (lat !== lat) { lat = geodeticLatAltFromEr({ x: e.x / ER_KM, y: e.y / ER_KM, z: e.z / ER_KM }).latDeg ?? gc; }
     if (regionContains(REGIONS[k]!, lat, lon)) mask |= 1 << k;
+    if (wantNear && distToRegionDeg(REGIONS[k]!, lat, lon) < NEAR_DEG) near |= 1 << k;
   }
-  return mask;
+  // latitude for the chord test: exact when computed above; otherwise the cheap surface formula, which is within ~4 km for LEO
+  // (< 1,200 km) but off by up to 0.6 deg at MEO/GEO height, so higher objects take the exact function.
+  if (lat !== lat) lat = r < 7600 ? Math.atan2(Math.sin(gcR), Math.cos(gcR) * (1 - 0.00669437999)) * DEG : (geodeticLatAltFromEr({ x: e.x / ER_KM, y: e.y / ER_KM, z: e.z / ER_KM }).latDeg ?? gc);
+  lastLL[0] = lat; lastLL[1] = lon;
+  return mask | (near << NEAR_SHIFT);
 }
 export { gmst };
 
@@ -158,6 +187,8 @@ export interface JumpMetric {
   dCross: number;
   /** semi-major axis change from mean motion (km), new minus old. */
   daKm: number;
+  /** daKm minus the change drag alone would cause over the gap (old set's own MEAN_MOTION_DOT; OMM stores ndot/2). */
+  residKm: number;
   dIncDeg: number;
   dEcc: number;
 }
@@ -176,6 +207,7 @@ export function jumpMetric(o0: CatFull, o1: CatFull): JumpMetric | null {
     prevEpochMs: p0.epochMs, newEpochMs: p1.epochMs, gapDays: (p1.epochMs - p0.epochMs) / DAY_MS,
     dposKm: Math.hypot(d[0]!, d[1]!, d[2]!), dRad: dot(ur), dAlong: dot(uv), dCross: dot(cr),
     daKm: semiMajorKm(o1.omm) - semiMajorKm(o0.omm),
+    residKm: semiMajorKm(o1.omm) - semiMajorKm(o0.omm) + (2 / 3) * (semiMajorKm(o0.omm) / Number(o0.omm.MEAN_MOTION)) * (2 * Number(o0.omm.MEAN_MOTION_DOT) * ((p1.epochMs - p0.epochMs) / DAY_MS)),
     dIncDeg: Number(o1.omm.INCLINATION) - Number(o0.omm.INCLINATION),
     dEcc: Number(o1.omm.ECCENTRICITY) - Number(o0.omm.ECCENTRICITY),
   };
@@ -228,4 +260,72 @@ export async function insertEvents(client: { query: (q: string, v?: unknown[]) =
       [day, part.map((r) => r.kind), part.map((r) => r.subjects[0]), part.map((r) => r.subjects[1] ?? null), part.map((r) => r.tStart), part.map((r) => r.tEnd), part.map((r) => JSON.stringify(r.payload))],
     );
   }
+}
+
+// ---------------- straight-chord test (lets the region scan skip the 1 s walk when no graze is possible) ----------------
+const KM_DEG = 111.2;
+/** Slack (km) added to the chord test: the true track bows away from the straight lat/lon chord by < 2 km over a 20 s step (checked
+ *  for LEO and HEO at lat <= 70); the margin is 4x that, plus 1% of the chord length. */
+export const CHORD_SLACK_KM = 8;
+function segPointKm(ax: number, ay: number, bx: number, by: number, px: number, py: number): number {
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+  const t = L2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)) : 0;
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+}
+function segSegKm(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): number {
+  const d1x = bx - ax, d1y = by - ay, d2x = dx - cx, d2y = dy - cy;
+  const den = d1x * d2y - d1y * d2x;
+  if (den !== 0) {
+    const t = ((cx - ax) * d2y - (cy - ay) * d2x) / den, u = ((cx - ax) * d1y - (cy - ay) * d1x) / den;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return 0; // they cross
+  }
+  return Math.min(segPointKm(ax, ay, bx, by, cx, cy), segPointKm(ax, ay, bx, by, dx, dy), segPointKm(cx, cy, dx, dy, ax, ay), segPointKm(cx, cy, dx, dy, bx, by));
+}
+/** True if the straight lat/lon chord A->B (degrees) comes within slack of the boundary of region r (so the track may cut a corner). */
+export function chordTouchesRegion(r: RegionDef, latA: number, lonA: number, latB: number, lonB: number, slackKm = CHORD_SLACK_KM): boolean {
+  let lb = lonB;
+  while (lb - lonA > 180) lb -= 360;
+  while (lb - lonA < -180) lb += 360;
+  const cosL = Math.max(0.2, Math.cos(((latA + latB) / 2) / DEG));
+  const len = Math.hypot((lb - lonA) * cosL, latB - latA) * KM_DEG;
+  const eps = slackKm + 0.01 * len;
+  const ax = 0, ay = latA * KM_DEG, bx = (lb - lonA) * cosL * KM_DEG, by = latB * KM_DEG;
+  if (!r.poly) {
+    const cx = (r.circle!.lon - lonA) * cosL * KM_DEG, cy = r.circle!.lat * KM_DEG;
+    return segPointKm(ax, ay, bx, by, cx, cy) < r.circle!.km + eps && Math.max(Math.hypot(ax - cx, ay - cy), Math.hypot(bx - cx, by - cy)) > r.circle!.km - eps;
+  }
+  const p = r.poly;
+  for (let i = 0; i < p.length; i++) {
+    const [y0, x0] = p[i]!, [y1, x1] = p[(i + 1) % p.length]!;
+    let xa = x0 - lonA, xb = x1 - lonA;
+    while (xa > 180) xa -= 360; while (xa < -180) xa += 360;
+    while (xb > 180) xb -= 360; while (xb < -180) xb += 360;
+    if (segSegKm(ax, ay, bx, by, xa * cosL * KM_DEG, y0 * KM_DEG, xb * cosL * KM_DEG, y1 * KM_DEG) < eps) return true;
+  }
+  return false;
+}
+/** Longest chord (km) trusted to be straight in lat/lon; longer steps (SGP4 garbage from decaying objects moves 100+ km/s) are always walked. */
+export const CHORD_MAX_KM = 400;
+/**
+ * Must the region scan walk this 20 s bracket at 1 s? True if the straight chord between the two samples (lat/lon, degrees) can
+ * touch the boundary of any region (bounding boxes first, then the edge test), or if the chord is too long to trust.
+ */
+export function chordNeedsWalk(a: Float64Array, b: Float64Array): boolean {
+  let lb = b[1]!;
+  while (lb - a[1]! > 180) lb -= 360;
+  while (lb - a[1]! < -180) lb += 360;
+  const cosL = Math.max(0.2, Math.cos(((a[0]! + b[0]!) / 2) / DEG));
+  const lenKm = Math.hypot((lb - a[1]!) * cosL, b[0]! - a[0]!) * KM_DEG;
+  if (lenKm > CHORD_MAX_KM) return true;
+  const pad = (CHORD_SLACK_KM + 0.01 * lenKm) / KM_DEG;
+  const latLo = Math.min(a[0]!, b[0]!) - pad, latHi = Math.max(a[0]!, b[0]!) + pad;
+  const lonLo = Math.min(a[1]!, lb) - pad / cosL, lonHi = Math.max(a[1]!, lb) + pad / cosL;
+  for (let k = 0; k < N_REGIONS; k++) {
+    const bb = REGIONS[k]!.bbox;
+    if (latHi < bb[0] || latLo > bb[1]) continue;
+    let overlap = false;
+    for (const sh of [-360, 0, 360]) if (lonHi + sh >= bb[2] && lonLo + sh <= bb[3]) { overlap = true; break; }
+    if (overlap && chordTouchesRegion(REGIONS[k]!, a[0]!, a[1]!, b[0]!, b[1]!)) return true;
+  }
+  return false;
 }

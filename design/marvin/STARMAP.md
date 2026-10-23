@@ -438,3 +438,273 @@ bash packages/backend/scripts/starmap/check.sh
 ```
 Raw outputs are in `packages/backend/data/coverage/q/report.txt`, `.../q/shortcut.txt`, `.../report.jsonl` (step 10 s)
 and `.../q20/report-step20.jsonl` (the first, 20 s run, kept for comparison).
+
+## Round 4 — T2 (cloud): derived events
+
+Machine: the same cloud container as T0/T1 (4 cores, 15 GB RAM, no swap, Node 22), worker budget 4 threads. During the
+29-day derive nothing else heavy ran (I only ran two few-second report queries). The verification scripts and the
+checks below ran one at a time afterwards. Local TimescaleDB 2.31 in Docker for the table `starmap.event`.
+
+**What a "derived event" is, in plain words.** Once a day a job looks at that day's element sets and writes down the
+facts people keep asking about, so a question later becomes a lookup instead of a calculation. The facts: a new object
+appeared; an object vanished; an object's orbit changed suddenly (`elements.jump`, a manoeuvre candidate); two objects
+flew within a few km of each other (`close.approach`) or stayed together (`close.formation`); an object flew over a
+named region (`region.pass`, 8 regions). A "regime" is the orbit family: LEO is low (up to about 2,000 km), MEO is
+medium (GPS and similar), GEO is the 36,000 km ring where satellites hover over one spot, HEO is the stretched
+elliptical orbits. "p50 / p90 / p99" mean: half / nine in ten / ninety-nine in a hundred of the cases are below this.
+
+### What changed in the code (all in `packages/backend/scripts/starmap/`)
+
+- `derive-day.ts` (the daily job) is now resumable and transactional: a day is written in one transaction, and a
+  re-run skips days already recorded. It runs 4 workers, writes its caches into `data/events/` (gitignored) and reuses
+  the Mac pipeline for the grid.
+- `events.ts`: the India polygon is now **the same `INDIA_POLY` as T1** (`coverage-lib.ts`), so results can be
+  cross-checked. The other seven regions are still the Mac's rough polygons.
+- Region passes (`events-worker.ts`, new `events-region.ts`): the Mac's 20 s step + bisection can miss a pass shorter
+  than 20 s. Now every 20 s bracket is walked at 1 s if the straight line between its two sample points could touch
+  a region edge (chord test in `events.ts`; a step longer than 400 km is always walked). Same idea as T1's graze fix.
+- `events-ca.ts` (new): classification of close approaches (below). `events-report.ts`, `verify-events.ts`,
+  `jump-study.ts`, `ca-categorize.ts` are new analysis/verification scripts. `events-queries.ts` and `jump-dist.ts`
+  were adapted. New unit tests: `events-region.test.ts` (a 3 s graze between two samples is found and the old logic
+  misses it), `events-region-geo.test.ts` (chord tests, antimeridian, circle), `events-ca.test.ts`.
+
+### Numbers
+
+**Time to derive.** One day = about 3.7 minutes on 4 cores, so all 29 days took **107.6 minutes** (under the 2-hour
+line, so every kind was derived for every day; nothing was skipped or sampled). Mean per day over 29 days:
+
+| part | seconds/day | share |
+|---|---|---|
+| diff (appeared, disappeared, jumps) | 0.2 | 0.1% |
+| region.pass, 8 regions, 1 s resolution | 66.1 | 30% |
+| close approaches: all-vs-all grid | 140.0 | 63% |
+| close approaches: formation check + exact refine | 12.3 + 2.7 | 7% |
+| load + worker start | about 1.2 | 0.5% |
+| **total** | **222.6** (min 215.7, max 240.8) | |
+
+Peak memory about 1.2 GB (polled every 2 s). A full 1,826-day backfill on this machine would be 222.6 s x 1,826 = about
+113 hours (4.7 days) of 4 cores; the close-approach grid is 70% of that. The first day (2026-09-20) has no previous
+day, so the three diff kinds cover 28 days. Every day the job skips about 90 objects whose SGP4 output is garbage
+(mostly decaying objects, "fenced"), 0.6 with unusable elements, and excludes 5 groups of identical element sets.
+
+**Rows and storage, per kind** (table `starmap.event`, 29 days; "storage" is heap + the three indexes, measured by
+copying each kind into its own table with the same indexes; whole table 529 MB):
+
+| kind | rows (29 d) | rows/day | MB/day | 5 years (linear x1,826) |
+|---|---|---|---|---|
+| object.appeared | 641 | 22 | 0.01 | 40 k rows, 0.03 GB |
+| object.disappeared | 390 | 13 | 0.01 | 25 k rows, 0.02 GB |
+| elements.jump | 8,968 | 309 | 0.13 | 0.56 M rows, 0.24 GB |
+| close.formation | 4,753 | 164 | 0.05 | 0.30 M rows, 0.09 GB |
+| close.approach (stored: under 1 km, relative speed 0.5 km/s or more, label in payload) | 55,503 | 1,914 | 0.59 | 3.49 M rows, 1.08 GB |
+| region.pass (8 regions, one row per object per day) | 898,158 | 30,971 | 18.0 | 56.6 M rows, 32.8 GB |
+| **all kinds** | 968,413 | 33.4 k | 18.7 | 34.3 GB |
+
+Everything except region.pass is **1.5 GB per 5 years**. region.pass is 97% of the storage. If it were stored one
+row per pass (the "natural" form) it would be 881,199 rows and 154 MB per day (281 GB per 5 years), measured on
+2026-09-30; packing one row per object per day (all that object's passes of that day in one text field) is 8.6x smaller.
+The Mac measured about 17 MB/day packed; same ballpark. About 67.6% of the passes belong to objects that are neither
+debris nor rocket bodies (the history files do not separate payloads from "unknown"), so a payload-only table would be
+about 22 GB per 5 years (extrapolated from that share, not stored). The information content is much smaller than the
+rows (881 k passes x two times of day), so a binary format would shrink it again; not tried.
+
+**Row counts by day** (rows/day: appeared / disappeared / jumps / region / approach / formation): 2026-09-21
+49/10/586/30,900/1,108/297; 2026-09-30 36/21/44/30,923/1,222/227; 2026-10-18 21/12/484/31,093/1,070/144. Daily
+region rows are steady (30,894 to 31,108); jumps swing 33 to 757 with how many element sets were refreshed that day
+(about 15,900 sets change per day, between 3,400 and 28,200).
+
+### Element jumps (maneuver candidates)
+
+For every object whose element set changed since the previous day, I propagate the old set to the new set's epoch and
+measure how far the old prediction is from the new set (`dpos`, km), and the change in orbit size (semi-major axis,
+`Δa`, km, from the mean motion). 444,635 changed sets in 28 days:
+
+| regime | n | dpos p50 / p90 / p99 / p99.9 (km) | abs(Δa) p50 / p90 / p99 (km) | share with dpos > 16.3 km | share with abs(Δa) > 1 km |
+|---|---|---|---|---|---|
+| LEO | 396,142 | 1.63 / 55.8 / 766 / 8,313 | 0.018 / 0.152 / 7.7 | 24.5% | 3.05% |
+| MEO | 6,851 | 0.36 / 2.3 / 48 / 294 | 0.003 / 0.094 / 0.79 | 2.4% | 0.79% |
+| GEO | 21,580 | 1.02 / 10.9 / 57 / 1,046 | 0.159 / 0.449 / 2.26 | 6.7% | 3.90% |
+| HEO | 19,190 | 1.53 / 13.6 / 220 / 3,505 | 0.116 / 1.59 / 26.9 | 8.7% | 14.1% |
+| other | 872 | 0.70 / 2.8 / 227 / 452 | 0.118 / 0.284 / 13.9 | 4.8% | 3.2% |
+
+The gap between the two element sets is a median of 2 days (p90 2.8 d), and the error grows with the gap, so a
+position difference alone mostly measures drag and age, not manoeuvres: a quarter of all LEO updates differ by more
+than 16 km without anything having been done.
+
+**Chosen rule** (stored as `elements.jump`): `dpos > 16.3 km` AND `abs(Δa) > 1 km` AND `abs(Δa - drag) > 1 km`.
+Justification: 16.3 km is ten times the LEO median error (the Mac's number); 1 km in Δa is 6.6 times the LEO p90
+(0.15 km) and above the MEO/GEO p90; and the third test removes the shrinking that drag alone predicts (the old
+set's own drag term `MEAN_MOTION_DOT` times the gap). That third test removed 26% of what the Mac rule stored (3,319
+of 12,556 jumps in 28 days were "lowering, explained by drag"). A raise can never be drag. Result: 8,968 jumps in 28
+days (309/day): LEO 7,960 (Starlink 5,997 of them: 4,144 lowering, 1,853 raising), GEO 523, HEO 449, MEO 10, other 26.
+Last 7 days, Starlink: 1,393 jumps on 754 satellites (1,133 lowering, 260 raising) of 2,127 jumps overall.
+Caution: this is a manoeuvre **candidate**. A lowering of several km in two days is also what an atmosphere-heavy
+Starlink at about 465 km does, and Starlink was in a shell-lowering campaign; I have no manoeuvre log to
+separate them, so the label stays "candidate". Objects with absurd orbits (a lunar-distance spacecraft, DRO-A, with
+Δa = 154,000 km) are SGP4-invalid; they appear in the unfiltered list but SGP4 cannot be trusted there.
+
+Top examples stored (by abs Δa, excluding HEO): CZ-3B rocket body 2026-09-25 Δa = -1,341 km (re-entering, garbage);
+GEO satellites changing slot: LDPE-2 +245 km (2026-10-13) and +239 km (10-09); EOS-5 +222 km; TJS-17 +202 km;
+TIANLIAN-2 06 +199 km on 10-10 and -199 km on 10-15 (out and back); TJS-19 -197 km. The **ISS reboost is caught**:
+2026-09-27, Δa = +1.826 km, dpos 427 km, raise.
+
+### Close approaches, categorised
+
+What the grid finds (all pairs of different, non-identical objects within 5 km at their closest, found with a spatial
+grid of the whole catalog every 5 s, then refined exactly): **73,873 per day on average** (68,702 to 95,840; two
+days above 95 k). That is geometry, not duplicates: a back-of-envelope uniform-density estimate (28,500 LEO objects in a
+shell of 5.4 x 10^11 km^3, average speed difference 10 km/s) gives about 51,000 per day, so tens of thousands of
+random crossings a day under 5 km is what a crowded low orbit produces. The fraction below 1 km (1,942) is smaller
+than the area rule would give (2,955), consistent with constellation operators keeping their planes apart. Breakdown,
+mean per day over 29 days, events with a miss distance below the column value:
+
+| category (first match wins) | < 5 km | < 2 km | < 1 km | < 0.5 km | < 0.25 km |
+|---|---|---|---|---|---|
+| near-identical elements (a within 1 km, inclination and node within 0.01 deg) | 0 | 0 | 0 | 0 | 0 |
+| co-moving (relative speed below 0.5 km/s) | 495 | 82 | 28 | 8 | 2 |
+| same launch (same launch id, e.g. a deployment batch or one breakup) | 678 | 107 | 26 | 6 | 1 |
+| same name prefix, different launch (98% Starlink x Starlink on the day I checked) | 43,804 | 2,380 | 762 | 217 | 55 |
+| **crossing: unrelated objects that actually cross** | **28,895** | 4,572 | **1,126** | 279 | 68 |
+| all | 73,873 | 7,141 | 1,942 | 511 | 127 |
+
+Other facts (all < 5 km events): 83% last under 1 s inside the 5 km sphere (a fast crossing; 15% 1 to 5 s, 1.5% 5 to
+30 s, 0.3% 30 s or more). For crossings under 1 km on 2026-09-30, 64% had a relative speed of 12 km/s or more (nearly
+head-on), only 2% below 2 km/s; 47% of them involve a Starlink. Near-identical-element pairs are zero in the approach
+list because those pairs stay together all day, so they are in `close.formation` instead (73 per day, plus 32 same-launch,
+31 same-name, 28 other; 164 per day in total). The 19 objects with literally identical element sets (ISS stack, etc.)
+are excluded before the grid.
+
+**Before and after (lead's revised definition).** Before: 73,873 rows/day (the Mac saw 70 to 77 k). **After: 1,914 rows/day**
+(1,246 to 5,155 on a single day), a 39-fold cut; 55,503 rows in 29 days. The stored kind `close.approach` is now:
+miss distance **under 1 km** AND relative speed **0.5 km/s or more**, excluding only identical element sets and pairs
+already recorded as `close.formation` (the slow, co-moving ones). The category is a **payload label** (`cat`), not a filter.
+Stored rows by label, per day: `crossing` 1,126 (unrelated objects), `same_family` 762 (98% Starlink x Starlink), `same_launch` 26,
+no near-identical pairs (those sit in formation). The old 1,126/day is the "crossing-only subset" (`WHERE payload->>'cat'='crossing'`).
+Why labels and not filters: a pair of the same constellation or the same launch that passes at 0.5 km/s or more is flying
+in different planes or shells and really crosses; it is the traffic operators screen for. Dropping them (my first version) hid
+more than half of the real sub-km encounters (on 2026-09-30: 1,220 crossings, 1,478 same-family, 29 same-launch). Only what stays
+together (slow, in formation) is separated out; a reader who wants only unrelated pairs filters on the label.
+Why 1 km: public element sets are good to about 1 km at their epoch and drift about 1 km a day, so a miss distance
+under 1 km is already "indistinguishable from a hit" and a tighter number would claim accuracy the data do not have;
+there is no covariance, so I cannot rank by collision probability and rank by miss distance. The full set under
+5 km is **compute on demand only**: the grid costs about 150 s of the 4 cores per day; the one day I kept for
+evidence (2026-09-30, 78,324 events) is a 1.1 MB file. The name-prefix test is crude (it also lumps unrelated COSMOS x
+COSMOS pairs, about 1% of the same-family bucket), which now only affects a label.
+
+### Disappeared objects: decay or just stale?
+
+Each day's history file lists every object's latest element set from the **previous 30 days**. So an object also
+"disappears" from the file when its last set simply reaches 30 days of age, whether or not it decayed. Classes
+(390 disappearances in 28 days): `decay_likely` 98 (last perigee below 250 km or SGP4 height below 140 km at the
+vanishing time), `ambiguous_low` 6 (perigee 250 to 350 km), `stale_window` 286 (nothing wrong with the orbit, last set
+about 29.5 days old). The Mac's old rule put every case into "stale" because it tested age first; checking the
+decay signature first is the fix. Checks against what happened afterwards (Q-E4): of the 286 stale, **195 are still in the
+live catalog of 2026-10-22 and 189 reappeared inside the window**, so they were certainly not decays; of the 98
+decay_likely, **1** is in the live catalog (97 are gone). The ambiguity: **91 of the 286 "stale" objects are not in
+the live catalog and have no decay signature** (48 LEO with perigee 365 to 1,483 km, 35 HEO, 6 MEO, 2 GEO). They may have
+decayed, or been dropped from the catalog; elements alone cannot tell, so these stay "stale/unknown", never "decayed". The only
+independent status source in the repo (GCAT, 2026-07-03) is older than these days and cannot serve as truth.
+Appearances (641 in 28 days): 323 returned after an earlier absence, 217 new launches (launched within 31 days), 101 newly
+cataloged older objects.
+
+### The four questions (median of 5 runs each, warm cache, local database)
+
+| Question | Answer | Median |
+|---|---|---|
+| Q-E1: all ISS passes over India, 29 days | 91 passes (5 runs: 2.6 / 0.8 / 0.9 / 1.0 / 0.7 ms) | **0.9 ms** (brute-force SGP4 at 5 s: 4.5 s) |
+| Q-E2: all close approaches involving one busy object (PELICAN-6 300D, the object in most) | 185 events; closest 0.068 km on 2026-10-07 (re-run after the redefinition: 6.3 / 3.2 / 2.9 / 2.3 / 2.3 ms; first run 1.9 ms median) | **2.9 ms** (last 7 days only: 34 events, 1.1 ms) |
+| Q-E3: Starlink manoeuvre candidates, last 7 days | 1,393 events on 754 satellites (1,133 lowering, 260 raising) | **5.1 ms** |
+| Q-E4: who disappeared in 29 days and was it a decay | 390 events, by class with live-catalog and reappearance check (above) | **6.2 ms** |
+
+### Verification (all against code that does not share the fast path)
+
+1. **Q-E1 ISS vs brute force.** Own SGP4 loop at 5 s over all 29 days with each day's own element set, geodetic
+   latitude by satellite.js, T1's polygon. **90 brute-force passes; all 90 are in the stored rows (100% recall)**,
+   start times within 4 s and end times within 5 s (the brute force only knows 5 s). The stored data have 91: the extra
+   one is a 2-second corner clip (2026-09-25 07:23:48) shorter than the brute-force step, found by the 1 s walk.
+2. **Region passes, random sample of other objects, all eight regions.** 6 random days, about 480 objects per day
+   (60% LEO, 10% each of the other regimes, 2,888 object-days), brute force every 2 s: **58,137 brute-force passes, 58,137
+   inside a stored pass: recall 100.000%**, per region EU 11,296, CN 11,331, US 10,127, BR 7,533, JP 3,604, AU 7,336, BLR
+   1,628, IN 5,282 (each 100%). 48 stored passes have no brute-force pass nearby: all shorter than the 2 s brute step.
+   A first 3-day run showed 28,819 of 28,820; the one apparent miss was a 276 s pass that the stored data split at a 1 s
+   notch where the track crosses a vertex of the India polygon (confirmed second by second), so nothing was missing;
+   the checker now treats passes separated by 2 s or less as one. The max start/end differences on the clean
+   passes are 1 s and 2 s; a few long "passes" of slow MEO/GEO objects that crawl along a polygon edge differ by hundreds
+   of seconds (6-day run: 637 s); I did not look into them, the likely cause is an object hugging a polygon edge so that the stored pass is chopped
+   into many short pieces which the checker merges, but all 58,137 passes were still covered.
+3. **Cross-check with T1.** Object-days with an India pass: this job 857,054 vs T1's brute-force truth 857,003
+   (per day -5 to +8; the +51 are visits shorter than T1's 10 s step, plus T1's three garbage cases and the fence).
+4. **Recall bugs found and fixed on the way (real).** Making region passes faster than "walk 1 s wherever near"
+   (201 s/day) with the straight-line test (now 66 s) first missed 4 short passes (2 to 6 s long) that the slow reference found: a GPS satellite creeping
+   along a polygon edge (I had computed latitude as for ground level, off by up to 0.6 degrees at 20,000 km), two on a decaying
+   object whose garbage SGP4 track moves 110 km/s so 20 s is 2,200 km, and a 4 s US pass on another object that the same two
+   fixes also recovered. Fixes: exact latitude for high objects, and any step over 400 km is always walked. After the fix the 2026-09-30 table equals the slow
+   reference on all 30,923 rows (two garbage-orbit rows differ by 1 s in an edge time).
+5. **Close approaches recomputed exactly.** Five random stored approaches, scanned by brute force every 10 ms over plus
+   or minus 20 s (no optimiser) from the raw element sets: miss distance, time and relative speed identical to the
+   stored values (|difference| 0.000 km, 0.00 s) for all five, e.g. 327 / 64972 on 2026-10-14: 0.684 km at 21:19:10.314 UTC, 13.47
+   km/s. A second set of five with a different method gave the same. **After the redefinition** the exact recompute was repeated on the new rows: 3 `same_family` (0.537, 0.364, 0.575 km) and 2 `crossing` (0.781, 0.712 km) stored approaches match the 10 ms brute-force scan exactly (0.000 km, 0.00 s, same relative speed); the golden-section spot-check of 5 more also matches. `check.sh` passes. **Recall of the grid** (this had not been checked
+   here): the ISS, the 30 objects with the most approaches and 12 random ones, against every other object for 3 hours
+   of 2026-09-30 at 2 s plus exact refinement: 237 brute-force approaches under 5 km, **237 in the derived full set (100%)**. Pairs
+   in `close.formation` are excluded from both sides. Not checked: a whole-day all-vs-all brute force (it would be
+   32,000 x 32,000 pairs).
+6. **Formation.** Five random stored formation pairs recomputed at 60 s: the fraction of the day within 50 km and the
+   minimum distance match exactly (e.g. TerraSAR-X / TanDEM-X 1.000, 0.239 km; Dragon Freedom 3 / Dragon Grace 2 0.881, 37.9 km).
+7. **Appeared/disappeared** equal the plain set difference of the two raw history files on 3 days (8/11, 76/10, 33/31).
+8. **Five jumps by hand** (period from mean motion, a = (mu x (T / 2 pi)^2)^(1/3), mu = 398,600.4418 km^3/s^2): STARLINK-4196
+   (2026-10-18): n = 15.33550274 rev/day gives T = 5,633.985 s, a = 6,843.367 km; new n = 15.34316581 gives a = 6,841.088 km;
+   Δa = -2.279 km, stored -2.279. STARLINK-4746: -6.407 km (stored -6.407), dpos 708.7 km. STARLINK-36255: -10.199, dpos 1,120 km.
+   COSMOS 2539 (GEO): -2.769 km, dpos 42.9 km. FLOCK 4BE 15: -10.489 km, dpos 195.3 km. In all five the stored Δa and dpos equal
+   the recomputation (old set propagated to the new epoch with SGP4, compared with the new set). All five happen to be lowerings,
+   which is the caution above: this proves the arithmetic, not that each was a manoeuvre.
+
+### Verdict per kind
+
+| kind | verdict | why |
+|---|---|---|
+| object.appeared / disappeared | **keep forever** | 35 rows a day, 0.05 GB per 5 years, exact set difference. Say "left the catalog", not "decayed", unless the class is `decay_likely` (97 of 98 verified by absence) and an outside source confirms it. |
+| elements.jump | **keep forever** (as "manoeuvre candidates") | 309/day, 0.24 GB per 5 years; catches the ISS reboost and GEO slot changes; about two thirds are Starlink and cannot be told apart from drag-driven lowering with public elements alone. |
+| close.formation | **keep forever** | 164/day, 0.09 GB per 5 years, verified; it also explains the pairs removed from the approach list. |
+| close.approach, under 1 km and 0.5 km/s or faster, labelled crossing / same_family / same_launch | **keep forever** | 1,914/day (crossing-only subset 1,126/day), 1.08 GB per 5 years, verified exactly (miss, time, speed) and 100% recall in the grid test; queryable in 2 to 3 ms. |
+| close.approach, the full set under 5 km | **compute on demand** | 73,873/day, mostly random crossings and Starlink-on-Starlink; about 155 s of 4 cores per day; do not store. |
+| region.pass (8 regions) | **compute on demand** (or keep only a rolling window, such as the last 30 days, or only watched regions) | 32.8 GB per 5 years packed, 97% of everything, 66 s of 4 cores per day to rebuild; T1's star-map summaries already answer the long-window "who passed over X" question. Even India alone, packed (857,054 rows, 179 MB for 29 days, measured, = 6.2 MB/day or about 11 GB per 5 years), is 11 times the rest of the table combined. |
+
+**Caveats and what was not done.** Everything is one machine, one run per kind; the 5-year figures are straight-line
+multiples of 29 days (the real history before June 2026 is too sparse for a true 5-year backfill). The seven non-India
+regions are rough polygons from the Mac, and only India shares T1's polygon. The grid was verified for 3 hours and 43
+objects, not for a whole day all-vs-all. The decay/stale split has no outside truth. Region and approach rows
+skip about 90 objects a day with garbage SGP4 output (mostly decaying objects), so their re-entry passes are not
+listed. Peak memory was polled, not traced. The payload-only region size is extrapolated from a pass share.
+
+**Region-pass checker cases that differ by up to 637 s: explained, not a defect.** I re-ran the 6-day check printing every
+case with a start/end difference over 60 s. All 30 listed cases (cap of the listing; the 637 s maximum is among that pattern) have the same shape: the brute force sees
+**two** passes separated by a gap of about 4 s (e.g. Starlink-2479 over China, 58546..58900 s and 58904..59070 s), the stored
+data have two pieces separated by 1 to 2 s inside one merged span (58546..59072 s). So a track briefly (about 1 s) leaves the
+polygon at a vertex notch; the 2 s brute force sees it as a longer gap, and my checker, which merges stored pieces separated by 2 s or
+less, then compares each brute pass against the whole merged span, which makes the start or end look hundreds of seconds off. Every
+brute-force pass is still inside a stored piece; 58,137 of 58,137 covered (output: `verify-regions6b.txt`).
+
+**Re-derive after the definition change.** Only the close-approach part was re-derived for all 29 days (`--only ca`, resumable
+via a `caDef` marker in the day statistics): about 150 s per day on 4 cores (the run was interrupted by a container restart and resumed); other kinds unchanged.
+
+Reproduce (from the repo root; `export STARMAP_DB=postgres://orbitwatch:orbitwatch@localhost:5432/orbitwatch`):
+```
+npx tsx packages/backend/scripts/starmap/derive-day.ts --from 2026-09-20 --to 2026-10-18        # ~108 min, resumable
+npx tsx packages/backend/scripts/starmap/derive-day.ts --from 2026-09-30 --only ca --ca-full --force   # keep the <5 km set of a day
+npx tsx packages/backend/scripts/starmap/events-report.ts days | ca | diff | storage              # tables above
+npx tsx packages/backend/scripts/starmap/events-queries.ts q                                     # Q-E1..Q-E4, median of 5
+npx tsx packages/backend/scripts/starmap/events-queries.ts verify                               # ISS vs brute force; 5 approaches
+npx tsx packages/backend/scripts/starmap/verify-events.ts regions --objects 500 --days 6 --step 2   # ~13 min
+npx tsx packages/backend/scripts/starmap/verify-events.ts ca-recall 2026-09-30 0 3               # ~4 min
+npx tsx packages/backend/scripts/starmap/verify-events.ts ca-exact | formation | diff | jumps
+npx tsx packages/backend/scripts/starmap/jump-dist.ts ; npx tsx packages/backend/scripts/starmap/jump-study.ts
+bash packages/backend/scripts/starmap/check.sh
+```
+Raw outputs: `packages/backend/data/events/` (`derive-all.log`, `events-stats.jsonl`, `report-*.txt`, `q-run1.txt`,
+`verify-*.txt`, `jump-study.txt`, `ca-full-2026-09-30.jsonl.gz`).
+
+**Lead's independent check** (separate code, own SGP4 loop at 10 ms): a random stored same_family row,
+STARLINK-5503 x STARLINK-36744 on 2026-10-12, recomputes to 0.610 km at the stored instant (0.00 s) at 2.64 km/s,
+identical to the stored payload. The lead also confirmed from the 2026-09-30 evidence file that under 1 km and
+>= 0.5 km/s there were 1,220 crossing, 1,478 same_family and 29 same_launch encounters, which is why the
+categories are labels and not filters.

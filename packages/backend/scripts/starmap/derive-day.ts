@@ -1,21 +1,29 @@
 // ============================================================
 // SPIKE — not production. Daily "Layer 3" job: derive the day's events once and append them to starmap.event.
-//   npx tsx packages/backend/scripts/starmap/derive-day.ts --from 2026-09-20 --to 2026-10-18 [--dry] [--ca-hours H] [--only region,ca,diff]
+//   export STARMAP_DB=postgres://orbitwatch:orbitwatch@localhost:5432/orbitwatch
+//   npx tsx packages/backend/scripts/starmap/derive-day.ts --from 2026-09-20 --to 2026-10-18
+//     [--only diff,region,ca]   which parts to run (default all); a part rewrites only its own kinds for the day
+//     [--force]                 redo days already derived (default: skip a day whose three parts are all recorded in starmap.event_stats)
+//     [--workers 4]  [--ca-full] (also write the whole < 5 km set of the day to data/events/ca-full-DAY.jsonl.gz)
+//     [--region-mode packed|raw]  [--dry] [--dump file.json]
 // Day D = UTC [D 00:00, D+1 00:00) using the catalog file of day D (its element sets end at D+1 00:00).
 // diff kinds (appeared / disappeared / jump) compare with the previous day's catalog (skipped for the first day).
+// A day is written in ONE transaction (delete that day's kinds, insert, record stats), so a crash leaves no half day;
+// re-running the same command resumes at the first day not yet recorded.
 // ============================================================
-import { readFileSync, appendFileSync, existsSync, writeFileSync } from 'node:fs';
-import { gunzipSync } from 'node:zlib';
+import { readFileSync, appendFileSync, existsSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import pg from 'pg';
 import { geodeticLatAltFromEr, ER_KM } from '@orbitwatch/orbital-core';
 import { parseArgs } from './catalog.js';
 import { makeProp, type Prop } from './runs.js';
 import { EvPool } from './events-pool.js';
 import {
-  REGION_CODES, DAY_MS, DDL, DB_URL, HISTORY_DIR, REGIONS, contiguousDays, dayStartMs, prevDay, loadDayCatalog, identicalGroups,
+  REGION_CODES, EVENTS_DIR, DAY_MS, DDL, DB_URL, HISTORY_DIR, REGIONS, contiguousDays, dayStartMs, prevDay, loadDayCatalog, identicalGroups,
   jumpMetrics, posAt, epochMsOf, insertEvents, type EventRow, type CatFull,
 } from './events.js';
 import type { CaOut } from './events-worker.js';
+import { classifyCa, type ElsetLite } from './events-ca.js';
 
 const args = parseArgs(process.argv.slice(2));
 const ALL_DAYS = contiguousDays();
@@ -24,14 +32,22 @@ const DRY = args.has('dry');
 const ONLY = new Set((args.get('only') ?? 'diff,region,ca').split(','));
 const CA_HOURS = args.has('ca-hours') ? Number(args.get('ca-hours')) : 24;
 const CA_DT_S = Number(args.get('ca-dt') ?? 5);
-const WORKERS = 5;
-const REGION_MODE = args.get('region-mode') ?? 'raw'; // raw | packed
+const FULL_CA = args.has('ca-full'); // also write the whole < 5 km set of the day to data/events/ca-full-DAY.jsonl.gz (on-demand evidence)
+const FORCE = args.has('force');
+const WORKERS = Number(args.get('workers') ?? 4);
+const REGION_MODE = args.get('region-mode') ?? 'packed'; // raw | packed
 const REGION_SET = args.get('region-set') ?? 'all'; // all | payload (objectType not debris/rocket_body)
 
 // ---- thresholds (see jump-dist.ts: LEO p50 dpos = 1.63 km -> 10x = 16.3 km) ----
 export const JUMP_DPOS_KM = 16.3;
+/** A jump is stored when the old set, propagated to the new epoch, is > 16.3 km off (10x the LEO median error), AND the semi-major axis
+ *  changed by > 1 km, AND by > 1 km even after removing the drag the old set predicted. */
 export const JUMP_DA_KM = 1.0;
 export const CA_KM = 5;
+/** Stored close.approach: unrelated objects (category 'crossing') with a miss distance under this (km). Public element error is ~1 km. */
+export const CA_STORE_KM = 1;
+/** ... and relative speed at least this (km/s); the category (crossing / same_family / same_launch) is only a payload label. */
+export const CA_MIN_V = 0.5;
 export const FORM_KM = 50;
 export const FORM_FRAC = 0.5;
 
@@ -41,7 +57,7 @@ const secs = (t: number) => +((Date.now() - t) / 1000).toFixed(2);
 let firstSeen: Map<number, string> | null = null;
 function getFirstSeen(): Map<number, string> {
   if (firstSeen) return firstSeen;
-  const f = '/tmp/starmap/firstseen.json';
+  const f = EVENTS_DIR + 'firstseen.json';
   if (existsSync(f)) return (firstSeen = new Map(Object.entries(JSON.parse(readFileSync(f, 'utf8')) as Record<string, string>).map(([k, v]) => [Number(k), v])));
   const days = readFileSyncDays();
   const m = new Map<number, string>();
@@ -50,7 +66,13 @@ function getFirstSeen(): Map<number, string> {
   return (firstSeen = m);
 }
 function readFileSyncDays(): string[] {
-  return readFileSync(HISTORY_DIR + 'days.txt', 'utf8').split('\n').filter(Boolean).concat(ALL_DAYS).filter((d, i, a) => a.indexOf(d) === i).sort();
+  return readdirSync(HISTORY_DIR).filter((f) => /^catalog-\d{4}-\d{2}-\d{2}\.json$/.test(f)).map((f) => f.slice(8, 18)).sort();
+}
+let liveSet: Set<number> | null = null;
+/** NORAD ids in the live catalog (tle-cache.json, fetched 2026-10-22): present there means certainly not decayed. */
+function liveIds(): Set<number> {
+  if (!liveSet) liveSet = new Set((JSON.parse(readFileSync(HISTORY_DIR + '../tle-cache.json', 'utf8')) as Array<{ noradId: number }>).map((o) => o.noradId));
+  return liveSet;
 }
 let satcat: Map<number, string> | null = null;
 function getSatcat(): Map<number, string> {
@@ -93,12 +115,16 @@ function diffEvents(day: string, prev: CatFull[], cur: CatFull[]) {
     const pos = p ? posAt(p, t0) : null;
     if (pos) altKm = geodeticLatAltFromEr({ x: pos[0] / ER_KM, y: pos[1] / ER_KM, z: pos[2] / ER_KM }).altKm;
     const perigee = o.perigee ?? NaN;
-    const cls = ageDays >= 28 ? 'stale_window' : altKm === null || altKm < 140 || perigee < 250 ? 'decay_likely' : 'unexplained';
-    const truth = sc.get(o.noradId) ?? 'unknown';
+    // Elements alone cannot say "decayed" vs "aged out of the 30-day window": an object that stopped being tracked 30 days
+    // ago looks the same either way. So: a low last perigee / low propagated height is a decay signature (checked FIRST),
+    // otherwise stale if the last elements are about 30 days old, otherwise unexplained.
+    const cls = altKm === null || altKm < 140 || perigee < 250 ? 'decay_likely' : perigee < 350 && ageDays >= 28 ? 'ambiguous_low' : ageDays >= 28 ? 'stale_window' : 'unexplained';
+    const inLive = liveIds().has(o.noradId);
+    const truth = sc.get(o.noradId) ?? 'unknown'; // GCAT snapshot of 2026-07-03: older than these days, so NOT a truth for them; kept only as a hint
     disClass[cls] = (disClass[cls] ?? 0) + 1;
     confusion[`${cls}|${truth}`] = (confusion[`${cls}|${truth}`] ?? 0) + 1;
     rows.push({ kind: 'object.disappeared', subjects: [o.noradId], tStart: t0, tEnd: t0, payload: {
-      cls, satcat: truth, reg: o.regime, ageDays: +ageDays.toFixed(2), perigee: o.perigee, apogee: o.apogee,
+      cls, satcat: truth, live: inLive ? 1 : 0, reg: o.regime, ageDays: +ageDays.toFixed(2), perigee: o.perigee, apogee: o.apogee,
       bstar: Number(o.omm.BSTAR), mmdot: Number(o.omm.MEAN_MOTION_DOT), altKm: altKm === null ? null : +altKm.toFixed(1), lastEpoch: o.omm.EPOCH, name: o.name } });
   }
   const nDis = rows.length - nApp;
@@ -108,12 +134,12 @@ function diffEvents(day: string, prev: CatFull[], cur: CatFull[]) {
   let nJump = 0;
   const byDir: Record<string, number> = {};
   for (const m of jm.metrics) {
-    if (!(m.dposKm > JUMP_DPOS_KM && Math.abs(m.daKm) > JUMP_DA_KM)) continue;
+    if (!(m.dposKm > JUMP_DPOS_KM && Math.abs(m.daKm) > JUMP_DA_KM && Math.abs(m.residKm) > JUMP_DA_KM)) continue;
     nJump++;
     const dir = m.daKm > 0 ? 'raise' : 'lower';
     byDir[dir] = (byDir[dir] ?? 0) + 1;
     rows.push({ kind: 'elements.jump', subjects: [m.norad], tStart: m.prevEpochMs, tEnd: m.newEpochMs, payload: {
-      dpos: +m.dposKm.toFixed(2), da: +m.daKm.toFixed(3), dinc: +m.dIncDeg.toFixed(4), along: +m.dAlong.toFixed(2), gap: +m.gapDays.toFixed(2), dir, reg: m.regime, name: m.name } });
+      dpos: +m.dposKm.toFixed(2), da: +m.daKm.toFixed(3), resid: +m.residKm.toFixed(3), dinc: +m.dIncDeg.toFixed(4), along: +m.dAlong.toFixed(2), gap: +m.gapDays.toFixed(2), dir, reg: m.regime, name: m.name } });
   }
   const tJump = secs(tt);
   stat.diff = { appeared: nApp, disappeared: nDis, jumps: nJump, changedElsets: jm.metrics.length, jumpFailed: jm.failed, appClass, disClass, confusion, jumpDir: byDir };
@@ -146,7 +172,12 @@ async function main(): Promise<void> {
   if (!DRY) { await client.connect(); await client.query(DDL); }
   const days = ALL_DAYS.filter((d) => d >= FROM && d <= TO);
   if (ONLY.has('diff')) { const tl = Date.now(); getFirstSeen(); getSatcat(); console.log(`one-time context load (first-seen index, SATCAT status): ${secs(tl)}s`); }
+  mkdirSync(EVENTS_DIR, { recursive: true });
+  const done = new Set<string>();
+  const caOnly = ONLY.size === 1 && ONLY.has('ca');
+  if (!DRY && !FORCE) for (const r of (await client.query(caOnly ? "SELECT day::text AS d FROM starmap.event_stats WHERE stats->>'caDef' = 'v2'" : "SELECT day::text AS d FROM starmap.event_stats WHERE jsonb_array_length(stats->'parts') = 3")).rows as Array<{ d: string }>) done.add(r.d);
   for (const day of days) {
+    if (done.has(day)) { console.log(`${day}  already derived (resume: skipped; --force to redo)`); continue; }
     const T = Date.now();
     const t0 = dayStartMs(day), t1 = t0 + DAY_MS;
     const cur = loadDayCatalog(day);
@@ -305,18 +336,45 @@ async function main(): Promise<void> {
         const found: Array<[number, number, number, number, number]> = [];
         for (const r of routs) for (let k = 0; k < r.length; k += 5) if (r[k + 2]! < CA_KM) found.push([r[k]!, r[k + 1]!, r[k + 2]!, r[k + 3]!, r[k + 4]!]);
         found.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[3] - b[3]);
-        let nCa = 0, dup = 0;
+        let nCa = 0, nCaFull = 0, dup = 0;
         let lastKey = -1, lastT = 0;
+        const lite = (o: CatFull): ElsetLite => ({ name: o.name, objectId: String(o.omm.OBJECT_ID), meanMotion: Number(o.omm.MEAN_MOTION), incDeg: Number(o.omm.INCLINATION), raanDeg: Number(o.omm.RA_OF_ASC_NODE) });
+        const litePool = objs.map(lite);
+        const THR = [5, 2, 1, 0.5, 0.25];
+        const catTab: Record<string, number[]> = {};
+        const bump = (k: string, d: number) => { const a = (catTab[k] ??= THR.map(() => 0)); THR.forEach((t, i) => { if (d < t) a[i]!++; }); };
+        const durBins: Record<string, number> = {};
+        const fullLines: string[] = [];
+        const stored: Record<string, number> = {};
         for (const f of found) {
           const key = f[0] * N + f[1];
           if (key === lastKey && Math.abs(f[3] - lastT) < 10_000) { dup++; continue; }
           lastKey = key; lastT = f[3];
           if (f[3] < t0 || f[3] >= t0 + nSteps * dtMs) continue; // belongs to the neighbouring day
+          nCaFull++;
+          const feat = classifyCa(litePool[f[0]]!, litePool[f[1]]!, f[2], f[4]);
+          bump(feat.cat, f[2]); bump('ALL', f[2]);
+          const db = feat.durS < 1 ? '<1s' : feat.durS < 5 ? '1-5s' : feat.durS < 30 ? '5-30s' : '>=30s';
+          durBins[db] = (durBins[db] ?? 0) + 1;
+          const ids = [objs[f[0]]!.noradId, objs[f[1]]!.noradId].sort((a, b) => a - b);
+          if (FULL_CA) fullLines.push(JSON.stringify([ids[0], ids[1], Math.round(f[3]), +f[2].toFixed(3), +f[4].toFixed(2), feat.cat]));
+          if (f[2] >= CA_STORE_KM || f[4] < CA_MIN_V) continue; // slow co-moving pairs belong to formation, not here
           nCa++;
-          rows.push({ kind: 'close.approach', subjects: [objs[f[0]]!.noradId, objs[f[1]]!.noradId].sort((a, b) => a - b), tStart: Math.round(f[3]), tEnd: Math.round(f[3]), payload: { d: +f[2].toFixed(3), v: +f[4].toFixed(2) } });
+          stored[feat.cat] = (stored[feat.cat] ?? 0) + 1;
+          rows.push({ kind: 'close.approach', subjects: ids, tStart: Math.round(f[3]), tEnd: Math.round(f[3]), payload: { d: +f[2].toFixed(3), v: +f[4].toFixed(2), cat: feat.cat } });
         }
+        if (FULL_CA) writeFileSync(EVENTS_DIR + `ca-full-${day}.jsonl.gz`, gzipSync(fullLines.join('\n')));
+        // what the formation pairs are (twin elements / same launch / same family)
+        const formCat: Record<string, number> = {};
+        for (const r of rows) if (r.kind === 'close.formation') {
+          const ia = objs.findIndex((o) => o.noradId === r.subjects[0]), ib = objs.findIndex((o) => o.noradId === r.subjects[1]);
+          const ft = classifyCa(litePool[ia]!, litePool[ib]!, 0, 99);
+          const k = ft.twin ? 'twin' : ft.sameLaunch ? 'same_launch' : ft.sameFamily ? 'same_family' : 'other';
+          formCat[k] = (formCat[k] ?? 0) + 1;
+        }
+        stats.caCat = catTab; stats.caStoredByCat = stored; stats.caDef = 'v2'; stats.caDurBins = durBins; stats.caFormationCat = formCat; stats.caFullKm5 = nCaFull;
         timing.ca = { grid: gridWall, gridCpu: +cpu.toFixed(1), formation: formWall, refine: secs(tm) };
-        perKind['close.approach'] = nCa; perKind['close.formation'] = nForm;
+        perKind['close.approach'] = nCa; perKind['close.approach.full_lt5km'] = nCaFull; perKind['close.formation'] = nForm;
         Object.assign(stats, { ca: { steps: nSteps + 1, dtS: CA_DT_S, cellKm: L, pairTests: tests, candidates: nCand, encounters: enc.length / 3, refinedFound: found.length, dupDropped: dup, longClusters, formationCandidates: formSet.size, formationPairs: nForm } });
       }
       await pool.close();
@@ -328,15 +386,20 @@ async function main(): Promise<void> {
     stats.timing = timing; stats.rows = perKind;
     if (!DRY) {
       const tw = Date.now();
-      await client.query('DELETE FROM starmap.event WHERE day = $1', [day]);
+      await client.query('BEGIN');
+      const kinds = [...(ONLY.has('diff') && hasPrev ? ['object.appeared', 'object.disappeared', 'elements.jump'] : []), ...(ONLY.has('region') ? ['region.pass'] : []), ...(ONLY.has('ca') ? ['close.approach', 'close.formation'] : [])];
+      await client.query('DELETE FROM starmap.event WHERE day = $1 AND kind = ANY($2::text[])', [day, kinds]);
       const sz0 = Number((await client.query("SELECT pg_total_relation_size('starmap.event') AS s")).rows[0].s);
       await insertEvents(client, day, rows);
       const sz1 = Number((await client.query("SELECT pg_total_relation_size('starmap.event') AS s")).rows[0].s);
       stats.dbWriteSecs = secs(tw);
       stats.tableDeltaMB = +((sz1 - sz0) / 1e6).toFixed(1);
-      await client.query('INSERT INTO starmap.event_stats(day, stats) VALUES ($1, $2) ON CONFLICT (day) DO UPDATE SET stats = EXCLUDED.stats', [day, JSON.stringify(stats)]);
+      const old = (await client.query('SELECT stats->\'parts\' AS p FROM starmap.event_stats WHERE day = $1', [day])).rows[0]?.p as string[] | undefined;
+      stats.parts = [...new Set([...(old ?? []), ...ONLY])];
+      await client.query('INSERT INTO starmap.event_stats(day, stats) VALUES ($1, $2) ON CONFLICT (day) DO UPDATE SET stats = starmap.event_stats.stats || EXCLUDED.stats', [day, JSON.stringify(stats)]);
+      await client.query('COMMIT');
     }
-    appendFileSync('/tmp/starmap/events-stats.jsonl', JSON.stringify(stats) + '\n');
+    appendFileSync(EVENTS_DIR + 'events-stats.jsonl', JSON.stringify(stats) + '\n');
     console.log(`${day}  total ${total}s  rows ${JSON.stringify(perKind)}  timing ${JSON.stringify(timing)}${DRY ? '' : `  db ${stats.dbWriteSecs}s  +${stats.tableDeltaMB} MB`}`);
   }
   if (!DRY) await client.end();

@@ -44,7 +44,7 @@ if (mode === 'q') {
   const top = await client.query(`SELECT s, count(*)::int AS n FROM starmap.event, unnest(subjects) s WHERE kind = 'close.approach' GROUP BY s ORDER BY n DESC LIMIT 6000`);
   const names = new Map(loadDayCatalog(lastDay).map((o) => [o.noradId, o.name]));
   const total = Number((await client.query(`SELECT count(*) FROM starmap.event WHERE kind='close.approach'`)).rows[0].count);
-  const pick = (top.rows as Array<{ s: number; n: number }>).filter((r) => names.has(r.s) && !/STARLINK|ONEWEB/.test(names.get(r.s)!)).sort((x, y) => Math.abs(x.n - 100) - Math.abs(y.n - 100))[0]!; // a non-constellation object with ~100 approaches
+  const pick = { s: (top.rows[0] as { s: number; n: number }).s, n: (top.rows[0] as { s: number; n: number }).n }; // the busiest object in the window
   console.log(`close.approach rows total ${total}; top subject ${top.rows[0].s} (${names.get(top.rows[0].s)}) ${top.rows[0].n}; picked ${pick.s} ${names.get(pick.s)} with ${pick.n}`);
   const e2 = await timed(() => client.query(`SELECT subjects, t_start, payload FROM starmap.event WHERE kind='close.approach' AND subjects @> ARRAY[$1::int] ORDER BY t_start`, [pick.s]));
   console.log(`Q-E2 close approaches involving ${pick.s} (${names.get(pick.s)}): ${e2.out.rowCount} events, median ${e2.ms.toFixed(1)} ms (${e2.all.map((x) => x.toFixed(1)).join('/')}); closest: ${JSON.stringify((e2.out.rows as Array<{ subjects: number[]; t_start: Date; payload: { d: number } }>).sort((a, b) => a.payload.d - b.payload.d).slice(0, 3).map((r) => [r.subjects.join('-'), r.t_start.toISOString(), r.payload.d]))}`);
@@ -60,9 +60,8 @@ if (mode === 'q') {
   console.log(`Q-E3 Starlink elements.jump in last 7 days: ${e3.out.rowCount} events on ${distinctSl} satellites (${JSON.stringify(dirs)}), of ${jumpTotal} jumps all objects; median ${e3.ms.toFixed(1)} ms (${e3.all.map((x) => x.toFixed(1)).join('/')})`);
 
   // Q-E4: disappeared and were they decays
-  const e4 = await timed(() => client.query(`SELECT payload->>'cls' AS cls, payload->>'satcat' AS truth, count(*)::int AS n FROM starmap.event WHERE kind='object.disappeared' GROUP BY 1, 2 ORDER BY 3 DESC`));
-  const e4b = await timed(() => client.query(`SELECT count(*)::int AS n, count(a.id)::int AS reappeared FROM starmap.event d LEFT JOIN starmap.event a ON a.kind='object.appeared' AND a.subjects = d.subjects AND a.day > d.day WHERE d.kind='object.disappeared'`));
-  console.log(`Q-E4 disappeared: ${e4b.out.rows[0].n} events, ${e4b.out.rows[0].reappeared} later reappeared in the window; median ${e4.ms.toFixed(1)} ms group-by / ${e4b.ms.toFixed(1)} ms with reappear join`);
+  const e4 = await timed(() => client.query(`SELECT payload->>'cls' AS cls, count(*)::int AS n, count(*) FILTER (WHERE (payload->>'live')::int = 1)::int AS in_live_catalog, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM starmap.event a WHERE a.kind='object.appeared' AND a.subjects = d.subjects AND a.day > d.day))::int AS reappeared_later FROM starmap.event d WHERE kind='object.disappeared' GROUP BY 1 ORDER BY 2 DESC`));
+  console.log(`Q-E4 objects that disappeared in ${days.length} days, by class (in_live_catalog = still in the 2026-10-22 live catalog, so certainly not decayed); median ${e4.ms.toFixed(1)} ms (${e4.all.map((x) => x.toFixed(1)).join('/')})`);
   console.table(e4.out.rows);
 }
 

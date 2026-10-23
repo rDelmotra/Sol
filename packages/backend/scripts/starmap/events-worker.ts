@@ -5,8 +5,9 @@
 import { parentPort } from 'node:worker_threads';
 import * as satellite from 'satellite.js';
 import { makeProp, type Prop } from './runs.js';
-import { gmst, regionMask, N_REGIONS } from './events.js';
+import { gmst, regionMask, lastLL, chordNeedsWalk } from './events.js';
 import type { InitMsg } from './events-pool.js';
+import { scanRegions } from './events-region.js';
 
 let props: Array<Prop | null> = [];
 let grp: Int32Array;
@@ -149,48 +150,17 @@ function maskAt(p: Prop, tMs: number, theta?: number): number {
   const pv = satellite.sgp4(p.satrec, (tMs - p.epochMs) / 60_000);
   const r = pv ? pv.position : null;
   if (!r || typeof r === 'boolean' || !Number.isFinite(r.x)) return 0;
-  return regionMask(theta ?? gmst(tMs), r.x, r.y, r.z);
+  return regionMask(theta ?? gmst(tMs), r.x, r.y, r.z, false);
 }
 function region(t: RegionTask): Float64Array {
-  const K = Math.round((t.t1Ms - t.t0Ms) / t.stepMs);
-  const theta = new Float64Array(K + 1);
-  for (let k = 0; k <= K; k++) theta[k] = gmst(t.t0Ms + k * t.stepMs);
   const out: number[] = [];
-  const open = new Float64Array(N_REGIONS);
-  const openFlag = new Int8Array(N_REGIONS);
+  const stats = { samples: 0 };
+  const geo = { ll: (o: Float64Array) => { o[0] = lastLL[0]!; o[1] = lastLL[1]!; }, chord: (a: Float64Array, b: Float64Array) => chordNeedsWalk(a, b) };
   for (let oi = t.o0; oi < t.o1; oi++) {
     const o = t.idx ? t.idx[oi]! : oi;
     const p = props[o];
     if (!p) continue;
-    let state = maskAt(p, t.t0Ms, theta[0]);
-    for (let r = 0; r < N_REGIONS; r++) { open[r] = state & (1 << r) ? t.t0Ms : -1; openFlag[r] = 1; }
-    const apply = (tm: number, m: number) => {
-      const ch = m ^ state;
-      for (let r = 0; r < N_REGIONS; r++) {
-        if (!(ch & (1 << r))) continue;
-        if (m & (1 << r)) { open[r] = tm; openFlag[r] = 0; }
-        else { out.push(o, r, open[r]!, tm, openFlag[r]!); open[r] = -1; }
-      }
-      state = m;
-    };
-    const resolve = (tLo: number, mLo: number, tHi: number, mHi: number, ev: Array<[number, number]>) => {
-      if (mLo === mHi) return;
-      if (tHi - tLo <= 1000) { ev.push([Math.round((tLo + tHi) / 2), mHi]); return; }
-      const tMid = Math.floor((tLo + tHi) / 2), mMid = maskAt(p, tMid);
-      if (mMid !== mLo) resolve(tLo, mLo, tMid, mMid, ev);
-      if (mMid !== mHi) resolve(tMid, mMid, tHi, mHi, ev);
-    };
-    for (let k = 1; k <= K; k++) {
-      const tm = t.t0Ms + k * t.stepMs;
-      const m = maskAt(p, tm, theta[k]);
-      if (m !== state) {
-        const ev: Array<[number, number]> = [];
-        resolve(tm - t.stepMs, state, tm, m, ev);
-        for (const [te, me] of ev) apply(te, me);
-        if (state !== m) apply(tm, m); // bisection collapsed (flicker): force to the sample state
-      }
-    }
-    for (let r = 0; r < N_REGIONS; r++) if (open[r]! >= 0) out.push(o, r, open[r]!, t.t1Ms, openFlag[r]! | 2);
+    stats.samples += scanRegions(o, (tm) => maskAt(p, tm), t.t0Ms, t.t1Ms, t.stepMs, 1000, out, undefined, geo).samples;
   }
   return Float64Array.from(out);
 }
