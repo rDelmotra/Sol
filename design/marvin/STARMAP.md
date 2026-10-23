@@ -709,6 +709,90 @@ identical to the stored payload. The lead also confirmed from the 2026-09-30 evi
 >= 0.5 km/s there were 1,220 crossing, 1,478 same_family and 29 same_launch encounters, which is why the
 categories are labels and not filters.
 
+## Round 4 — T3 (cloud): the planner
+
+Machine: the same cloud container (4 cores, 15 GB, Node 22). Jobs ran one at a time (routed Q4/Q5, then brute-force Q4/Q5, and so on), so no
+two heavy jobs overlapped; only short DB lookups and the check script ran beside nothing else. "Now" for Q1/Q2 is fixed at
+**2026-10-23T06:30:00Z**, with the live catalog `tle-cache.json` (32,778 objects). Q3 uses the most recent derived day, 2026-10-18. Q4/Q5 use
+2026-09-20..10-18 with each day's own element sets. Q6 uses 2026-10-01..10-18.
+
+### What was built (all in `packages/backend/scripts/starmap/`)
+
+- `ask.ts` is the router and the six fixed questions; it prints the plan, then runs the routed path and the brute-force path and writes `data/ask/q<N>.json`.
+- `ask-plan.ts` is the decision table: window (instant / hours / days / months) times kind (region-in-time, one-vs-all, all-vs-all, box, repeated fact) goes to a layer.
+  It looks at what exists (derived days in `starmap.event`, hourly and daily coverage files) and falls back (underived day goes to the live grid, no hourly summaries go to daily, none go to brute force).
+  `ask.test.ts` tests the table.
+- `ask-worker.ts` / `ask-worker-boot.mjs` hold the ISS coarse filter and brute force, and a brute-force pass scan that returns pass start/end times.
+- Reused as they were: T1's `coverage-cover.ts` (India rotated into the star map), `coverage-codec.ts`, the refine in `coverage-worker.ts`, `coverage-lib.ts`
+  (`INDIA_POLY`, `inPoly`, `subPoint`, `FENCED`); T2's `derive-day.ts` (as the Layer 4 grid) and `starmap.event`; `runs.ts`.
+  Two small refactors with no behaviour change: the merge/window helpers moved out of `coverage-query.ts` into `coverage-qlib.ts`, and `Pool` in
+  `coverage-lib.ts` takes an optional worker boot file. The Q2 coarse filter repeats the logic of `screen-worker.ts` `issCoarse`
+  (rather than importing it, because `screen-lib.ts` needs calibration files in `/tmp/starmap` that this machine does not have).
+
+### Table
+
+Times are wall clock. "Brute" is the brute-force run done here for that question (how, below). Speed-up is brute divided by routed.
+
+| Q | route chosen and why | routed | brute force | speed-up | answer | agreement with brute force |
+|---|---|---|---|---|---|---|
+| 1 Over India now | **L4**: SGP4 for all objects at the instant, then point-in-polygon. One instant, nothing stored can be cheaper. | 0.065 s (median of 5) | 0.478 s (median of 5) | 7.4x (see note) | 188 objects (168 LEO, 9 MEO, 11 HEO) | recall 100% (188/188), 0 extras |
+| 2 Within 100 km of the ISS, last hour | **L4**: coarse time filter (SGP4 every 30 s, 20 km/s pad), 1 s refine near hits. | 0.638 s (median of 3 warm runs; the first run, with worker start, was 1.18 s) | 13.2 s (1 s step, 118 M SGP4 calls) | 20.7x | 90 objects; 5 of them sit at 0 km (identical element sets of the ISS stack) | recall 100% (90/90), 0 extras, closest distance and time identical |
+| 3 Close approaches under 5 km, last 24 h (2026-10-18) | **L3**: the day is derived, so a lookup in `starmap.event`. It answers only the stored subset (miss under 1 km, relative speed at least 0.5 km/s). | 0.006 s (median of 5) | 151.8 s (the whole-day L4 grid: 5 s grid over all pairs + exact refine) | about 25,000x | 1,482 stored rows. The full under-5-km set from the grid is 72,276 (under 2 km 6,547; under 1 km 1,494; under 0.5 km 357); 144 formation pairs excluded | recall 100% of the stored definition (1,481 grid events vs 1,482 rows); 1 extra row, a pair at a rounded 1.000 km that the stored file rounds below 1 km; the re-derived rows equal the database rows exactly (0 and 0 differences). The 1-5 km remainder (70,794 events) has NO stored answer |
+| 4 Over India, 29 days, with times | **L2**: hourly order-4 summaries, India rotated into the star map per hour, refine on candidate windows. Hourly was cheaper than daily in T1 (34 vs 78 s/day). | 1,123.8 s (38.8 s/day) | 1,382.4 s (47.7 s/day; the sweep also answers Q5). India alone, measured on 1 day: 32.4 s | **1.23x** vs the shared sweep; **0.8x (slower)** vs an India-only sweep (32.4 s/day, times 29 = about 940 s, extrapolated) | 857,161 object-days, 2,327,933 passes | object-days 857,001 of 857,003 (99.9998%); passes within 20 s at both ends 2,284,322 of 2,284,701 (99.983%); the 2 + 379 misses are decaying-debris artefacts (below); extras: 160 object-days and 37,757 passes, all shorter than the 10 s brute-force step |
+| 5 Through box 9138, 29 days | **L2**: hourly order-3 summaries; the box is itself a summary cell, so the lists give the candidates. | 293.6 s (10.1 s/day) | 1,382.4 s shared sweep (box alone, 1 day: 46.2 s) | **4.7x** vs the shared sweep; 4.6x vs a box-only sweep (extrapolated) | 156,759 object-days, 2,298,058 passes | object-days 156,520 of 156,521; passes 2,290,445 of 2,290,446; the 1 miss is a decaying-debris artefact; extras: 232 object-days, 7,612 passes, all shorter than 10 s |
+| 6 ISS passes over India, 1-18 Oct | **L3** lookup (rows of kind `region.pass`, region IN), cross-checked with L2 (hourly summaries + refine, ISS only) | 0.003 s (median of 5); L2 cross-check 17.8 s (88.9 s the first time, cold file cache) | 0.757 s (5 s step, independent geodetic code) | 250x for the lookup | 55 passes | 55 of 55 within 20 s of the lookup and of L2 (max start/end differences 4 s / 5 s, brute step 5 s); lookup vs L2: all 55, within 0-1 s; 0 extras |
+
+Note on Q1: both paths are one SGP4 evaluation per object. The 7x is mostly that the routed path keeps the parsed element sets in memory
+while the brute-force loop builds each satellite record again and uses a separate geodetic conversion. In a real server the
+live path would be about 65 ms; the brute-force result matters here as an independent check, not as a speed contest.
+
+### How brute force was run for each question
+
+- **Q1:** separate code. `satellite.propagate` on a Date, `satellite.eciToGeodetic`, the polygon test from `events.ts` (same India polygon), no radius filter. 5 runs.
+- **Q2:** SGP4 for every one of the 32,777 other objects at every second of the hour (3,601 steps), minimum distance to the ISS track, 4 workers. One run.
+- **Q3:** `derive-day.ts --only ca --dry --ca-full` for 2026-10-18, the T2 grid (every pair, every 5 s, exact refine), 4 workers, no database write. Its full under-5-km output is the truth; I filtered it to the stored definition for the agreement. The grid itself was checked in T2 (237 of 237 at 3 hours, 43 objects); a different, whole-day all-vs-all brute force was **not** run (about 32,000 x 32,000 pairs).
+- **Q4 and Q5:** **live brute force on all 29 days, not reused**: every object, 10 s step, 8,640 steps, 4 workers, one sweep per day that answers both questions and returns pass start and end times (47.7 s/day, 1,382 s total). As a check on the earlier work, the per-object pass counts of all 29 live sweeps equal T1's cached truth in `data/coverage/q/` for every object (0 different of about 65,700 per day). The cached truth was NOT used as the answer. Matching rule: a brute-force pass is found if a routed pass starts and ends within 20 s of it (routed pieces separated by 10 s or less count as one, because the 10 s step cannot see a shorter gap).
+- **Q6:** each day's own ISS element set, 5 s step, satellite.js geodetic conversion, `events.ts` polygon test.
+
+### The misses are the known artefacts, named
+
+Every miss in Q4 and Q5 is a **single brute-force sample (a pass of 0 s)** from a decaying object whose SGP4 output is unreliable. For India: NORAD
+54947 (146), 69730 (137), 54352 (74), 54334 (16), 35248 (2), 61486 (2), 34861 (1), 60778 (1); in total 379 passes. Of these, 34861 (2026-10-04) and 35248 (2026-10-18) are also the two missing object-days. For the box, one: 61486 on 2026-10-18.
+34861, 35248 and 61486 are the T1 artefacts; the others are CZ-6A / CZ-4C debris at 240-330 km perigee (checked for 54352, 54334, 60778, 35248, 61486) or objects that are not in the 10-18 file (54947, 69730; 69730 was the row-cap object in T1). I did not inspect each of the 379 one by one. They are real SGP4 outputs at one instant, so I count them as artefacts of the model, not as passes, but they are listed here and not dropped from the numbers.
+
+### Not done, skipped, extrapolated
+
+- Q4/Q5 speed-ups against a single-question sweep are extrapolated from one measured day (2026-10-18) times 29; the shared-sweep comparison is fully measured.
+- The routed Q4/Q5 time includes loading the day's element sets and reading the coverage files, and the same load is counted in the brute force.
+- Q6 excludes the load of the ISS element sets (2-3 s for 18 days), because production would index them.
+- Q2 has one brute-force run; Q3 has one; Q4/Q5 were run once per day.
+- The first Q6 L2 run (88.9 s) was on a cold file cache; the 17.8 s is the warm run. Q3's 1-5 km events were not compared against the database (it does not store them).
+
+### Verdict in plain words
+
+The planner works, and for these six questions every cheaper path found everything the slow path found, except for single-instant glitches of
+a few decaying pieces of debris, which are named above. The speed-ups tell a clear story. A question about **one instant or one object over an hour**
+(Q1, Q2) is already cheap enough live, with nothing stored: 0.07 s and 0.6 s. Questions the **daily job has answered in advance** (Q3, Q6) become
+lookups of a few milliseconds, thousands of times faster than recomputing them (152 s and 0.8 s). But the lookup for Q3 only holds the close
+approaches under 1 km at a real relative speed; the other 70,000 "under 5 km" events of the day exist only if you pay for the 2.5-minute grid.
+The **long-window box question** (Q5) is where the stored star-map summaries pay off: 4.7x faster than looking at everything, with every object found.
+The **long-window "over India" question** (Q4) is the honest disappointment: about nine in ten objects pass over India on any day, so the
+summaries cannot throw much away. The routed path took 39 s a day against 32-48 s for brute force, and it is only worth using because it gives
+passes to the second (the 10 s sweep gives only 10 s), not because it is faster. So the planner should send ground questions that cover most of the catalog straight to the brute-force sweep
+unless the second-level times are needed. State machine: the router has no state; its only inputs are the question, the days derived in the event table, and the coverage files present. Shared load: all timings are on 4 cores
+with nothing else running; two users asking Q4 together would double those times.
+
+Reproduce (repo root; `export STARMAP_DB=postgres://orbitwatch:orbitwatch@localhost:5432/orbitwatch`):
+```
+npx tsx packages/backend/scripts/starmap/ask.ts --q 1          # likewise --q 2, --q 3 (152 s; add --reuse to re-compare), --q 6
+npx tsx packages/backend/scripts/starmap/ask.ts --q 4,5 --stage routed    # about 19 min
+npx tsx packages/backend/scripts/starmap/ask.ts --q 4,5 --stage brute     # about 23 min
+npx tsx packages/backend/scripts/starmap/ask.ts --q 4,5 --stage brute --which india --days 2026-10-18   # and --which box
+npx tsx packages/backend/scripts/starmap/ask.ts --q 4,5 --stage compare ; npx tsx packages/backend/scripts/starmap/ask.ts --stage report
+bash packages/backend/scripts/starmap/check.sh
+```
+Raw results: `packages/backend/data/ask/` (`q1.json` .. `q6.json`, per-day routed/brute files and logs).
+
 ## Decision — storage and indexing for the Perceptor
 
 **In plain words.** Keep the raw orbit numbers (element sets) forever; everything else can be rebuilt from them.
@@ -736,6 +820,10 @@ Total: about 63 GB per 5 years with plain Postgres element sets, about 29 GB if 
 
 Not stored, computed on demand: the full close-approach set under 5 km (~74k/day, ~150 s of 4 cores per day);
 region passes outside the rolling window (T1's lists + refine answer "who passed over X in N days").
+
+Router check (T3): all six fixed questions route to these layers and agree with brute force (the only misses are
+single-sample SGP4 hits from decaying debris, named in T3). Lookups take 3–6 ms; long India questions are no faster
+than a plain sweep (91% of object-days are real passes) but give pass times to 1 s; box questions are ~4.7x faster.
 
 Guarantee to state with every answer: the lists miss nothing at 10-second resolution (100% recall on 29 days, T1);
 visits shorter than 10 s may only be found by the exact refine. Exact pass times come from the refine, to 1 s.

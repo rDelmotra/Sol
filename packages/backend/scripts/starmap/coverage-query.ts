@@ -21,7 +21,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { cellCentre, decodeKey, pix2angNest, SHELL_DELTA0, WGS84_A_KM, DEG } from '@orbitwatch/orbital-core';
 import { loadCatalog, parseArgs, type CatObj } from './catalog.js';
 import { Pool, dailyDays, COVERAGE_DIR, DAY_MS, GRANS, STAR_ORDERS, type DayInfo } from './coverage-lib.js';
-import { readCoverage, findCell, forEachId, type CoverageDay } from './coverage-codec.js';
+import { forEachId } from './coverage-codec.js';
+import { readDay, mergeCover, windowsOf, expandTo144, unindexedNorads } from './coverage-qlib.js';
 import { polygonPixelsByTenMin, groupPixels, cellsOf } from './coverage-cover.js';
 import type { RefineTask, RefineOut, TruthTask, TruthOut, BoxSpec } from './coverage-worker.js';
 
@@ -39,9 +40,6 @@ const QS = ['india', 'box'] as const;
 type Q = (typeof QS)[number];
 
 // ---------------------------------------------------------------- box B
-function readDay(day: string, gran: string): CoverageDay {
-  return readCoverage(new Uint8Array(readFileSync(`${COVERAGE_DIR}${day}.${gran}.bin`)));
-}
 function pickBox(): BoxSpec & { count: number } {
   const fixed = a.get('box-key');
   const last = readDay(allDays[allDays.length - 1]!.day, 'day');
@@ -98,47 +96,6 @@ async function runTruth(pool: Pool, d: DayInfo, box: BoxSpec): Promise<Truth> {
 }
 
 // ---------------------------------------------------------------- merge
-interface Merge {
-  cand: Uint8Array; // n * P
-  openS: number; mergeS: number; lists: number; bytes: number; ids: number; cells: number;
-}
-function mergeCover(cov: CoverageDay, openS: number, order: number, P: number, coverOf: (p: number) => number[]): Merge {
-  const cfg = cov.configs.find((c) => c.order === order)!;
-  const cand = new Uint8Array(cov.n * P);
-  const t0 = performance.now();
-  let lists = 0, bytes = 0, ids = 0, cells = 0;
-  for (let p = 0; p < P; p++) {
-    const cs = coverOf(p); cells += cs.length;
-    for (const cell of cs) {
-      const i = findCell(cfg, cell * P + p);
-      if (i < 0) continue;
-      lists++; bytes += cfg.lens[i]!;
-      forEachId(cov.buf, cfg.offs[i]!, cfg.lens[i]!, cfg.tags[i]!, (id) => { cand[id * P + p] = 1; ids++; });
-    }
-  }
-  return { cand, openS, mergeS: secs(t0), lists, bytes, ids, cells };
-}
-
-/** windows (flat [startMs,endMs,...]) per object index from a candidate mask at P periods. */
-function windowsOf(cand: Uint8Array, n: number, P: number, dayStart: number, minObj?: Uint8Array): Map<number, number[]> {
-  const per = DAY_MS / P, out = new Map<number, number[]>();
-  for (let i = 0; i < n; i++) {
-    let w: number[] | null = null, p = 0;
-    while (p < P) {
-      if (!cand[i * P + p] && !(minObj && minObj[i * P + p])) { p++; continue; }
-      let q = p; while (q < P && (cand[i * P + q] || (minObj && minObj[i * P + q]))) q++;
-      (w ??= []).push(dayStart + p * per, dayStart + q * per);
-      p = q;
-    }
-    if (w) out.set(i, w);
-  }
-  return out;
-}
-const expandTo144 = (cand: Uint8Array, n: number, P: number, into: Uint8Array): void => {
-  const per = 144 / P;
-  for (let i = 0; i < n; i++) for (let p = 0; p < P; p++) if (cand[i * P + p]) for (let k = 0; k < per; k++) into[i * 144 + p * per + k] = 1;
-};
-
 // ---------------------------------------------------------------- refine
 interface Refined { intervals: Map<number, Float64Array>; wallS: number; items: number; windowS: number; calls: number }
 async function refineWindows(pool: Pool, q: Q, box: BoxSpec, cat: CatObj[], wins: Map<number, number[]>): Promise<Refined> {
@@ -171,16 +128,6 @@ interface DayRes {
   day: string; n: number; coverS: Record<string, number>;
   q: Record<Q, { cfgs: CfgRes[]; union: { items: number; wallS: number; windowS: number; calls: number; positives: number; passes: number; byRegime: number[] } }>;
   timing: boolean;
-}
-
-/** Objects the build could not index (flip cells constantly: per-day row cap). They are ALWAYS candidates. */
-function unindexedNorads(day: string): Set<number> {
-  const out = new Set<number>();
-  for (const l of readFileSync(COVERAGE_DIR + 'report.jsonl', 'utf8').trim().split('\n')) {
-    const r = JSON.parse(l) as { day: string; dropped: string[] };
-    if (r.day === day) { out.clear(); for (const s of r.dropped) out.add(Number(s.split('(')[0])); }
-  }
-  return out;
 }
 
 const dayResFile = (day: string) => `${Q_DIR}day-${day}.json`;

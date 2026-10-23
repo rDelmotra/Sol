@@ -97,9 +97,9 @@ export class Pool {
   private workers: Worker[] = [];
   private waiting = new Map<number, (v: unknown) => void>();
   private seq = 0;
-  constructor(readonly size = 4) {}
+  constructor(readonly size = 4, private readonly bootFile = './coverage-worker-boot.mjs') {}
   start(): void {
-    const boot = fileURLToPath(new URL('./coverage-worker-boot.mjs', import.meta.url));
+    const boot = fileURLToPath(new URL(this.bootFile, import.meta.url));
     for (let i = 0; i < this.size; i++) {
       const w = new Worker(boot);
       w.on('message', (m: { id: number; out: unknown }) => { const r = this.waiting.get(m.id); this.waiting.delete(m.id); r?.(m.out); });
