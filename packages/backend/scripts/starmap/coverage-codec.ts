@@ -1,21 +1,25 @@
 // ============================================================
 // SPIKE — not production. Layer 2 daily-coverage file codec ("mini roaring").
 //
-// One file per UTC day holds, for each (frame, order), an INVERTED index
-//   cell -> sorted list of object indices (positions in that day's catalog)
+// One file holds, for one UTC day and ONE granularity (day / hour / 10-min), for each star-map order, an
+// INVERTED index   key -> sorted list of object indices (positions in that day's catalog)
+// where key = cell * periodsPerDay + periodIndex (periodsPerDay = 1 for the daily granularity).
+// STAR MAP ONLY: there is no Earth-fixed cell system in this codec.
 // Each list is stored as delta+varint bytes OR a plain bitmap over the day's N objects,
 // whichever is smaller (tag in the low bit of the list's byte length in the directory).
 //
 // File (little endian):
 //   "CVR1" | dayStartMs f64 | N u32 | nConfigs u32
 //   norad table: byteLen u32, then N zigzag-delta varints
-//   per config: frame u8 | order u8 | nCells u32 | dirBytes u32 | payloadBytes u32 | dir | payload
+//   per config: gran u8 | order u8 | nCells u32 | dirBytes u32 | payloadBytes u32 | dir | payload
 //     dir     = nCells x [ varint(cell - prevCell), varint(byteLen*2 + tag) ]   (cells ascending)
 //     payload = concatenated list bodies
 // ============================================================
 
-export const FRAME_STAR = 0;
-export const FRAME_EARTH = 1;
+/** Granularity ids stored in the `gran` byte (see GRANS in coverage-lib.ts). */
+export const GRAN_DAY = 0;
+export const GRAN_HOUR = 1;
+export const GRAN_M10 = 2;
 
 export function putVarint(out: number[], v: number): void {
   while (v >= 128) { out.push((v % 128) | 128); v = Math.floor(v / 128); }
@@ -55,8 +59,8 @@ export function forEachId(buf: Uint8Array, off: number, len: number, tag: number
   }
 }
 
-export interface ConfigData { frame: number; order: number; cells: Map<number, ArrayLike<number>> }
-export interface EncodedStats { frame: number; order: number; nCells: number; dirBytes: number; payloadBytes: number; nPairs: number; bitmapLists: number }
+export interface ConfigData { gran: number; order: number; cells: Map<number, ArrayLike<number>> }
+export interface EncodedStats { gran: number; order: number; nCells: number; dirBytes: number; payloadBytes: number; nPairs: number; bitmapLists: number }
 
 export function writeCoverage(dayStartMs: number, norad: number[], configs: ConfigData[]): { file: Uint8Array; stats: EncodedStats[]; noradBytes: number } {
   const n = norad.length;
@@ -83,10 +87,10 @@ export function writeCoverage(dayStartMs: number, norad: number[], configs: Conf
       bodies.push(e.bytes); payload += e.bytes.length;
     }
     const h = Buffer.alloc(14);
-    h.writeUInt8(c.frame, 0); h.writeUInt8(c.order, 1); h.writeUInt32LE(cells.length, 2); h.writeUInt32LE(dir.length, 6); h.writeUInt32LE(payload, 10);
+    h.writeUInt8(c.gran, 0); h.writeUInt8(c.order, 1); h.writeUInt32LE(cells.length, 2); h.writeUInt32LE(dir.length, 6); h.writeUInt32LE(payload, 10);
     parts.push(h, Uint8Array.from(dir));
     for (const b of bodies) parts.push(b); // no spread: hourly files have >1M lists
-    stats.push({ frame: c.frame, order: c.order, nCells: cells.length, dirBytes: dir.length, payloadBytes: payload, nPairs: pairs, bitmapLists: bms });
+    stats.push({ gran: c.gran, order: c.order, nCells: cells.length, dirBytes: dir.length, payloadBytes: payload, nPairs: pairs, bitmapLists: bms });
   }
   const total = parts.reduce((s, p) => s + p.length, 0);
   const file = new Uint8Array(total); let o = 0;
@@ -95,7 +99,7 @@ export function writeCoverage(dayStartMs: number, norad: number[], configs: Conf
 }
 
 export interface ReadConfig {
-  frame: number; order: number; cells: Uint32Array; offs: Float64Array; lens: Uint32Array; tags: Uint8Array;
+  gran: number; order: number; cells: Uint32Array; offs: Float64Array; lens: Uint32Array; tags: Uint8Array;
 }
 export interface CoverageDay { dayStartMs: number; n: number; norad: Int32Array; buf: Uint8Array; configs: ReadConfig[] }
 
@@ -110,7 +114,7 @@ export function readCoverage(buf: Uint8Array): CoverageDay {
   p += ntLen;
   const configs: ReadConfig[] = [];
   for (let k = 0; k < nCfg; k++) {
-    const frame = buf[p]!, order = buf[p + 1]!, nCells = dv.getUint32(p + 2, true), dirBytes = dv.getUint32(p + 6, true), payload = dv.getUint32(p + 10, true);
+    const gran = buf[p]!, order = buf[p + 1]!, nCells = dv.getUint32(p + 2, true), dirBytes = dv.getUint32(p + 6, true), payload = dv.getUint32(p + 10, true);
     p += 14;
     const cells = new Uint32Array(nCells), offs = new Float64Array(nCells), lens = new Uint32Array(nCells), tags = new Uint8Array(nCells);
     const dp = { p }; let cell = 0, off = p + dirBytes;
@@ -118,7 +122,7 @@ export function readCoverage(buf: Uint8Array): CoverageDay {
       cell += getVarint(buf, dp); const lt = getVarint(buf, dp);
       cells[i] = cell; tags[i] = lt & 1; lens[i] = (lt - (lt & 1)) / 2; offs[i] = off; off += lens[i]!;
     }
-    configs.push({ frame, order, cells, offs, lens, tags });
+    configs.push({ gran, order, cells, offs, lens, tags });
     p += dirBytes + payload;
   }
   return { dayStartMs, n, norad, buf, configs };

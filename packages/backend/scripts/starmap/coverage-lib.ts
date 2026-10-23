@@ -1,52 +1,48 @@
 // ============================================================
-// SPIKE — not production. Shared pieces of the Layer 2 daily-coverage experiment:
-// the two cell frames (star = SpaceCell box in TEME, Earth = HEALPix ground cell of the
-// geodetic sub-satellite point), the India polygon, day catalogs, a small worker pool.
+// SPIKE — not production. Shared pieces of the Layer 2 star-map coverage experiment.
+//
+// OWNER RULE: satellites are indexed ONLY in the star map (TEME, which does not rotate with the Earth).
+// There is deliberately no Earth-fixed cell code for satellites here. Ground places (India) are rotated
+// INTO the star map per time slice (see coverage-cover.ts). The sub-satellite point helper below is only
+// used to ANSWER a ground question exactly (refine / brute force), never to index.
 // ============================================================
 import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
 import { readdirSync, statSync } from 'node:fs';
-import {
-  cellKey, ang2pixNest, pix2angNest, gmst, temeToEcef, geodeticLatAltFromEr, ER_KM, RAD, DEG,
-} from '@orbitwatch/orbital-core';
-import { posAt, NO_CELL, type KeyFn } from './runs.js';
+import { gmst, temeToEcef, geodeticLatAltFromEr, ER_KM, DEG, WGS84_A_KM, SHELL_DELTA0 } from '@orbitwatch/orbital-core';
 
 export const HISTORY_DIR = fileURLToPath(new URL('../../data/history/', import.meta.url));
 export const COVERAGE_DIR = fileURLToPath(new URL('../../data/coverage/', import.meta.url));
 export const DAY_MS = 86_400_000;
 export const FENCED = new Set([54922]);
-/** Per-day cap on star-frame (order 4) box changes, same spirit as build-index's 5000 rows/day. */
+/** Per-day cap on order-4 star box changes, same spirit as build-index's 5000 rows/day. */
 export const STAR_RUN_CAP = 5000;
 
+/** Star-map orders stored. Order 4 is the only one swept by SGP4; 3 and 2 are exact parents. */
 export const STAR_ORDERS = [2, 3, 4] as const;
-export const EARTH_ORDERS = [4, 5, 6] as const;
 export const STAR_FINE = 4;
-export const EARTH_FINE = 6;
-const EARTH_SPAN = 4 ** EARTH_FINE; // 4096 < 12*4^6 = 196608 -> use 2^18 below
-const J = 262144; // 2^18 > 12*4^6
+/** Object index is packed under the key as key * ID_SHIFT + index (index < 65536). */
+export const ID_SHIFT = 65536;
 
-/** Sub-satellite point (geodetic) of a TEME position (km) at time tMs. */
+/** Radial range the star map can encode (cellKey returns null outside it). */
+export const R_MIN_KM = WGS84_A_KM * Math.exp(-SHELL_DELTA0) * 1.0000001;
+export const R_MAX_KM = WGS84_A_KM * Math.exp(7 * SHELL_DELTA0) * 0.9999999;
+
+// ---------------- granularities (periods inside a UTC day) ----------------
+export interface Gran { id: number; name: string; periodMs: number; perDay: number }
+export const GRANS: Gran[] = [
+  { id: 0, name: 'day', periodMs: DAY_MS, perDay: 1 },
+  { id: 1, name: 'hour', periodMs: 3_600_000, perDay: 24 },
+  { id: 2, name: 'm10', periodMs: 600_000, perDay: 144 },
+];
+export const granByName = (n: string): Gran => GRANS.find((g) => g.name === n)!;
+
+/** Sub-satellite point (geodetic latitude, longitude) of a TEME position (km) at time tMs. Exact answering only. */
 export function subPoint(x: number, y: number, z: number, tMs: number): { latDeg: number; lonDeg: number } {
   const e = temeToEcef({ x: x / ER_KM, y: y / ER_KM, z: z / ER_KM }, gmst(tMs));
   const g = geodeticLatAltFromEr(e);
   return { latDeg: g.latDeg ?? 0, lonDeg: Math.atan2(e.y, e.x) * DEG };
 }
-
-/** HEALPix NESTED ground cell of a geodetic lat/lon (deg). */
-export const groundCell = (order: number, latDeg: number, lonDeg: number): number =>
-  ang2pixNest(order, Math.sin(latDeg * RAD), lonDeg * RAD);
-void EARTH_SPAN;
-
-/** Joint key: (starKey@4 + 1) * 2^18 + groundCell@6 ; star part 0 = outside the radial range. */
-export const jointKey: KeyFn = (p, t, st) => {
-  const pos = posAt(p, t, st);
-  if (!pos) return NO_CELL;
-  const sk = cellKey(STAR_FINE, pos.x, pos.y, pos.z);
-  const sp = subPoint(pos.x, pos.y, pos.z, t);
-  return (sk === null ? 0 : sk + 1) * J + groundCell(EARTH_FINE, sp.latDeg, sp.lonDeg);
-};
-export const jointStar = (j: number): number => Math.floor(j / J) - 1; // -1 = none
-export const jointEarth = (j: number): number => j % J;
 
 // ---------------- India polygon (rough outline, plain lat/lon) ----------------
 export const INDIA_POLY: Array<[lat: number, lon: number]> = [
@@ -69,34 +65,16 @@ export function inPoly(lat: number, lon: number, poly: Array<[number, number]> =
   return inside;
 }
 
-/**
- * Conservative ground-cell cover of the polygon at `order`: every cell that contains a point of the
- * polygon. SAMPLING cover: (a) every order+3 cell whose centre is inside the polygon (→ its parent),
- * plus (b) a dense walk along the polygon boundary (step = 1/8 of the cell width) so cells that only a
- * sliver of the polygon touches are kept. Over-inclusion is fine; a miss would show up as recall < 100%.
- */
-export function coverPolygon(order: number, poly: Array<[number, number]> = INDIA_POLY): number[] {
-  const out = new Set<number>();
-  const f = order + 3, shift = 4 ** 3;
-  const nPix = 12 * 4 ** f;
-  const lo = Math.sin((POLY_LAT_MIN - 1) * RAD), hi = Math.sin((POLY_LAT_MAX + 1) * RAD);
-  for (let pix = 0; pix < nPix; pix++) {
-    const { z, phi } = pix2angNest(f, pix);
-    if (z < lo || z > hi) continue;
-    let lon = phi * DEG; if (lon > 180) lon -= 360;
-    if (lon < POLY_LON_MIN - 1 || lon > POLY_LON_MAX + 1) continue;
-    if (inPoly(Math.asin(z) * DEG, lon, poly)) out.add(Math.floor(pix / shift));
-  }
-  const widthDeg = Math.sqrt((4 * Math.PI) / (12 * 4 ** order)) * DEG;
+/** Distance (degrees, plain lat/lon plane) from a point to the nearest polygon edge. */
+export function distToPolyEdges(lat: number, lon: number, poly: Array<[number, number]> = INDIA_POLY): number {
+  let best = Infinity;
   for (let i = 0; i < poly.length; i++) {
-    const [la0, lo0] = poly[i]!, [la1, lo1] = poly[(i + 1) % poly.length]!;
-    const steps = Math.ceil(Math.hypot(la1 - la0, lo1 - lo0) / (widthDeg / 8)) + 1;
-    for (let s = 0; s <= steps; s++) {
-      const u = s / steps;
-      out.add(groundCell(order, la0 + (la1 - la0) * u, lo0 + (lo1 - lo0) * u));
-    }
+    const [y0, x0] = poly[i]!, [y1, x1] = poly[(i + 1) % poly.length]!;
+    const dx = x1 - x0, dy = y1 - y0;
+    const t = Math.max(0, Math.min(1, ((lon - x0) * dx + (lat - y0) * dy) / (dx * dx + dy * dy)));
+    best = Math.min(best, Math.hypot(lon - (x0 + t * dx), lat - (y0 + t * dy)));
   }
-  return [...out].sort((a, b) => a - b);
+  return best;
 }
 
 // ---------------- days ----------------
@@ -111,13 +89,15 @@ export function listDays(): DayInfo[] {
 }
 /** The 29 contiguous daily files 2026-09-20 .. 2026-10-18. */
 export const dailyDays = (): DayInfo[] => listDays().filter((d) => d.day >= '2026-09-20');
+/** The weekly files from 2026-06-30 up to (not including) the daily range. */
+export const weeklyDays = (): DayInfo[] => listDays().filter((d) => d.day >= '2026-06-30' && d.day < '2026-09-20');
 
 // ---------------- worker pool ----------------
 export class Pool {
   private workers: Worker[] = [];
   private waiting = new Map<number, (v: unknown) => void>();
   private seq = 0;
-  constructor(readonly size = 5) {}
+  constructor(readonly size = 4) {}
   start(): void {
     const boot = fileURLToPath(new URL('./coverage-worker-boot.mjs', import.meta.url));
     for (let i = 0; i < this.size; i++) {

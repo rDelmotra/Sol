@@ -1,105 +1,144 @@
 // ============================================================
-// SPIKE — not production. Workers for the Layer 2 coverage experiment.
-//   build  : one SGP4 pass per object per day -> distinct star/Earth cells at all orders
-//   refine : exact pass intervals (20 s step + 1 s bisection) for candidate object-days
-//   truth  : brute force at a fixed step (no bisection): per object pass counts over India / box B
+// SPIKE — not production. Workers for the Layer 2 star-map coverage experiment.
+//   build  : ONE SGP4 pass per object per day (order-4 star box, 20 s step, bisected to ~1 s), then the
+//            visited (cell, period) pairs at 3 granularities x 3 orders (orders 3, 2 are exact parents)
+//   refine : exact pass intervals on candidate windows (20 s step; 1 s step wherever the object is near
+//            the target so no graze shorter than 1 s can slip between two samples)
+//   truth  : brute force at a fixed step (no bisection, no summaries), all objects
+// Satellites are only ever keyed in the star map (TEME). Ground questions use the exact sub-satellite
+// point inside the polygon, which is answering, not indexing.
 // ============================================================
 import { parentPort } from 'node:worker_threads';
 import * as satellite from 'satellite.js';
 import {
   cellKey, decodeKey, gmst, geodeticLatAltFromEr, ER_KM, RAD, DEG, SHELL_DELTA0, WGS84_A_KM,
 } from '@orbitwatch/orbital-core';
-import { makeProp, windowInCap, buildRunsBy, posAt, newStats, NO_CELL, type KeyFn, type Prop } from './runs.js';
+import { makeProp, windowInCap, buildRunsBy, cellAt, posAt, newStats, type Prop, type RunStats } from './runs.js';
+import { scanWindow, type Flags } from './coverage-scan.js';
 import {
-  jointKey, jointStar, jointEarth, subPoint, inPoly, groundCell, STAR_RUN_CAP,
+  subPoint, inPoly, STAR_RUN_CAP, FENCED, STAR_FINE, STAR_ORDERS, GRANS, ID_SHIFT, R_MIN_KM, R_MAX_KM,
   POLY_LAT_MIN, POLY_LAT_MAX, POLY_LON_MIN, POLY_LON_MAX,
 } from './coverage-lib.js';
 
-/** hourly: Earth-frame cells only, keyed cell*24+hour, returned in configs 3..5 (orders 4,5,6) */
-export interface BuildTask { kind: 'build'; omms: unknown[]; startMs: number; endMs: number; stepMs: number; hourly?: boolean }
+const N_CFG = GRANS.length * STAR_ORDERS.length; // config index = gran * 3 + orderIdx
+
+export interface BuildTask { kind: 'build'; omms: unknown[]; norad: number[]; base: number; startMs: number; endMs: number; stepMs: number }
 export interface BuildOut {
-  /** per config (star2,3,4, earth4,5,6): concatenated cells + per-object counts */
-  cells: Uint32Array[]; counts: Uint32Array[]; skips: Array<[number, string]>; propCalls: number;
+  /** per config (gran-major, then order 2,3,4): key * 65536 + global object index, unsorted */
+  pairs: Float64Array[]; skips: Array<[number, string]>; propCalls: number; noCell: number;
 }
+export interface BoxSpec { order: number; key: number; rLo: number; rHi: number; cx: number; cy: number; cz: number; hwRad: number }
 export interface RefineTask {
-  kind: 'refine'; mode: 'poly' | 'box'; boxOrder: number; boxKey: number; stepMs: number;
-  items: Array<{ omm: unknown; startMs: number; endMs: number }>;
+  kind: 'refine'; mode: 'poly' | 'box'; box: BoxSpec; stepMs: number; nearStepMs: number;
+  items: Array<{ omm: unknown; windows: number[] }>; // windows: flat [startMs, endMs, ...]
 }
 export interface RefineOut { intervals: Float64Array[]; propCalls: number }
-export interface TruthTask { kind: 'truth'; omms: unknown[]; startMs: number; stepMs: number; boxOrder: number; boxKey: number }
-export interface TruthOut { india: Uint16Array; box: Uint16Array; propCalls: number }
+export interface TruthTask { kind: 'truth'; omms: unknown[]; norad: number[]; startMs: number; stepMs: number; boxOrder: number; boxKey: number }
+export interface TruthOut { india: Uint16Array; box: Uint16Array; indiaMask: Uint8Array; boxMask: Uint8Array; propCalls: number }
 export type Task = BuildTask | RefineTask | TruthTask;
+
+const sortUnique = (a: Float64Array | Uint32Array): Float64Array | Uint32Array => {
+  a.sort();
+  let w = 0;
+  for (let i = 0; i < a.length; i++) if (i === 0 || a[i] !== a[i - 1]) a[w++] = a[i]!;
+  return a.subarray(0, w);
+};
 
 function build(t: BuildTask): BuildOut {
   const st = newStats();
-  const sets: Array<Set<number>> = [new Set(), new Set(), new Set(), new Set(), new Set(), new Set()];
-  const cells: number[][] = [[], [], [], [], [], []];
-  const counts = Array.from({ length: 6 }, () => new Uint32Array(t.omms.length));
+  const pairs: number[][] = Array.from({ length: N_CFG }, () => []);
   const skips: Array<[number, string]> = [];
+  const keyAt = (p: Prop, tm: number, s: RunStats) => cellAt(p, STAR_FINE, tm, s);
+  const P10 = 600_000;
   t.omms.forEach((omm, i) => {
+    if (FENCED.has(t.norad[i]!)) { skips.push([i, 'fenced']); return; }
     const p = makeProp(omm);
     if (!p) { skips.push([i, 'bad-elements']); return; }
     if (!windowInCap(p, t.startMs, t.endMs)) { skips.push([i, 'outside-60d-epoch-cap']); return; }
-    const runs = buildRunsBy(p, jointKey, t.startMs, t.endMs, t.stepMs, st);
+    const runs = buildRunsBy(p, keyAt, t.startMs, t.endMs, t.stepMs, st);
     if (runs.length === 0) { skips.push([i, 'no-valid-position']); return; }
-    let starRuns = 0, prevStar = -2;
-    const s4 = new Set<number>(), e6 = new Set<number>();
-    for (const r of runs) {
-      const s = jointStar(r.cell);
-      if (s !== prevStar) { starRuns++; prevStar = s; }
-      if (s >= 0) s4.add(s);
-      e6.add(jointEarth(r.cell));
-    }
+    let starRuns = 0, prev = -2;
+    for (const r of runs) if (r.cell !== prev) { starRuns++; prev = r.cell; }
     if (starRuns > STAR_RUN_CAP) { skips.push([i, `over-row-cap:${starRuns}`]); return; }
-    if (t.hourly) {
-      const e6h = new Set<number>();
-      for (const r of runs) {
-        const e = jointEarth(r.cell);
-        const h0 = Math.floor((r.tIn - t.startMs) / 3_600_000), h1 = Math.floor((r.tOut - 1 - t.startMs) / 3_600_000);
-        for (let h = h0; h <= Math.min(h1, 23); h++) e6h.add(e * 24 + h);
-      }
-      const e5h = new Set<number>(), e4h = new Set<number>();
-      for (const k of e6h) { const h = k % 24, e = (k - h) / 24; const e5 = Math.floor(e / 4); e5h.add(e5 * 24 + h); e4h.add(Math.floor(e5 / 4) * 24 + h); }
-      [e4h, e5h, e6h].forEach((set, c) => { counts[3 + c]![i] = set.size; for (const v of set) cells[3 + c]!.push(v); });
-      return;
+    // (cell4, 10-min period) pairs; +-1 s margin so a run ending exactly on a boundary touches both periods
+    const raw: number[] = [];
+    for (const r of runs) {
+      const p0 = Math.max(0, Math.floor((r.tIn - 1000 - t.startMs) / P10));
+      const p1 = Math.min(143, Math.floor((r.tOut + 1000 - t.startMs) / P10));
+      for (let q = p0; q <= p1; q++) raw.push(r.cell * 144 + q);
     }
-    const s3 = new Set<number>(), s2 = new Set<number>(), e5 = new Set<number>(), e4 = new Set<number>();
-    for (const k of s4) { const a = Math.floor(k / 8); s3.add(a); s2.add(Math.floor(a / 8)); }
-    for (const k of e6) { const a = Math.floor(k / 4); e5.add(a); e4.add(Math.floor(a / 4)); }
-    [s2, s3, s4, e4, e5, e6].forEach((s, c) => { counts[c]![i] = s.size; for (const v of s) cells[c]!.push(v); });
+    const m10 = sortUnique(Uint32Array.from(raw)) as Uint32Array;
+    for (let g = 0; g < GRANS.length; g++) {
+      const per = 144 / GRANS[g]!.perDay;
+      for (let o = 0; o < STAR_ORDERS.length; o++) {
+        const shift = 8 ** (STAR_FINE - STAR_ORDERS[o]!);
+        const vals = new Uint32Array(m10.length);
+        for (let k = 0; k < m10.length; k++) {
+          const cell = Math.floor(m10[k]! / 144), q = m10[k]! % 144;
+          vals[k] = Math.floor(cell / shift) * GRANS[g]!.perDay + Math.floor(q / per);
+        }
+        const u = sortUnique(vals);
+        const dst = pairs[g * STAR_ORDERS.length + o]!;
+        const idx = t.base + i;
+        for (let k = 0; k < u.length; k++) dst.push(u[k]! * ID_SHIFT + idx);
+      }
+    }
   });
-  void sets;
-  return { cells: cells.map((a) => Uint32Array.from(a)), counts, skips, propCalls: st.propCalls };
+  return { pairs: pairs.map((a) => Float64Array.from(a)), skips, propCalls: st.propCalls, noCell: st.noCell };
 }
 
-/**
- * Refine key = (cell id, pass flag) so the stepped+bisected run builder also splits brackets whose ends
- * sit in different cells (a plain 0/1 membership key cannot see a corner clipped between two outside samples).
- *   poly: key = groundCell@6 * 2 + insidePolygon        pass <=> odd
- *   box : key = star cell id at boxOrder                pass <=> key === boxKey
- */
+// ---------------------------------------------------------------- refine
+const NONE: Flags = { inside: false, near: false };
+const NEAR_DEG = 3;
+const BOX_NEAR_RAD = (5 * Math.PI) / 180;
+const BOX_NEAR_KM = 150;
+
+function flagsFn(t: RefineTask, st: RunStats): (p: Prop, tm: number) => Flags {
+  if (t.mode === 'poly') {
+    return (p, tm) => {
+      const pos = posAt(p, tm, st);
+      if (!pos) return NONE;
+      const r = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+      if (r < R_MIN_KM || r > R_MAX_KM) return NONE;
+      const sp = subPoint(pos.x, pos.y, pos.z, tm);
+      const inside = inPoly(sp.latDeg, sp.lonDeg);
+      const near = inside || (sp.latDeg >= POLY_LAT_MIN - NEAR_DEG && sp.latDeg <= POLY_LAT_MAX + NEAR_DEG &&
+        sp.lonDeg >= POLY_LON_MIN - NEAR_DEG && sp.lonDeg <= POLY_LON_MAX + NEAR_DEG);
+      return { inside, near };
+    };
+  }
+  const b = t.box;
+  return (p, tm) => {
+    const pos = posAt(p, tm, st);
+    if (!pos) return NONE;
+    const r = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z);
+    if (r < R_MIN_KM || r > R_MAX_KM) return NONE;
+    const inside = cellKey(b.order, pos.x, pos.y, pos.z) === b.key;
+    if (inside) return { inside, near: true };
+    if (r < b.rLo - BOX_NEAR_KM || r > b.rHi + BOX_NEAR_KM) return NONE;
+    const dot = (pos.x * b.cx + pos.y * b.cy + pos.z * b.cz) / r;
+    return { inside, near: Math.acos(Math.min(1, dot)) <= b.hwRad + BOX_NEAR_RAD };
+  };
+}
+
 function refine(t: RefineTask): RefineOut {
   const st = newStats();
-  const keyAt: KeyFn = t.mode === 'poly'
-    ? (p, tm, s) => { const pos = posAt(p, tm, s); if (!pos) return NO_CELL; const sp = subPoint(pos.x, pos.y, pos.z, tm); return groundCell(6, sp.latDeg, sp.lonDeg) * 2 + (inPoly(sp.latDeg, sp.lonDeg) ? 1 : 0); }
-    : (p, tm, s) => { const pos = posAt(p, tm, s); if (!pos) return NO_CELL; return cellKey(t.boxOrder, pos.x, pos.y, pos.z) ?? NO_CELL; };
-  const passes = (cell: number) => (t.mode === 'poly' ? cell >= 0 && cell % 2 === 1 : cell === t.boxKey);
+  const flags = flagsFn(t, st);
   const intervals = t.items.map((it) => {
     const p = makeProp(it.omm);
-    if (!p || !windowInCap(p, it.startMs, it.endMs)) return new Float64Array(0);
     const out: number[] = [];
-    let open = -1, close = -1;
-    for (const r of buildRunsBy(p, keyAt, it.startMs, it.endMs, t.stepMs, st)) {
-      if (!passes(r.cell)) continue;
-      if (open >= 0 && r.tIn <= close + 1) close = r.tOut; // adjacent runs of one pass (cell changes inside the region)
-      else { if (open >= 0) out.push(open, close); open = r.tIn; close = r.tOut; }
+    if (!p) return new Float64Array(0);
+    for (let w = 0; w < it.windows.length; w += 2) {
+      const a = it.windows[w]!, b = it.windows[w + 1]!;
+      if (!windowInCap(p, a, b)) continue;
+      scanWindow(p, a, b, t.stepMs, t.nearStepMs, flags, out);
     }
-    if (open >= 0) out.push(open, close);
     return Float64Array.from(out);
   });
   return { intervals, propCalls: st.propCalls };
 }
 
+// ---------------------------------------------------------------- truth
 function truth(t: TruthTask): TruthOut {
   const nSteps = Math.floor(86_400_000 / t.stepMs);
   const cs = new Float64Array(nSteps), sn = new Float64Array(nSteps);
@@ -107,11 +146,15 @@ function truth(t: TruthTask): TruthOut {
   const { nk } = decodeKey(t.boxOrder, t.boxKey);
   const rLo = WGS84_A_KM * Math.exp((nk * SHELL_DELTA0) / 2 ** t.boxOrder) * (1 - 1e-9);
   const rHi = WGS84_A_KM * Math.exp(((nk + 1) * SHELL_DELTA0) / 2 ** t.boxOrder) * (1 + 1e-9);
-  const rLo2 = rLo * rLo, rHi2 = rHi * rHi;
+  const rLo2 = rLo * rLo, rHi2 = rHi * rHi, rMin2 = R_MIN_KM * R_MIN_KM, rMax2 = R_MAX_KM * R_MAX_KM;
   const sLo = Math.sin((POLY_LAT_MIN - 0.5) * RAD), sHi = Math.sin((POLY_LAT_MAX + 0.5) * RAD);
-  const india = new Uint16Array(t.omms.length), box = new Uint16Array(t.omms.length);
+  const n = t.omms.length;
+  const india = new Uint16Array(n), box = new Uint16Array(n);
+  const indiaMask = new Uint8Array(n * 144), boxMask = new Uint8Array(n * 144);
+  const stepsPer10 = 600_000 / t.stepMs;
   let calls = 0;
   t.omms.forEach((omm, i) => {
+    if (FENCED.has(t.norad[i]!)) return;
     const p = makeProp(omm);
     if (!p || !windowInCap(p, t.startMs, t.startMs + 86_400_000)) return;
     let inInd = false, inBox = false;
@@ -120,36 +163,36 @@ function truth(t: TruthTask): TruthOut {
       calls++;
       const pv = satellite.sgp4(p.satrec, (tm - p.epochMs) / 60_000);
       const pos = pv ? pv.position : null;
-      if (!pos || typeof pos === 'boolean' || !Number.isFinite(pos.x)) { inInd = false; inBox = false; continue; }
+      if (!pos || typeof pos === 'boolean' || !Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) { inInd = false; inBox = false; continue; }
       const r2 = pos.x * pos.x + pos.y * pos.y + pos.z * pos.z;
-      // box B
+      const q = Math.floor(s / stepsPer10);
       let b = false;
       if (r2 >= rLo2 && r2 < rHi2) b = cellKey(t.boxOrder, pos.x, pos.y, pos.z) === t.boxKey;
-      if (b && !inBox) box[i]!++;
+      if (b) { if (!inBox) box[i]!++; boxMask[i * 144 + q] = 1; }
       inBox = b;
-      // India: geocentric-latitude prefilter (geodetic differs by < 0.2 deg), then exact
       let ind = false;
-      const sinLat = pos.z / Math.sqrt(r2);
-      if (sinLat >= sLo && sinLat <= sHi) {
-        const ex = cs[s]! * pos.x + sn[s]! * pos.y, ey = -sn[s]! * pos.x + cs[s]! * pos.y;
-        const lon = Math.atan2(ey, ex) * DEG;
-        if (lon >= POLY_LON_MIN - 0.5 && lon <= POLY_LON_MAX + 0.5) {
-          const g = geodeticLatAltFromEr({ x: ex / ER_KM, y: ey / ER_KM, z: pos.z / ER_KM });
-          ind = inPoly(g.latDeg ?? 0, lon);
+      if (r2 >= rMin2 && r2 <= rMax2) {
+        const sinLat = pos.z / Math.sqrt(r2);
+        if (sinLat >= sLo && sinLat <= sHi) {
+          const ex = cs[s]! * pos.x + sn[s]! * pos.y, ey = -sn[s]! * pos.x + cs[s]! * pos.y;
+          const lon = Math.atan2(ey, ex) * DEG;
+          if (lon >= POLY_LON_MIN - 0.5 && lon <= POLY_LON_MAX + 0.5) {
+            const g = geodeticLatAltFromEr({ x: ex / ER_KM, y: ey / ER_KM, z: pos.z / ER_KM });
+            ind = inPoly(g.latDeg ?? 0, lon);
+          }
         }
       }
-      if (ind && !inInd) india[i]!++;
+      if (ind) { if (!inInd) india[i]!++; indiaMask[i * 144 + q] = 1; }
       inInd = ind;
     }
   });
-  return { india, box, propCalls: calls };
+  return { india, box, indiaMask, boxMask, propCalls: calls };
 }
 
 parentPort!.on('message', (m: { id: number; task: Task }) => {
   const t = m.task;
   const out = t.kind === 'build' ? build(t) : t.kind === 'refine' ? refine(t) : truth(t);
   const transfer: ArrayBuffer[] = [];
-  if (t.kind === 'build') for (const a of [...(out as BuildOut).cells, ...(out as BuildOut).counts]) transfer.push(a.buffer as ArrayBuffer);
+  if (t.kind === 'build') for (const a of (out as BuildOut).pairs) transfer.push(a.buffer as ArrayBuffer);
   parentPort!.postMessage({ id: m.id, out }, transfer);
 });
-void jointKey; void (null as unknown as Prop);

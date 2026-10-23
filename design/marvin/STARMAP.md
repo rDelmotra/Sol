@@ -206,3 +206,235 @@ with `fetch-data.sh`, no failed days. Local TimescaleDB in Docker.
   Same range as round 1.
 
 Verdict: the environment reproduces the Mac's numbers. Check passes.
+
+## Round 4 — T1 (cloud): star-map coverage summaries
+
+Machine: cloud container, 4 cores, 15 GB RAM, no swap, Node 22. Nothing else heavy ran, except two stretches
+where I ran a debug query beside the brute-force truth (those truth days show 74-81 s instead of 48 s; noted
+below). The container restarted once mid-task; all caches were checked and re-run from the last complete day.
+
+**What changed in the code (all in `packages/backend/scripts/starmap/`).** The Earth-frame cell path is
+gone from coverage code. Satellites are indexed only in the star map (TEME). A ground question is answered by
+rotating the ground region into the star map for each time slice (`coverage-cover.ts`), then reading star-map
+lists, then an exact SGP4 check. Files: `coverage.ts` (daily build), `coverage-worker.ts` (build / refine /
+brute force), `coverage-cover.ts` (India into the star map; randomized conservative-cover test),
+`coverage-scan.ts` (exact pass scan; graze test), `coverage-codec.ts` (file format, now keyed by
+granularity), `coverage-query.ts` (Q-L1, Q-L2), `coverage-shortcut.ts` (Q-L3), `coverage-diag.ts`
+(explains every miss). `coverage-hourly.ts` deleted (Earth-frame only).
+
+**How the summaries work, in plain words.** The space around Earth is cut into numbered boxes that hold still
+against the stars. For one UTC day we run SGP4 for every object and note which boxes it visited, in which
+period (whole day, each hour, each 10 minutes). The result is stored upside-down: for each (box, period) a
+list of the objects that were in it. "Who passed through box B in 29 days" then means reading 29 short lists.
+"Who passed over India" first needs the star boxes that the sky above India occupies in each period: India
+turns once around the polar axis per day, so over a whole day it sweeps a full ring of boxes, but within one
+hour it covers only a sector. Hence hourly lists are much sharper for ground questions.
+
+### Numbers
+
+Question definitions. **Q-L1:** an object's sub-satellite point (geodetic, inside a rough 18-vertex India
+polygon) at any height inside the star map's radial range. **Q-L2:** the object is inside order-3 box 9138
+(a LEO box, altitude 0-870 km, 5,594 objects on 2026-10-18; the same box the Mac used). Window: 29 days,
+2026-09-20..10-18, each day using its own element sets. Fenced as before: NORAD 54922 (removed from every
+question and from truth). "Truth positive" means at least one 10-second sample inside.
+
+**Build, per day** (29 days, 4 workers, one star-map SGP4 pass at order 4, orders 3 and 2 are exact parents):
+
+| step | wall/day | SGP4 calls/day | sgp4 / sort / encode (s) | peak RSS |
+|---|---|---|---|---|
+| 20 s sample + 1 s bisection | 133.6 s (131-141) | 407 M | 95.6 / 26.9 / 10.9 | 4.8 GB |
+| **10 s sample + 1 s bisection (used)** | **150.0 s (148-162)** | 498 M | 114.5 / 25.7 / 9.6 | 4.8 GB |
+
+(The Mac's six-cell-system job took 250-450 s/day; one star-only pass is cheaper. The 10 s build is 12% slower
+than the 20 s build.) Per day, skipped: ~84 objects with no valid SGP4 position, ~1 fenced, ~0.6 broken
+element sets; 45 object-days over the row cap (a decaying object, mostly NORAD 69730, flips boxes constantly).
+Weekly days (2026-06-30..09-15) were NOT built: not needed for the 29-day window and it would cost about
+34 min and 3.9 GB for no new result.
+
+**Bytes per day by order x granularity** (mean of 29 days; `.bin` file = lists + directory; 5-year = x1,826):
+
+| granularity | order 2 | order 3 | order 4 | all three orders |
+|---|---|---|---|---|
+| whole day | 0.96 MB (1.8 GB/5y) | 2.60 MB (4.7 GB) | 6.27 MB (11.4 GB) | 9.9 MB (18.0 GB) |
+| each hour | 14.8 MB (26.9 GB) | 31.7 MB (57.8 GB) | 70.8 MB (129 GB) | 117 MB (214 GB) |
+| each 10 min | 21.7 MB (39.6 GB) | 47.0 MB (85.8 GB) | 100.3 MB (183 GB) | 169 MB (309 GB) |
+
+Disk for the 29 days: day files 286 MB, hour files 3.40 GB, 10-min files 4.90 GB (the 10-min files were
+deleted after the runs to free disk). Lists per file at order 4: 84k (day), 1.05 M (hour), 3.2 M (10 min); most
+of the hour/10-min size is the directory of (box, period) keys, not the object lists, so it would compress.
+Going from a 20 s to a 10 s build changed storage by under 0.1%.
+
+**Q-L1 India, 29 days** (cover cost to rotate India into the star map: 0.04 / 0.15 / 0.65 s per day at orders
+2/3/4; it needs no data and could be precomputed). True answer (exact refine, 1 s near India): 857,161 object-days (LEO 825,728, HEO 22,024,
+MEO 8,436, GEO 877, other 96), 2,327,933 passes. That is 91% of all object-days in the window, so almost
+nothing can be pruned. Refine = exact SGP4 (20 s step, 1 s step near India) on candidate windows.
+
+| gran | order | candidate obj-days | answer share of candidates | candidate window per obj-day | merge s (29 d) | open+parse s | refine s/day (3-day sample) | total s/day |
+|---|---|---|---|---|---|---|---|---|
+| day | 2 | 945,519 | 90.7% | 24.0 h | 0.14 | 0.13 | 78.0 | 78.0 |
+| day | 3 | 945,448 | 90.7% | 24.0 h | 0.16 | 0.13 | 79.1 | 79.1 |
+| day | 4 | 927,824 | 92.4% | 24.0 h | 0.59 | 0.13 | 77.5 | 77.5 |
+| hour | 2 | 903,151 | 94.9% | 8.7 h | 0.14 | 4.7 | 42.8 | 43.0 |
+| hour | 3 | 892,595 | 96.0% | 6.4 h | 0.28 | 4.7 | 37.1 | 37.3 |
+| hour | 4 | 882,024 | 97.2% | 5.3 h | 1.57 | 4.7 | 34.2 | 34.4 |
+| 10 min | 2 | 897,086 | 95.5% | 2.3 h | 0.34 | 6.4 | 29.1 | 29.3 |
+| 10 min | 3 | 883,126 | 97.1% | 1.4 h | 0.62 | 6.4 | 25.6 | 25.8 |
+| 10 min | 4 | 872,068 | 98.3% | 1.0 h | 2.73 | 6.4 | 23.2 | 23.5 |
+
+(merge and open are totals over 29 days; refine is per day on 4 workers, averaged over 3 sample days
+(2026-09-20, 10-04, 10-18) where each variant's own windows were run; on those days every variant returned the
+same passes as the union run, 0 mismatches.) Brute force for comparison: 48 s/day on the same 4 cores (10 s
+step, 282 M SGP4 calls, clean runs), but it only knows 10 s resolution, whereas refine gives pass times to 1 s.
+Daily candidates by regime: GEO 47,876 candidates vs 877 true (daily summaries cannot tell GEO objects apart:
+a GEO sits still over the Earth, so it sweeps the whole star-map ring in a day); hourly order 4: 5,939;
+10-min order 4: 3,058.
+
+**Q-L2 box 9138, 29 days.** True answer (exact refine, 1 s near the box): 156,759 object-days (LEO 156,730, HEO 29), 2,298,161 passes.
+
+| gran | order | cover cells | candidate obj-days | answer share | candidate window per obj-day | merge s (29 d) | open+parse s | refine s/day | missed vs 1 s refine (obj-days / passes) |
+|---|---|---|---|---|---|---|---|---|---|
+| day | 2 | 1 | 274,013 | 57.2% | 24.0 h | 0.00 | 0.15 | 14.5 | 0 / 0 |
+| day | 3 | 1 | 156,829 | 100.0% | 24.0 h | 0.00 | 0.15 | 9.5 | 4 / 5 |
+| day | 4 | 8 | 156,829 | 100.0% | 24.0 h | 0.00 | 0.15 | 9.5 | 4 / 5 |
+| hour | 2 | 24 | 274,013 | 57.2% | 15.1 h | 0.04 | 4.2 | 11.5 | 0 / 34 |
+| hour | 3 | 24 | 156,829 | 100.0% | 15.0 h | 0.01 | 4.2 | 7.8 | 7 / 103 |
+| hour | 4 | 192 | 156,829 | 100.0% | 15.0 h | 0.03 | 4.2 | 7.8 | 7 / 103 |
+| 10 min | 2 | 144 | 274,013 | 57.2% | 3.3 h | 0.04 | 5.9 | 7.6 | 0 / 34 |
+| 10 min | 3 | 144 | 156,829 | 100.0% | 2.8 h | 0.03 | 5.9 | 5.2 | 7 / 103 |
+| 10 min | 4 | 1,152 | 156,829 | 100.0% | 2.8 h | 0.06 | 5.9 | 5.2 | 7 / 103 |
+
+(The "cover cells" is cells per day: the box itself, its parent, its 8 children, times the number of periods.
+"Missed vs 1 s refine" counts passes that exist at 1 s resolution but are not in the summary: sub-10-second
+corner clips of the box and edge rounding of a few seconds; they are not misses against the 10 s truth, see
+below.) Brute force: 48 s/day. So the box question is 5-9x faster than brute force with day/hour/10-min
+order 3 summaries, and about 6x with the day-only summary alone (9.5 s/day).
+
+**Recall against brute-force SGP4 truth (the hard rule).** Truth: ALL objects (about 32.6k), every one of the
+29 days, 10 s step, 8,640 steps per object per day, 282 M SGP4 calls per day, 4 workers: 48 s per day clean
+(74-81 s on the 13 days that ran beside my debug job). Truth positives: India 857,003 object-days
+(2,892,029 object-10-minute slices), box 156,521 object-days (2,588,555 slices).
+
+| | candidates from summaries (all 9 variants, with the over-row-cap fix below) | final answer after exact refine |
+|---|---|---|
+| India, object-days | 857,003 / 857,003 = **100%**, all 2,892,029 slices inside a candidate period | 857,001 / 857,003 |
+| Box, object-days | 156,521 / 156,521 = **100%**, all 2,588,555 slices inside a candidate period | 156,520 / 156,521 |
+
+The three object-days the refine does not reproduce are not real passes: they are single-sample SGP4 garbage
+from decaying objects. NORAD 34861 (2026-10-04) and 35248 (2026-10-18) each "pass over India" in exactly one
+10 s sample whose radius is 9,092 km and 732,602 km for orbits of about 6,900 km radius. NORAD 61486
+(2026-10-18) is re-entering; SGP4 returns a position that jumps to a different box every second (radius
+falling 15 km/s), and exactly one second lands in box 9138. I count these as truth artefacts, name them, and
+do not claim they are passes. A 500 km near-zone margin did not recover 61486 either (tested on 2026-10-18).
+
+(The refine answers above, 857,161 and 156,759, are larger than the 10 s truth counts, 857,003 and 156,521,
+because the refine steps 1 s near the target and also catches visits shorter than 10 s.)
+
+**Lead's independent check** (separate code: own SGP4 loop over the raw catalog, own sub-satellite point, not the
+worker's scan; single thread, 220 s): 2026-10-04 at 10 s, 32.6k objects. Box 9138: 5,387 objects, the same as the
+truth file, and every one is in that day's order-3 list for box 9138 (0 missing). India: 29,510 vs truth 29,511;
+the one difference is NORAD 34861 (COSMOS 2251 DEB), which on that day has a valid SGP4 position in only 190 of
+8,640 samples, at radii up to 13.6 million km. That confirms it as SGP4 garbage, not a pass.
+
+**Bugs found and fixed on the way (recall below 100% was real, twice).** (1) First full run, 20 s build:
+candidates missed 45 India and 5 box truth object-days (99.99%). 45 India + 3 box were the objects the build
+drops for flipping boxes too often (the row cap); fix: those objects (listed in `report.jsonl`, 1-4 per day)
+are always candidates. The other 2 box misses were 1 s corner clips of box 9138 lying between two 20 s
+samples that were both in the same neighbour box: a 20 s sample + bisection cannot see an out-and-back
+excursion. Fix: sample every 10 s, aligned with the truth grid, so every truth sample is also a build
+sample (cost: +12% build time, no storage change). With this, recall is 100% on every variant. Residual:
+visits shorter than 10 s can still be missed by the summaries (11 object-days in 29 days were found at
+1 s resolution that the summaries do not list: 4 at order 3/4 daily, 7 hourly/10-min); that is the
+limit of the sampling, and the planner should treat the summary as "nothing missed at 10 s resolution".
+(2) The Mac's graze fix (refine keys on cell + pass flag) is replaced by a stronger one: wherever an object is
+near the target the refine steps 1 s, so no pass of 1 s or more can fall between samples (`coverage-scan.ts`,
+unit-tested: a 2.5 s graze is found, and the old coarse-only scan misses it). This was re-run and confirmed:
+no refine-only gaps remain beyond the three garbage object-days above.
+
+**Q-L3: orbit-shape shortcut** (from elements alone: can the orbit reach India's latitudes; GEO by longitude;
+height band and latitude band for the box; "plane" also tests whether the box direction is near the orbit
+plane at some hour). Per object-day, vs the 10 s truth on all 29 days:
+
+| India | truth+ | false negatives | false positives | recall | precision |
+|---|---|---|---|---|---|
+| LEO | 825,704 | 0 | 2,540 | 100% | 99.7% |
+| MEO | 8,405 | 0 | 8,958 | 100% | 48.4% |
+| GEO | 877 | **41** | 5,838 | **95.3%** | 12.5% |
+| HEO | 21,921 | 0 | 19,832 | 100% | 52.5% |
+| other | 96 | 0 | 1,495 | 100% | 6.0% |
+| all | 857,003 | 41 | 38,663 | 99.995% | 95.7% |
+
+| Box 9138 | truth+ | false negatives | false positives | recall | precision |
+|---|---|---|---|---|---|
+| height + latitude band, LEO | 156,492 | 0 | 168,242 | 100% | 48.2% |
+| height + latitude band, all regimes | 156,521 | 0 | 168,764 | 100% | 48.1% |
+| band + orbit plane, all regimes | 156,521 | **1** | 45,592 | 99.9994% | 77.4% |
+
+(HEO/MEO have 29 / 0 true box positives; they appear in the false positives.) For comparison the summaries
+have 0 false negatives, and precision 92.4% (India, day o4), 97.2% (hour o4), 98.3% (10-min o4), 100.0%
+(box, order 3).
+
+### 1,826-day extrapolation (linear in days from the 29 measured; nothing here was run at 5 years)
+
+Storage per option is in the table above (day order 4 only: 11.4 GB; day orders 3+4: 16.2 GB; hour order
+4: 129 GB; 10-min order 4: 183 GB). Query time, summary read + refine on 4 cores:
+
+| question | variant | merge+open (s) | candidates | refine | brute force at 48 s/day |
+|---|---|---|---|---|---|
+| India | day o4 | 45 | 58.4 M obj-days | 39.3 h | 24.3 h |
+| India | hour o4 | 395 | 55.5 M | 17.4 h | 24.3 h |
+| India | 10 min o4 | 574 | 54.9 M | 11.8 h | 24.3 h |
+| box 9138 | day o3 | 9.6 | 9.9 M | 4.8 h | 24.3 h |
+| box 9138 | hour o3 | 263 | 9.9 M | 3.9 h | 24.3 h |
+| box 9138 | 10 min o3 | 373 | 9.9 M | 2.6 h | 24.3 h |
+
+These are "list every pass with its exact times" jobs: the answer itself is 2.3 M passes per 29 days (India),
+so the refine time is the cost of producing the answer, not of finding it. The read of the lists is seconds.
+
+### Verdict in plain words
+
+**Recall.** Every one of nine variants (day / hour / 10 minutes x orders 2 / 3 / 4) finds every truth
+object-day and every truth 10-minute slice for both questions, once the build samples every 10 seconds and
+the objects the build cannot index are always checked. The earlier 99.99% was real, found, and fixed twice.
+
+**Where summaries beat the orbit-shape shortcut.** (a) Box questions: the shortcut keeps 2 objects for every
+real one (48% precision, or 77% with the plane test, which also misses one real pass); the order-3 summary
+keeps only the real ones (100%) and, since the box itself is a summary cell, nearly all of the work is
+reading a 29-entry list. (b) Ground questions about stationary or slow objects: the shortcut loses 41 real GEO
+object-days (95% GEO recall) and keeps 12% GEO precision; hourly summaries cut GEO candidates from 47,876 to
+5,939 (day vs hour, order 4). (c) Time: summaries say when, so the refine looks at 1-5 hours of the day
+instead of 24 h; this makes the exact answer 1.5-3.4x cheaper than the daily summary. (d) Anything where
+"closest approach" wording would need the shape filter to be guessed: summaries are mechanical and have no
+tunable pads.
+
+**Where they do not.** (a) India over long windows: 91% of all object-days are real passes, so there is nothing
+to prune; the shortcut (95.7% precision, one cheap check) is as sharp as the daily summary (92.4%), and the
+daily summary + exact refine (77.5 s/day) is slower than brute force at 10 s (48 s/day) because the refine
+does finer work. Only hourly and 10-minute summaries beat brute force (34 s and 23 s per day, 1.4x and 2.0x)
+and give pass times to 1 s. (b) Storage: hour and 10-minute lists cost 11-16x the daily ones for 2-3x speed.
+
+**Recommendation.** Keep forever: daily summaries at orders 3 and 4 (2.6 + 6.3 MB/day = 16.2 GB per 5 years;
+order 4 alone is 11.4 GB). Order 2 is useless (57% precision on the box, no better for India). Drop 10-minute
+summaries (183 GB at order 4 for a further 1.5x). Hourly order 4 (129 GB per 5 years) is worth keeping
+only as a rolling window, for example 90 days = 6.4 GB, for ground questions near "now"; beyond that, answer
+India-type questions with the shortcut plus on-demand SGP4 on the shortcut's survivors, and answer box-type
+questions from the daily lists. Always check the unindexable objects (1-4 per day) and treat the summary as
+exact at 10 s resolution. Production's 5 GB disk fits the daily layer only if stored compressed on a larger
+disk; the daily order-4 layer alone is 11.4 GB per 5 years.
+
+**Caveats.** All times are from one 4-core, 15 GB machine, about 3x slower than the Mac for whole-catalog
+jobs. Refine times for the nine variants were measured on 3 of 29 days and scaled; union refine and the
+summary read were measured on all 29. The 1,826-day figures are straight-line extrapolations. The India cover
+is derived to be conservative and was checked by a randomized test (heights from below ground to 60,000 km,
+points on the polygon edges), not proved. The weekly days were not built. Not done: compression of the hourly
+directories; a trial of 5 s sampling.
+
+Reproduce (from the repo root):
+```
+npx tsx packages/backend/scripts/starmap/coverage.ts --days daily --workers 4 --step 10 --force     # 29 days, ~75 min
+npx tsx packages/backend/scripts/starmap/coverage-query.ts --stage truth --truth-days <comma list of the 29 days>  # ~25 min
+npx tsx packages/backend/scripts/starmap/coverage-query.ts --stage query --ndays 29 --timing-days 3 --workers 4   # ~80 min
+npx tsx packages/backend/scripts/starmap/coverage-shortcut.ts ; npx tsx packages/backend/scripts/starmap/coverage-diag.ts
+bash packages/backend/scripts/starmap/check.sh
+```
+Raw outputs are in `packages/backend/data/coverage/q/report.txt`, `.../q/shortcut.txt`, `.../report.jsonl` (step 10 s)
+and `.../q20/report-step20.jsonl` (the first, 20 s run, kept for comparison).
