@@ -708,3 +708,89 @@ STARLINK-5503 x STARLINK-36744 on 2026-10-12, recomputes to 0.610 km at the stor
 identical to the stored payload. The lead also confirmed from the 2026-09-30 evidence file that under 1 km and
 >= 0.5 km/s there were 1,220 crossing, 1,478 same_family and 29 same_launch encounters, which is why the
 categories are labels and not filters.
+
+## Decision — storage and indexing for the Perceptor
+
+**In plain words.** Keep the raw orbit numbers (element sets) forever; everything else can be rebuilt from them.
+On top of them keep two small things forever: daily star-map lists ("which objects passed through which box of
+space that day") and a short list of daily facts (new and vanished objects, orbit jumps, formation pairs, close
+approaches under 1 km). Answer everything else on demand by re-running SGP4 only on the objects the lists point to.
+"Now" questions run in memory and store nothing. Satellites are indexed only in the star map; ground questions
+turn the ground region into star-map boxes for each hour or day. One nightly job of about 6 minutes per day (4
+cores) keeps it all current. Five years cost about 25–60 GB depending on whether the element sets are
+compressed. That is more than production's 5 GB disk, so production needs a bigger volume (and TimescaleDB if the
+element sets are to be compressed).
+
+### Layers to build (exact settings)
+
+| layer | what | kept | per day | per 5 years | measured in |
+|---|---|---|---|---|---|
+| 1 truth | one element set per object per UTC day (`omm_daily`), time-leading index | forever | 13.7 MB as JSON, 20.7 MB in plain Postgres (round 3); 2.1 MB gzip | 38 GB plain; ~4–6 GB compressed (estimate from gzip, TimescaleDB ratio not measured) | R3, this section |
+| 2 coverage | star-map (TEME) lists, daily, orders 3 and 4; 10 s sample + 1 s bisection; row-capped objects always candidates | forever | 8.9 MB (2.6 + 6.3) | 16.2 GB | T1 |
+| 2 coverage, recent | the same, hourly, order 4 | rolling 90 days | 70.8 MB | 6.4 GB in total | T1 |
+| 3 events | object.appeared / disappeared, elements.jump, close.formation, close.approach (< 1 km, ≥ 0.5 km/s, category as label) | forever | 0.8 MB, ~2.4k rows | 1.5 GB | T2 |
+| 3 events, recent | region.pass for watched regions | rolling 30 days | 18 MB (8 regions) | ~0.5 GB in total | T2 |
+| 4 live | SGP4 in memory: coarse time filter (one-vs-all), per-step grid (all-vs-all), point-in-polygon (region now) | nothing stored | — | — | R2, T2 |
+
+Total: about 63 GB per 5 years with plain Postgres element sets, about 29 GB if the element sets are compressed.
+
+Not stored, computed on demand: the full close-approach set under 5 km (~74k/day, ~150 s of 4 cores per day);
+region passes outside the rolling window (T1's lists + refine answer "who passed over X in N days").
+
+Guarantee to state with every answer: the lists miss nothing at 10-second resolution (100% recall on 29 days, T1);
+visits shorter than 10 s may only be found by the exact refine. Exact pass times come from the refine, to 1 s.
+
+### The daily job
+
+Per UTC day, after the day's element sets land:
+1. Layer 2 build: one SGP4 pass over all objects at 10 s with 1 s bisection, orders 3 and 4 daily plus order 4
+   hourly. **150 s on 4 cores, peak 4.8 GB RAM** (T1, mean of 29 days).
+2. Layer 3 derive: set differences, jumps, formation pairs, close approaches (per-step grid), region passes for
+   the rolling window. **About 220 s on 4 cores, peak about 1.2 GB** (T2, mean of 29 days).
+3. Drop hourly lists older than 90 days and region passes older than 30 days.
+
+Total about **6.2 minutes per day on 4 cores**, peak about 5 GB RAM. A 5-year backfill at that rate is about 190 h
+on 4 cores; on 8 and 32 vCPU roughly 95 h and 25 h if it scales linearly. Scaling was NOT measured (T5 not run).
+
+### Dropped, and why
+
+| idea | why dropped | measured in |
+|---|---|---|
+| stored box index (every visit with entry/exit times) | ~1.4 GB/day even compressed; the daily lists + refine give the same recall at 9 MB/day | R1, T1 |
+| stored Chebyshev day lines | 67–85 MB/day; only ~2.5× faster for long all-object scans, slower for single instants; parallel SGP4 gives the same gain | R3 |
+| ML surrogate for SGP4 | slower and less accurate than SGP4 | R3 |
+| database indexes on orbit shape (perigee/apogee, MOID) | at catalog size a scan takes ~2 ms; in LEO the filters barely prune; time must lead any history index | R2 |
+| "same box = near" proximity | caught only 12.5% of objects within 500 km; always cover the search ball | R1 |
+| satellites in Earth-fixed cells | against the design rule; daily Earth cells pruned nothing (99.8% of candidates real) | Mac R4 |
+| order-2 lists, 10-minute lists | order 2: 57% precision on the box; 10-minute: 183 GB per 5 years for 1.5× more speed | T1 |
+| storing every close approach under 5 km | ~74k/day of real but routine crossings; stored subset under 1 km is 1.9k/day | T2 |
+| storing region passes forever | 33 GB per 5 years (97% of the event table) for an answer the lists rebuild | T2 |
+
+### What production needs
+
+- **Disk:** a volume of at least ~70 GB for 5 years (or ~35 GB with compressed element sets). The current 5 GB fits
+  about 6 months of everything above. The layer-2 lists are binary blobs (one per day, granularity and order); they
+  can live in a `bytea` table or as files on the volume.
+- **Database:** Postgres is enough for layers 2 and 3. TimescaleDB is worth adding only to compress `omm_daily`
+  (about 7× by the gzip figure; not measured in TimescaleDB). PostGIS is not needed by anything measured: all
+  polygon work runs in code.
+- **Compute:** a worker with 4 vCPU and 6–8 GB RAM for the nightly job (about 6 minutes per day). The API itself
+  needs no extra cores: lookups take 1–10 ms and the refine runs per question.
+- **Backfill:** 5 years of history needs Space-Track history access, which the owner must arrange. Then about 190 h
+  on 4 cores, or a day or two on a 32-vCPU machine. Not attempted.
+
+### Open problems
+
+- Scaling with more cores (T5) was not measured; the backfill estimates assume linear scaling.
+- Element-set compression in TimescaleDB was not measured; the 4–6 GB figure is from gzip.
+- 5-year figures are straight-line multiples of 29 measured days.
+- History before 2026-06-23 is sparse, and the live app reports coverage up to 2026-10-25 (future-dated element
+  sets?); not investigated.
+- Decay vs "aged out of the 30-day window" is unconfirmed without an outside decay source; say "left the catalog".
+- Starlink orbit lowering cannot be told apart from drag-driven lowering with public element sets alone, so jumps
+  stay "manoeuvre candidates".
+- SGP4 returns garbage for some re-entering objects (about 90 per day fenced); 3 such object-days appeared as false
+  "passes" in the brute-force truth. Any production answer should fence them the same way.
+- Only India's polygon is careful; the other region polygons are rough.
+- No whole-day all-vs-all brute force was run for close approaches (recall was checked on 3 hours × 43 objects).
+- TEME vs J2000 (~0.3°) is tagged, not converted.
