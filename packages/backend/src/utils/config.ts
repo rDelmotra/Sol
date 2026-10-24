@@ -148,3 +148,34 @@ export function alertEmailTo(): string[] {
     .map((a) => a.trim())
     .filter(Boolean);
 }
+
+/**
+ * STORAGE_BACKEND: where durable blobs (today the raw history archive) are written.
+ * 'file' (default, also for any unknown value) = the attached volume; 's3' = a bucket.
+ */
+export function storageBackend(): 'file' | 's3' {
+  return (trimmedEnv('STORAGE_BACKEND') ?? '').toLowerCase() === 's3' ? 's3' : 'file';
+}
+
+/**
+ * Bucket credentials under the names Railway gives a bucket's variable references:
+ * BUCKET, ENDPOINT, ACCESS_KEY_ID, SECRET_ACCESS_KEY, REGION. S3_PATH_STYLE=1 forces
+ * path-style URLs (older buckets). Null unless all five are set.
+ */
+export function bucketConfig(): {
+  bucket: string;
+  endpoint: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  region: string;
+  pathStyle: boolean;
+} | null {
+  const bucket = trimmedEnv('BUCKET');
+  const endpoint = trimmedEnv('ENDPOINT');
+  const accessKeyId = trimmedEnv('ACCESS_KEY_ID');
+  const secretAccessKey = trimmedEnv('SECRET_ACCESS_KEY');
+  const region = trimmedEnv('REGION');
+  if (!bucket || !endpoint || !accessKeyId || !secretAccessKey || !region) return null;
+  const pathStyle = ['1', 'true', 'yes', 'on'].includes((trimmedEnv('S3_PATH_STYLE') ?? '').toLowerCase());
+  return { bucket, endpoint, accessKeyId, secretAccessKey, region, pathStyle };
+}

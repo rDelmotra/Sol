@@ -1,9 +1,8 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import zlib from 'node:zlib';
 import { historyArchiveDir } from '../../utils/paths.js';
 import type { RawGpRecord } from '../ingest/sink.js';
 import { logger } from '../../utils/logger.js';
+import { createBlobStore } from '../../utils/storage/index.js';
 import { reportDiskAndAlert } from '../../utils/volume-alert.js';
 
 // ============================================================
@@ -33,26 +32,27 @@ function fetchDay(): string {
 }
 
 /**
- * Write today's raw GP snapshot as `<dir>/YYYY-MM-DD.json.gz` (atomic via tmp +
- * rename; latest write in a day wins, mirroring the daily-downsample). Throws on
+ * Write today's raw GP snapshot as `YYYY-MM-DD.json.gz` through the blob store
+ * (atomic; latest write in a day wins, mirroring the daily-downsample). By default
+ * the store is the file backend rooted at archiveDir(), so the path, the tmp +
+ * rename write and the log line are what they were before the store existed;
+ * STORAGE_BACKEND=s3 sends it to the bucket under 'history/raw/'. Throws on
  * failure so the caller can log non-fatally.
  */
 export async function writeRawArchive(records: RawGpRecord[], source: string): Promise<void> {
   const dir = archiveDir();
-  fs.mkdirSync(dir, { recursive: true });
+  const store = createBlobStore({ fileRoot: dir, s3Prefix: 'history/raw' });
 
   const day = fetchDay();
-  const finalPath = path.join(dir, `${day}.json.gz`);
-  const tmpPath = `${finalPath}.tmp`;
+  const name = `${day}.json.gz`;
 
   const envelope = JSON.stringify({ day, source, fetchedAt: new Date().toISOString(), records });
   const gz = zlib.gzipSync(Buffer.from(envelope, 'utf8'), { level: 9 });
 
-  await fs.promises.writeFile(tmpPath, gz);
-  await fs.promises.rename(tmpPath, finalPath);
+  await store.put(name, gz);
 
   logger.info(
-    `History raw archive written: ${path.basename(finalPath)} ` +
+    `History raw archive written: ${name} ` +
       `(${records.length} records, ${(gz.length / 1_048_576).toFixed(2)} MB gz)`,
   );
 
