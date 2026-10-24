@@ -1,4 +1,4 @@
-import { assertSafeKey, assertSafePrefix, type BlobInfo, type BlobStore } from './types.js';
+import { assertSafeKey, assertSafePrefix, type BlobInfo, type BlobStat, type BlobStore, type PutOptions } from './types.js';
 
 // ============================================================
 // S3 adapter (Railway Buckets or any S3-compatible service)
@@ -12,8 +12,22 @@ import { assertSafeKey, assertSafePrefix, type BlobInfo, type BlobStore } from '
 // no tmp-and-rename step here. All keys are placed under `prefix` inside the bucket.
 // ============================================================
 
+/** Name of the object metadata entry that carries the original file's mtime (ms since epoch). */
+export const MTIME_META_KEY = 'mtime-ms';
+
+export interface S3Head {
+  size: number;
+  /** S3's own LastModified (the upload time), ms since epoch. */
+  lastModifiedMs: number;
+  /** The mtime-ms metadata, when the object was written with one. */
+  mtimeMs?: number;
+}
+
 export interface S3Ops {
-  put(key: string, body: Buffer): Promise<void>;
+  /** `mtimeMs`, when given, is stored as object metadata (MTIME_META_KEY). */
+  put(key: string, body: Buffer, mtimeMs?: number): Promise<void>;
+  /** null when the object does not exist. */
+  head(key: string): Promise<S3Head | null>;
   /** null when the object does not exist. */
   get(key: string): Promise<Buffer | null>;
   /** Every object under `prefix`, following pagination to the end. */
@@ -51,9 +65,15 @@ export class S3BlobStore implements BlobStore {
     return this.ops;
   }
 
-  async put(key: string, data: Buffer): Promise<void> {
+  async put(key: string, data: Buffer, opts?: PutOptions): Promise<void> {
     assertSafeKey(key);
-    await (await this.loadOps()).put(this.prefix + key, data);
+    await (await this.loadOps()).put(this.prefix + key, data, opts?.mtimeMs);
+  }
+
+  async stat(key: string): Promise<BlobStat | null> {
+    assertSafeKey(key);
+    const head = await (await this.loadOps()).head(this.prefix + key);
+    return head ? { size: head.size, mtimeMs: head.mtimeMs ?? head.lastModifiedMs } : null;
   }
 
   async get(key: string): Promise<Buffer | null> {
@@ -97,8 +117,29 @@ export async function createAwsS3Ops(cfg: S3Config): Promise<S3Ops> {
   const Bucket = cfg.bucket;
 
   return {
-    async put(key, body) {
-      await client.send(new sdk.PutObjectCommand({ Bucket, Key: key, Body: body }));
+    async put(key, body, mtimeMs) {
+      await client.send(
+        new sdk.PutObjectCommand({
+          Bucket,
+          Key: key,
+          Body: body,
+          ...(mtimeMs !== undefined ? { Metadata: { [MTIME_META_KEY]: String(Math.round(mtimeMs)) } } : {}),
+        }),
+      );
+    },
+    async head(key) {
+      try {
+        const res = await client.send(new sdk.HeadObjectCommand({ Bucket, Key: key }));
+        const meta = Number(res.Metadata?.[MTIME_META_KEY]);
+        return {
+          size: res.ContentLength ?? 0,
+          lastModifiedMs: res.LastModified?.getTime() ?? 0,
+          ...(Number.isFinite(meta) && meta > 0 ? { mtimeMs: meta } : {}),
+        };
+      } catch (err) {
+        if (isNotFound(err)) return null;
+        throw err;
+      }
     },
     async get(key) {
       try {

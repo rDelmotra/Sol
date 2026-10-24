@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger.js';
+import { requestMirrorFlush } from '../utils/storage/mirror-runtime.js';
 
 // ============================================================
 // Tiny JSON state files that live next to the cache (the Space-Track and the
@@ -42,6 +43,7 @@ export function writeStateFile(filePath: string, label: string, state: unknown):
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(tmp, JSON.stringify(state), 'utf8');
     fs.renameSync(tmp, filePath);
+    requestMirrorFlush(); // no-op unless the bucket mirror is running
   } catch (err) {
     logger.warn(`${label} could not be written (${(err as Error).message}) — continuing without it`);
   }

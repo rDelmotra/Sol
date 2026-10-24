@@ -16,12 +16,17 @@ import {
 import { bucketConfig, storageBackend } from '../../src/utils/config.ts';
 
 /** In-memory S3Ops: the whole bucket in a Map, with a page size to exercise pagination. */
-function fakeOps(objects = new Map<string, Buffer>()): S3Ops & { objects: Map<string, Buffer>; listCalls: string[] } {
+function fakeOps(objects = new Map<string, Buffer>()): S3Ops & { objects: Map<string, Buffer>; listCalls: string[]; metas: Map<string, number | undefined> } {
   const listCalls: string[] = [];
   return {
     objects,
     listCalls,
-    async put(key, body) { objects.set(key, Buffer.from(body)); },
+    metas: new Map<string, number | undefined>(),
+    async put(key, body, mtimeMs) { objects.set(key, Buffer.from(body)); this.metas.set(key, mtimeMs); },
+    async head(key) {
+      const buf = objects.get(key);
+      return buf ? { size: buf.length, lastModifiedMs: 1_000, mtimeMs: this.metas.get(key) } : null;
+    },
     async get(key) { return objects.get(key) ?? null; },
     async list(prefix) {
       listCalls.push(prefix);
@@ -88,6 +93,16 @@ describe('FileBlobStore', () => {
     assert.deepEqual(await new FileBlobStore(path.join(root, 'absent')).list(), []);
   });
 
+  it('put can set the mtime and stat reads it back; stat of a missing key is null', async () => {
+    const store = new FileBlobStore(root);
+    await store.put('k', Buffer.from('abcd'), { mtimeMs: 1_700_000_000_000 });
+    const st = await store.stat('k');
+    assert.equal(st?.size, 4);
+    assert.ok(Math.abs((st?.mtimeMs ?? 0) - 1_700_000_000_000) < 5);
+    assert.equal(await store.stat('nope'), null);
+    assert.deepEqual(fs.readdirSync(root), ['k'], 'no temp file left behind');
+  });
+
   it('delete removes the object and tolerates a missing one', async () => {
     const store = new FileBlobStore(root);
     await store.put('k', Buffer.from('v'));
@@ -145,6 +160,16 @@ describe('S3BlobStore', () => {
     assert.equal(loaded, 1, 'ops are loaded once and reused');
   });
 
+  it('stat reports size and the preserved mtime, falling back to the upload time', async () => {
+    const ops = fakeOps();
+    const store = new S3BlobStore(async () => ops, 'p');
+    assert.equal(await store.stat('missing'), null);
+    await store.put('with-mtime', Buffer.from('abc'), { mtimeMs: 123_456 });
+    await store.put('without', Buffer.from('xy'));
+    assert.deepEqual(await store.stat('with-mtime'), { size: 3, mtimeMs: 123_456 });
+    assert.deepEqual(await store.stat('without'), { size: 2, mtimeMs: 1_000 });
+  });
+
   it('isNotFound recognises the SDK shapes', () => {
     assert.equal(isNotFound({ name: 'NoSuchKey' }), true);
     assert.equal(isNotFound({ $metadata: { httpStatusCode: 404 } }), true);
@@ -154,7 +179,8 @@ describe('S3BlobStore', () => {
 });
 
 describe('createBlobStore / env', () => {
-  const names = ['STORAGE_BACKEND', 'BUCKET', 'ENDPOINT', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY', 'REGION', 'S3_PATH_STYLE'];
+  const names = ['STORAGE_BACKEND', 'BUCKET', 'ENDPOINT', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY', 'REGION', 'S3_PATH_STYLE',
+    'AWS_S3_BUCKET_NAME', 'AWS_ENDPOINT_URL', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_DEFAULT_REGION'];
   const saved: Record<string, string | undefined> = {};
   beforeEach(() => {
     for (const n of names) { saved[n] = process.env[n]; delete process.env[n]; }
@@ -193,6 +219,21 @@ describe('createBlobStore / env', () => {
     delete process.env.SECRET_ACCESS_KEY;
     assert.equal(bucketConfig(), null);
     assert.equal(createBlobStore({ fileRoot: '/tmp/x' }).kind, 'file');
+  });
+
+  it('bucketConfig prefers the AWS SDK preset names over the bare Railway ones', () => {
+    setBucketVars();
+    Object.assign(process.env, {
+      AWS_S3_BUCKET_NAME: 'aws-b', AWS_ENDPOINT_URL: 'https://aws.example', AWS_ACCESS_KEY_ID: 'aid',
+      AWS_SECRET_ACCESS_KEY: 'asec', AWS_DEFAULT_REGION: 'ams',
+    });
+    try {
+      assert.deepEqual(bucketConfig(), {
+        bucket: 'aws-b', endpoint: 'https://aws.example', accessKeyId: 'aid', secretAccessKey: 'asec', region: 'ams', pathStyle: false,
+      });
+    } finally {
+      for (const n of ['AWS_S3_BUCKET_NAME', 'AWS_ENDPOINT_URL', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_DEFAULT_REGION']) delete process.env[n];
+    }
   });
 
   it('bucketConfig reads the Railway names and the path-style flag', () => {

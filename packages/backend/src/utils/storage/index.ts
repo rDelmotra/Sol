@@ -5,8 +5,8 @@ import { createAwsS3Ops, S3BlobStore, type S3Ops } from './s3-store.js';
 import type { BlobStore } from './types.js';
 
 export { FileBlobStore } from './file-store.js';
-export { S3BlobStore, createAwsS3Ops, isNotFound, type S3Config, type S3Ops } from './s3-store.js';
-export { assertSafeKey, assertSafePrefix, type BlobInfo, type BlobStore } from './types.js';
+export { S3BlobStore, createAwsS3Ops, isNotFound, MTIME_META_KEY, type S3Config, type S3Head, type S3Ops } from './s3-store.js';
+export { assertSafeKey, assertSafePrefix, type BlobInfo, type BlobStat, type BlobStore, type PutOptions } from './types.js';
 
 export interface BlobStoreOptions {
   /** Directory the file backend writes into. */
@@ -35,7 +35,7 @@ export function createBlobStore(opts: BlobStoreOptions): BlobStore {
     if (!warnedMisconfigured) {
       warnedMisconfigured = true;
       logger.error(
-        'STORAGE_BACKEND=s3 but BUCKET, ENDPOINT, ACCESS_KEY_ID, SECRET_ACCESS_KEY or REGION is missing — ' +
+        'STORAGE_BACKEND=s3 but a bucket variable is missing (AWS_S3_BUCKET_NAME, AWS_ENDPOINT_URL, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY or AWS_DEFAULT_REGION) — ' +
           'falling back to the attached volume so nothing is lost.',
       );
     }

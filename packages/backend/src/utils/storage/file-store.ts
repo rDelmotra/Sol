@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertSafeKey, assertSafePrefix, type BlobInfo, type BlobStore } from './types.js';
+import { assertSafeKey, assertSafePrefix, type BlobInfo, type BlobStat, type BlobStore, type PutOptions } from './types.js';
 
 // ============================================================
 // File adapter: objects are plain files under `root`.
@@ -22,12 +22,27 @@ export class FileBlobStore implements BlobStore {
     return path.join(this.root, ...key.split('/'));
   }
 
-  async put(key: string, data: Buffer): Promise<void> {
+  async put(key: string, data: Buffer, opts?: PutOptions): Promise<void> {
     const finalPath = this.resolve(key);
-    const tmpPath = finalPath + TMP_SUFFIX;
+    // pid in the temp name: two processes (API and DSO worker) may hydrate the same file at once.
+    const tmpPath = `${finalPath}.${process.pid}${TMP_SUFFIX}`;
     await fs.promises.mkdir(path.dirname(finalPath), { recursive: true });
     await fs.promises.writeFile(tmpPath, data);
+    if (opts?.mtimeMs !== undefined) {
+      const when = new Date(opts.mtimeMs);
+      await fs.promises.utimes(tmpPath, when, when);
+    }
     await fs.promises.rename(tmpPath, finalPath);
+  }
+
+  async stat(key: string): Promise<BlobStat | null> {
+    try {
+      const st = await fs.promises.stat(this.resolve(key));
+      return st.isFile() ? { size: st.size, mtimeMs: st.mtimeMs } : null;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw err;
+    }
   }
 
   async get(key: string): Promise<Buffer | null> {

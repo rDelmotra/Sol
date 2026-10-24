@@ -10,6 +10,7 @@ import {
   isHistoryReady,
 } from './history/index.js';
 import { logger } from './utils/logger.js';
+import { installMirrorShutdown, startMirror } from './utils/storage/mirror-runtime.js';
 import { reportDiskAndAlert } from './utils/volume-alert.js';
 
 export interface BootStep {
@@ -74,6 +75,19 @@ export function makeDiskReportStep(
 }
 
 const reportDisk: BootStep = makeDiskReportStep();
+
+/**
+ * First step: with STORAGE_BACKEND=s3 and a bucket configured, reconcile the cache
+ * directory with the bucket BEFORE anything reads it (the freshness check below reads
+ * the catalog's mtime), then keep it flushed. A no-op otherwise. Never throws.
+ */
+export const storageSync: BootStep = {
+  name: 'storage-sync',
+  async run() {
+    await startMirror();
+    installMirrorShutdown();
+  },
+};
 
 const warmEnrichment: BootStep = {
   name: 'enrichment',
@@ -156,6 +170,7 @@ const analyticSnapshot: BootStep = {
 // The disk report runs LAST and is not awaited: nothing may wait on the filesystem
 // before the TLE updater is scheduled.
 export const BOOT_STEPS: readonly BootStep[] = [
+  storageSync,
   warmEnrichment,
   initHistoryDb,
   tleFreshness,

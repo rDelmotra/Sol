@@ -16,10 +16,23 @@ export interface BlobInfo {
   size: number;
 }
 
+export interface BlobStat {
+  size: number;
+  /** Modification time in ms. For a mirrored object this is the ORIGINAL file's mtime, not the upload time. */
+  mtimeMs: number;
+}
+
+export interface PutOptions {
+  /** Record this as the object's modification time (the mirror passes the local file's mtime). */
+  mtimeMs?: number;
+}
+
 export interface BlobStore {
   readonly kind: 'file' | 's3';
   /** Write (or replace) the object. The write is atomic: readers see the old or the new bytes, never a mix. */
-  put(key: string, data: Buffer): Promise<void>;
+  put(key: string, data: Buffer, opts?: PutOptions): Promise<void>;
+  /** Size and modification time, or null when the key does not exist. */
+  stat(key: string): Promise<BlobStat | null>;
   /** The bytes, or null when the key does not exist. */
   get(key: string): Promise<Buffer | null>;
   /** Every object whose key starts with `prefix` (default: all), sorted by key. */

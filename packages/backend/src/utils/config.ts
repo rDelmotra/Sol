@@ -158,9 +158,11 @@ export function storageBackend(): 'file' | 's3' {
 }
 
 /**
- * Bucket credentials under the names Railway gives a bucket's variable references:
- * BUCKET, ENDPOINT, ACCESS_KEY_ID, SECRET_ACCESS_KEY, REGION. S3_PATH_STYLE=1 forces
- * path-style URLs (older buckets). Null unless all five are set.
+ * Bucket credentials. The AWS SDK preset names (what Railway's "Connect Service to
+ * Bucket" adds) win: AWS_S3_BUCKET_NAME, AWS_ENDPOINT_URL, AWS_ACCESS_KEY_ID,
+ * AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION. The bare names Railway gives a bucket
+ * (BUCKET, ENDPOINT, ACCESS_KEY_ID, SECRET_ACCESS_KEY, REGION) work as a fallback.
+ * S3_PATH_STYLE=1 forces path-style URLs (older buckets). Null unless all five resolve.
  */
 export function bucketConfig(): {
   bucket: string;
@@ -170,11 +172,11 @@ export function bucketConfig(): {
   region: string;
   pathStyle: boolean;
 } | null {
-  const bucket = trimmedEnv('BUCKET');
-  const endpoint = trimmedEnv('ENDPOINT');
-  const accessKeyId = trimmedEnv('ACCESS_KEY_ID');
-  const secretAccessKey = trimmedEnv('SECRET_ACCESS_KEY');
-  const region = trimmedEnv('REGION');
+  const bucket = trimmedEnv('AWS_S3_BUCKET_NAME') ?? trimmedEnv('BUCKET');
+  const endpoint = trimmedEnv('AWS_ENDPOINT_URL') ?? trimmedEnv('ENDPOINT');
+  const accessKeyId = trimmedEnv('AWS_ACCESS_KEY_ID') ?? trimmedEnv('ACCESS_KEY_ID');
+  const secretAccessKey = trimmedEnv('AWS_SECRET_ACCESS_KEY') ?? trimmedEnv('SECRET_ACCESS_KEY');
+  const region = trimmedEnv('AWS_DEFAULT_REGION') ?? trimmedEnv('REGION');
   if (!bucket || !endpoint || !accessKeyId || !secretAccessKey || !region) return null;
   const pathStyle = ['1', 'true', 'yes', 'on'].includes((trimmedEnv('S3_PATH_STYLE') ?? '').toLowerCase());
   return { bucket, endpoint, accessKeyId, secretAccessKey, region, pathStyle };
