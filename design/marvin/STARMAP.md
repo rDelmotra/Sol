@@ -1631,3 +1631,37 @@ bash packages/backend/scripts/starmap/check.sh
 epoch 17:10, after the 12:00 batch time) gives 0.1948 km at the stored TCA (0.00 s), vs 0.1943 km stored. With the
 newer 17:10 set the same encounter is 0.144 km: one update moves the miss by 50 m, which is what the update
 history is for.
+
+## Review — round 5 and the locked direction (lead, 2026-10-24)
+
+**Architecture (locked).** (1) Browser: SGP4 on the fly in a Web Worker for paths and the globe; optional offline
+pack in OPFS (P5: Node-exact answers, reopen ~0.35 s offline; ship order-3 lists first, ~32 MB + ~4 MB/day; no
+WASM, JS SGP4 runs 2.2 M calls/s). (2) Backend 36 h screener: full rerun per ingest (~400 s on 3 threads), Pc per
+event, update history kept (S5). (3) History archive: element sets, daily star-map lists o3+o4, derived events
+(T1, T2), plus the error model refit from history (U5).
+
+**What round 5 changed in the plan.**
+- **Manoeuvring constellations break public-element forecasting.** 85% of forecast events involve a Starlink-class
+  object, and only 7–23% of those survive the next update (80–94% for the rest). Their errors are 36 km after a
+  day (U5). For those objects the screener needs operator ephemerides (e.g. CelesTrak supplemental GP / operator
+  data, which include planned manoeuvres), not GP elements. Until then, label their events "low confidence".
+- **Alert rate is believable.** Pc above 1e-4 (balanced): 7 events in a week; above 1e-5: 229–505 per batch.
+  Proposed tiers: red ≥ 1e-4, amber ≥ 1e-5, else listed only. The max-possible Pc is an upper bound for audit,
+  too loose for alerts. Widening the covariance ("conservative") lowers Pc for close misses (dilution), so it is
+  not a safe alert model; use balanced + floor, and show max-possible beside it.
+- **Error model needs tail work.** 86% inside 3 sigma vs 97% expected, driven by single bad element sets. Next:
+  per-element-set quality (flag sets that disagree with both neighbours) and a heavy-tailed fit. The covariance
+  floor (0.3 / 1.0 / 0.3 km) is an assumption, not measured.
+- **Storage.** Conjunction tables with full update history: ~665 MB per week of daily batches (~35 GB/year),
+  fine within ~500 GB. Hourly ingests would multiply update rows; keep only changed fields per update.
+
+**Changes still required before production (from all rounds).**
+- Store every element-set update (`omm` keyed by noradId, epoch), not one per object per day: the error model,
+  causal batch replay and faithful history all need it.
+- Widen object indices in the coverage lists from 16 to 32 bits (cap today: 65,536 objects per day).
+- Fence garbage SGP4 output (decaying objects) everywhere the same way (T1/T3/S5 all met it).
+- A separate ID range and a "synthetic" flag for objects from fragmentation models or commercial catalogs.
+
+**Open.** No independent truth for Pc (operator CDMs are not public); no whole-window all-vs-all brute force
+for the screener (3 h slice only); browser pack tested in headless Chromium only; Safari/Firefox/phones and real
+networks untested; non-India region polygons rough.
