@@ -1321,3 +1321,154 @@ npx tsx packages/backend/scripts/starmap/uncertainty-fit.ts --holdout-days 0    
 npx tsx packages/backend/scripts/starmap/uncertainty-report.ts                   # prints the tables
 bash packages/backend/scripts/starmap/check.sh
 ```
+
+## Round 5 — P5 (cloud): browser pack
+
+Machine: cloud container, 4 cores, 15 GB RAM. Another worker (the U5 uncertainty fit) was running on the same
+machine during the builds and tests, so timings are "under light shared load". Browser: headless Chromium 141 under
+Playwright 1.56.1 (loaded from `/opt/node-tools`; no `playwright install`, no new dependency; `esbuild` and
+`satellite.js` were already in `node_modules`; `package-lock.json` untouched). The page is served by a local Node
+server on 127.0.0.1. Fixed "now" for all agreement runs: 2026-10-24T12:00:00Z (live element sets are from 10-21/22).
+
+**What was built** (all in `packages/backend/scripts/starmap/`; the app was not touched).
+`build-pack.ts` writes a versioned, chunked pack to `data/pack/<version>/` (gitignored): `manifest.json` (every
+file with raw/gzip size and sha256), `live.tsv.gz` (live catalog, 32,778 objects), `elsets-<date>.tsv.gz` (the
+unique element sets seen in the last 14 daily history files, 249,979 sets, split by the UTC date of the set's
+epoch so a window that slides forward leaves old chunks alone), `starmap-<day>.day.bin.gz` (the T1 day lists, orders
+2/3/4, 14 days), `params.json.gz` (India polygon taken from `coverage-lib.ts`), and `uncertainty.json.gz`
+(the U5 `model.json` existed at build time, so it is in). The conjunction slot (`slots.conjunction`) is
+**null/empty: no S5 conjunction export existed when the pack was built.** A history day is not stored; it is rebuilt
+from the chunks (newest set per object with epoch in [day end - 30 d, day end]), and the builder fails unless that
+rebuild equals every real history file: it was exact on 14/14 days. `pack-web/` is the page (`index.html`,
+`app.ts`, `pack.worker.ts`, `sw.js`; bundled by `pack-web-build.ts`), `pack-serve.ts` the local server
+(optional throttle), `pack-query.ts` the three questions (shared pure code), `pack-browser-test.ts` the Playwright
+driver, `pack-verify.ts` the Node side of the agreement test. Like the app's `sgp4.worker.ts`, the page owns a
+worker that keeps the satrecs and answers messages; unlike it, the worker also owns the file store.
+The pack is stored in OPFS as one blob per file named by its content hash (so an update only adds what changed),
+written with synchronous access handles in the worker. A service worker caches only the page shell (html + two
+scripts, 76 KB); pack data never goes through it.
+
+### Sizes (pack 2026-10-18.9171fcab, window 2026-10-05..10-18)
+
+| component | files | raw MB | gzip MB | brotli-9 MB (for reference; not usable via browser DecompressionStream) |
+|---|---|---|---|---|
+| live catalog | 1 | 5.04 | 1.66 | 1.58 |
+| element sets, 14 days | 43 | 27.97 | 10.32 | 10.19 |
+| star-map day lists (orders 2/3/4) | 14 | 138.29 | 70.92 | 57.72 |
+| U5 uncertainty model | 1 | 2.34 | 1.03 | 1.03 |
+| S5 conjunctions | 0 (empty slot) | 0 | 0 | 0 |
+| params + manifest | 2 | 0.00 | 0.00 | 0.00 |
+| **total** | 60 files | **173.64** | **83.94** | 70.51 |
+
+OPFS usage after install (browser's `storage.estimate`): 83.97 MB in the file system (the blobs stay compressed),
+plus 0.16 MB page-shell cache. Star-map lists dominate (84% of the download). Measured on 2026-10-18's file, the
+per-order gzip sizes are: order 2 0.51 MB, order 3 1.33 MB, order 4 3.30 MB, all three 5.11 MB. So a pack with only
+order 3 would hold 14 x 1.33 = 18.6 MB of lists and about 31.6 MB in total (arithmetic from these numbers, not a
+separate build). Hourly lists are far too big for a pack: 2026-10-18.hour.bin is 117.8 MB raw, 56.0 MB gzip for one day.
+
+**Daily delta** (built as packs 2026-10-17 -> 2026-10-18; the live catalog of each was that day's history file so that
+the two differ): 7.95 MB to download = new day list 5.11 + new epoch chunk 1.13 + live-catalog change file 1.37
+(28,228 of 32,876 live rows changed, 12 objects gone) + 22 small chunks that shrank as the window slid (0.33 MB total, mostly the 10-04 chunk)
++ 21 KB manifest/delta files; 34 files unchanged, 2 files deleted. The live delta is rebuilt in the browser and checked against the
+manifest's hash. With order-3-only lists the delta would be about 7.95 - 5.11 + 1.33 = 4.2 MB (arithmetic).
+
+### Timings (headless Chromium, localhost; three full runs, then one with a throttled link)
+
+| step | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| first load: download + hash-check + write to OPFS (60 files, 83.94 MB, 4 parallel) | 1,087 ms | 1,118 ms | 1,002 ms |
+| ...same, link limited to 25 Mbit/s per connection (about 100 Mbit/s over 4 connections) | 7,663 ms | | |
+| open from OPFS (read, gunzip, parse 32,778 rows, build 32,778 satrecs), same session | 397 ms | 320 ms | 347 ms |
+| reload in a NEW browser process, network off: page from service worker | 20 ms | 28 ms | 17 ms |
+| ...then open from OPFS | 336 ms | 317 ms | 325 ms |
+| ...time from navigation to "ready to answer" | 372 ms | 353 ms | 356 ms |
+| pack requests while offline | 0 | 0 | 0 |
+| daily delta update (7.95 MB) applied in the page | 591 ms | | |
+| re-check every stored file (gunzip + sha256 of all 173.6 MB) | 2,242 ms | 1,724 ms | 1,564 ms |
+
+Open breakdown (run 3-like): satrec build about 250 ms (the largest part), live gunzip about 23 ms, parse about 37 ms.
+The localhost first-load figure says nothing about a real network: at 100 Mbit/s the measured throttled run is 7.7 s,
+and the 84 MB would take about 13 s at 50 Mbit/s and about 67 s at 10 Mbit/s (arithmetic from size; not measured).
+`navigator.storage.persist()` returned false in headless mode, so eviction behaviour on a real browser is untested.
+
+Query times, in the worker, ms (run 1 / run 2 / run 3; first call is cold JIT, median of 5):
+
+| question | cold first call | median of 5 | Node, same machine, one thread |
+|---|---|---|---|
+| who is over India now (SGP4 for all 32,778 objects at one instant + polygon) | 128 / 122 / 144 | 22.2 / 23.6 / 24.5 | 214 (cold, includes startup) |
+| ISS (25544) next 24 h at 10 s (8,641 SGP4 calls + lat/lon/alt) | 6.3 / 6.5 / 5.3 | 6.9 / 5.0 / 4.7 | 6.9 |
+| objects in order-3 box 9138 on 2026-10-12 (read file, gunzip 9.9 MB, look up list) | 300 / 65 / 64 | 87 / 80 / 64 | 15.9 (file already unzipped on disk) |
+| box 9138 across all 14 pack days | 1,124 / 1,216 / 1,227 | | |
+| rebuild one past day's full catalog from the chunks (first use loads 249,979 rows: about 0.5 s) | | 64-91 | |
+
+For the box question about 50 ms of the 55-65 ms is gunzip (3 ms file read, 1.3 ms lookup). Hundreds of ms for 14 days
+could be cut by keeping unzipped days or storing order 3 only; not tried.
+
+**JS SGP4 speed in the browser:** 2.23 / 2.25 / 2.14 million calls per second in the worker (0.45 us per call;
+6.7 M calls in 3.0 s, all 32,778 objects per pass), 1.83 M/s with the throttled-link run. The identical loop in Node 22 measured 1.58
+and 1.48 M calls/s on this machine, so the browser JIT is not slower than Node. One full-catalog pass is 15 ms of pure
+SGP4; the India answer (22 ms) is that plus the polygon test; the ISS day is 8,641 calls = about 4 ms.
+
+### Agreement (browser answer vs Node answer, 4 runs: 3 on the main pack, 1 throttled; plus the delta run)
+
+Node side: `pack-verify.ts` reads the ORIGINAL files with the older spike code (`tle-cache.json` -> `runs.ts`
+makeProp/posAt, `coverage-lib.ts` subPoint/inPoly/`INDIA_POLY`, `coverage-codec.ts` on `data/coverage/<day>.day.bin`,
+history JSON), not the pack. All checks passed in every run:
+
+| question | Node | browser | result |
+|---|---|---|---|
+| over India at 2026-10-24 12:00Z | 177 objects | 177 objects | same list; largest position difference 1.7e-7 m (14 objects with failed SGP4 in both) |
+| ISS 24 h at 10 s | 8,641 samples | 8,641 samples | largest TEME position difference 4.1e-9 m; lat/lon 5.7e-14 deg |
+| objects in box 9138 (order 3) on 2026-10-12 | 5,537 | 5,537 | identical list |
+| box 9138 on each of the 14 pack days | union 5,975 | union 5,975 | per-day counts and union identical |
+| 2026-10-12 catalog rebuilt in the browser from pack chunks vs the real history file | 32,740 | 32,740 | digest of (norad, epoch) identical |
+| delta run (old pack + daily delta, live = 10-18 catalog) | 185 / 8,641 / 5,594 | same | all pass; the 5,594 equals the T1 figure for 10-18 |
+
+Note what this shows: the browser reproduces exactly what Node gets from the same inputs, so the pack, the
+storage and the update path lose nothing. Box answers are the T1 day lists, so T1's recall numbers (at order 3 a few
+object-days short of a 1 s refine) apply unchanged.
+
+### Skipped / not shown
+
+Safari and Firefox (only Chromium 141 headless); real network and real phone storage limits; eviction (persist() was
+false); the S5 conjunction slot (empty); the U5 model is in the pack but no question uses it yet; the page has a
+bare-bones interface (buttons and JSON output) and was driven by the test; a dedicated check of the India
+polygon at borders (the rough polygon is the T1 one); hourly lists (too large) and therefore sharp ground-region
+questions over past days are not in the pack, only day-level star boxes. A first attempt to build two packs
+at once collided in the shared temp folder and was rebuilt; no results depend on it.
+
+### Verdict, in plain words
+
+**Does it work?** Yes. A web page can download a 84 MB bundle once, keep it in the browser's private storage, and from
+then on open it with no network in about a third of a second and answer all three questions on the user's own
+machine: who is over India (22 ms), where the ISS goes for 24 hours (5 ms), and who was in a given star-map box on
+a past day (about 60 ms). Every answer matched the server-side calculation exactly. Updating for a new day costs about 8 MB
+and 0.6 s.
+
+**Should it go into the app?** Yes, as an optional "offline Perceptor" download, not as the default start-up
+path. It is cheap to build (the page here is a few hundred lines) and the app's browser worker already works the same
+way. What decides the size is the star-map lists: all three box sizes cost 71 MB, order 3 alone would cost about 19 MB, which
+makes the whole pack about 32 MB and the daily update about 4 MB. I would ship order 3 only first. The things this
+prototype cannot tell you are how it behaves on Safari, Firefox and phones, and how often a browser throws away
+stored data under space pressure; test those before promising it to users.
+
+**Is WASM needed?** No. Plain JavaScript propagates 2.2 million positions a second in the browser, so the whole
+33,000-object catalog takes 15 ms and the ISS day takes 5 ms. Nothing here is slow because of SGP4; the slow
+parts are unzipping the star-map files (about 50 ms each) and the first-call warm-up (about 100 ms once). The live app
+already uses WASM for its drawing loop and falls back to the same JavaScript, so there is nothing to gain for these questions.
+
+### Reproduce (repo root)
+
+```
+bash packages/backend/scripts/starmap/setup-env.sh                    # data, if not present
+npx tsx packages/backend/scripts/starmap/build-pack.ts               # pack -> packages/backend/data/pack/<version>/   (~65 s)
+npx tsx packages/backend/scripts/starmap/build-pack.ts --to 2026-10-17 --live history:2026-10-17     # old pack for the delta test
+npx tsx packages/backend/scripts/starmap/build-pack.ts --to 2026-10-18 --live history:2026-10-18 --delta-from packages/backend/data/pack/2026-10-17.<hash>
+npx tsx packages/backend/scripts/starmap/pack-web-build.ts            # bundle the page
+npx tsx packages/backend/scripts/starmap/pack-serve.ts --latest <version> --port 8123 &     # add --mbps 25 to throttle
+npx tsx packages/backend/scripts/starmap/pack-browser-test.ts --base http://127.0.0.1:8123 --label main
+npx tsx packages/backend/scripts/starmap/pack-verify.ts packages/backend/data/pack/browser-main.json
+npx tsx packages/backend/scripts/starmap/pack-browser-test.ts --label delta --mode delta --from 2026-10-17.<hash> --delta delta-2026-10-17.<hash>-to-2026-10-18.<hash> --reps 3
+npx tsx packages/backend/scripts/starmap/pack-verify.ts packages/backend/data/pack/browser-delta.json
+bash packages/backend/scripts/starmap/check.sh                        # now also type-checks pack-web/
+```

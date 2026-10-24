@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline Perceptor pack</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; max-width: 900px; }
+  button { margin: 2px 4px 2px 0; padding: 6px 10px; }
+  pre { background: #111; color: #cde; padding: 10px; overflow: auto; max-height: 60vh; }
+</style>
+</head>
+<body>
+<h1>Offline Perceptor pack (prototype)</h1>
+<p>Download the pack once, keep it in the browser's private file store, then ask questions with no network.
+<span id="sw">service worker: starting</span></p>
+<div>
+  <button id="b-install">1. Download pack</button>
+  <button id="b-open">2. Open from browser storage</button>
+  <button id="b-india">Over India now</button>
+  <button id="b-iss">ISS next 24 h</button>
+  <button id="b-box">Box 9138, latest day</button>
+  <button id="b-bench">SGP4 speed</button>
+  <button id="b-clear">Clear storage</button>
+</div>
+<pre id="out">ready</pre>
+<script src="app.js"></script>
+</body>
+</html>
