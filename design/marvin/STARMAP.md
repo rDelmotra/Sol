@@ -1472,3 +1472,162 @@ npx tsx packages/backend/scripts/starmap/pack-browser-test.ts --label delta --mo
 npx tsx packages/backend/scripts/starmap/pack-verify.ts packages/backend/data/pack/browser-delta.json
 bash packages/backend/scripts/starmap/check.sh                        # now also type-checks pack-web/
 ```
+
+
+## Round 5 — S5 (cloud): 36 h forward screener
+
+Machine: the cloud container (4 cores, 15 GB, no swap, Node 22), 3 worker threads plus the main thread. Another light worker (the browser pack prototype) may have run alongside; during the seven batches I ran nothing else heavy, except that one batch (2026-10-16) was killed by a tool time limit at about 4 minutes and re-run from scratch, and the report script and verifications ran afterwards. Local TimescaleDB 2.31 in Docker.
+
+### What was built
+- `packages/orbital-core/src/collision.ts` (+ `collision.test.ts`): pure 2D Foster collision probability (adaptive Gauss-Kronrod over one principal axis, erf in closed form over the other), the worst-case Pc over a scaling of the covariance, RIC covariance to 3D, projection onto the encounter plane. No imports outside the package.
+- `forward-lib.ts` (+ test): causal catalog, hard-body radii, covariance floor, the "manoeuvrable" label, Pc of one event under four covariance variants, event matching across batches.
+- `screen-forward.ts`: one batch per process (resumable: a batch with its `.meta.json` is skipped). Reuses T2's grid, refine, formation and identical-set code (`events-worker.ts`, `events-pool.ts`, `events-ca.ts`) unchanged. The grid is T2's cube-cell hash (68 km cells at 5 s steps, half neighbourhood, linear closest-approach test), not the SpaceCell key; I kept T2's code as the card said "reuse".
+- `forward-report.ts`: matches events across batches (same pair, TCA within 60 s), writes `starmap.conjunction` (one row per matched identity) and `starmap.conjunction_update` (one row per batch observation), prints all tables. `verify-forward.ts`: the two brute-force checks.
+
+### Batches (12:00 UTC of each day, next 36 h, 5 s steps, threshold 5 km)
+The element sets are "the latest per object as of the batch time". The history file of day D holds sets up to the end of D, so about 5% of its sets lie after 12:00. For those I used the object's set from file D-1 (an object with none was dropped: 17 on 10-15). Sets issued between D 00:00 and 12:00 and replaced later the same day are not in the files, so some objects were screened with an older set than a live service would have. The set freshness differs a lot between days (see below).
+
+| batch | screened | wall s | grid s | refine s | Pc s | SGP4 calls (M) | peak RSS MB | < 5 km | < 1 km | < 0.5 km | median set age at batch, d |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 10-12 | 32,624 | 417 | 271 | 6.7 | 96 | 1,179 | 912 | 188,532 | 11,883 | 3,140 | 1.25 |
+| 10-13 | 32,631 | 400 | 276 | 5.7 | 78 | 1,159 | 922 | 144,542 | 6,906 | 1,828 | 0.38 |
+| 10-14 | 32,642 | 393 | 273 | 5.5 | 74 | 1,153 | 910 | 132,493 | 6,334 | 1,806 | 0.41 |
+| 10-15 | 32,631 | 420 | 277 | 6.7 | 94 | 1,174 | 904 | 181,719 | 13,218 | 3,618 | 1.39 |
+| 10-16 | 32,680 | 423 | 277 | 6.9 | 96 | 1,179 | 925 | 190,485 | 13,671 | 3,717 | 2.27 |
+| 10-17 | 32,748 | 383 | 265 | 5.6 | 73 | 1,158 | 908 | 134,391 | 5,975 | 1,685 | 0.82 |
+| 10-18 | 32,758 | 393 | 271 | 5.7 | 75 | 1,161 | 932 | 140,060 | 6,788 | 1,923 | 0.77 |
+
+Wall time includes catalog load (about 5 s), worker start, grid, the formation exclusion (about 37 s), refine, and the Pc stage on the main thread (single thread; it could be moved to the workers); the remainder is writing. SGP4 calls are counted by formula, not instrumented: grid steps x objects (25,921 x 32.6k = 846M), formation fractions, 120 per refined encounter, 2 per event. 1.11M events in total, 159k per batch on average, 9.3k under 1 km. Counts vary by 1.4x between days. The three batches with the oldest sets (median age 1.25 to 2.27 d) have 182k to 190k events; the four with fresh sets (0.38 to 0.82 d) have 132k to 145k. This fits the U5 finding that the position of a Starlink-like satellite is uncertain by tens of km after a day (the same-family label is 71% of all events): with old sets, pairs on neighbouring slots of a shell cross by chance. I did not test this causally.
+
+Excluded before the grid, as in T2: identical element sets (4 groups, 37 objects here), formation pairs (within 50 km for more than half of the window; about 177 to 200 per batch), NORAD 54922 and garbage orbits (about 100 per batch).
+
+### Collision probability
+Per event: both objects are propagated to the refined TCA; each gets a diagonal RIC covariance from U5's `sigmaRIC` at its own age (TCA minus its epoch); the two are rotated into TEME, added, projected on the plane perpendicular to the relative velocity; Pc is the integral of the 2D Gaussian (centred on the miss vector) over a disc of radius R = sum of the hard-body radii. Four values are stored per event:
+1. **balanced**: U5 balanced model with the floor below;
+2. **conservative**: U5 conservative variant (sigmaRIC 4th argument), with the floor;
+3. **max-possible**: the largest Pc over any uniform scaling of the balanced covariance (the upper bound; it is 1 if the miss is inside R);
+4. balanced **without floor** (sensitivity only).
+
+**Covariance floor** (1-sigma per object, applied after the model and after the conservative multiplier): radial 0.3 km, in-track 1.0 km, cross-track 0.3 km. Reason: U5 measures consistency between successive public sets (0.04 / 0.28 / 0.04 km at 6 h for LEO) and itself says true error is larger at short ages; public sets are quoted as about 1 km at epoch, and the error lives in-track. R and C are 5 to 10x smaller than I in U5, 0.3 km is a round value above U5's short-age numbers. The floor was not tuned; it is an assumption.
+
+**Hard-body radius per object** (sum for the pair): payload/unknown by radar size LARGE 3 m, MEDIUM 1 m, SMALL 0.3 m, none 2 m; rocket body LARGE 5 m, MEDIUM 2 m, none 3 m; debris LARGE 1 m, MEDIUM 0.3 m, SMALL 0.05 m, none 0.3 m; ISS 55 m and Tiangong (CSS) 25 m (span of the structures). The sphere has to enclose the panels and antennas, so each value is above the radius of a sphere with the same radar area. Typical pair: 6 m (two payloads) to 10 m (two rocket bodies). These are my choices, not catalog data.
+
+Pc counts per batch, balanced / conservative / max-possible:
+
+| batch | > 1e-6 | > 1e-5 | > 1e-4 | balanced without floor > 1e-6 / 1e-5 / 1e-4 |
+|---|---|---|---|---|
+| 10-12 | 6,027 / 2,566 / 47,251 | 294 / 209 / 12,502 | 2 / 2 / 1,519 | 5,227 / 239 / 8 |
+| 10-13 | 7,971 / 4,128 / 29,812 | 451 / 311 / 7,082 | 0 / 0 / 783 | 6,425 / 398 / 24 |
+| 10-14 | 7,162 / 4,215 / 26,627 | 505 / 344 / 6,411 | 1 / 1 / 758 | 5,557 / 449 / 39 |
+| 10-15 | 6,904 / 3,241 / 55,122 | 318 / 215 / 14,678 | 0 / 0 / 1,749 | 6,094 / 275 / 25 |
+| 10-16 | 7,749 / 3,121 / 58,643 | 229 / 180 / 15,446 | 0 / 0 / 1,785 | 7,055 / 219 / 13 |
+| 10-17 | 5,318 / 3,602 / 25,464 | 341 / 232 / 6,593 | 1 / 1 / 767 | 3,999 / 315 / 14 |
+| 10-18 | 5,883 / 3,513 / 28,742 | 372 / 281 / 7,532 | 3 / 2 / 917 | 4,713 / 327 / 21 |
+
+Per batch about 6,900 events exceed 1e-6, about 360 exceed 1e-5 and 0 to 3 exceed 1e-4 (balanced); in 7 batches, 7 events exceed 1e-4 (6 distinct conjunctions). The conservative variant gives fewer high-Pc events than the balanced one: a wider covariance lowers Pc when the miss is small compared with the error ellipse, so "conservative" in covariance is not conservative in Pc. That is the reason for the third, max-possible column (it is an upper bound: 6,400 to 15,400 events per batch exceed 1e-5 at the worst-case scaling, so it cannot be used as an alert level). Without the floor, the number above 1e-4 rises from 0 to 3 up to 8 to 39 per batch: the floor matters most for the highest-Pc tail.
+
+Age of the sets at TCA: 0.3% of events involve a set older than 14 days (outside U5's fitted range; flagged `old`); 1.0% have relative speed below 0.5 km/s (the straight-line short-encounter assumption is weak; flagged `slow`).
+
+### Top events by Pc (balanced; the other two Pc alongside)
+Batch 2026-10-18 (last), TCA within the next 36 h:
+
+| pair | TCA UTC | miss km | v_rel km/s | ages d | HBR m | Pc bal | Pc cons | Pc max | label |
+|---|---|---|---|---|---|---|---|---|---|
+| SL-8 R/B (21231) / TBA - TO BE ASSIGNED (82693) | 10-19 01:31:49 | 0.194 | 14.6 | 2.6 / 2.8 | 7.0 | 1.20e-4 | 7.24e-5 | 4.79e-4 | crossing |
+| SL-3 R/B (11166) / NOAA 17 (27453) | 10-18 19:44:06 | 0.432 | 14.9 | 1.0 / 0.9 | 8.0 | 1.06e-4 | 1.06e-4 | 1.26e-4 | crossing |
+| SL-8 R/B (10355) / COSMOS 1861 (18129) | 10-18 19:23:47 | 0.417 | 14.6 | 0.8 / 1.0 | 8.0 | 1.03e-4 | 1.03e-4 | 1.30e-4 | crossing |
+| SJ-12 (36596) / RASSVET-3 32 (100098) | 10-18 23:59:08 | 0.114 | 15.2 | 2.1 / 1.1 | 6.0 | 9.63e-5 | 6.66e-5 | 1.03e-3 | crossing |
+| QIANFAN-71 (62801) / QIANFAN-196 (69414) | 10-19 08:18:59 | 0.165 | 14.5 | 2.5 / 2.6 | 6.0 | 8.50e-5 | 6.60e-5 | 5.02e-4 | same_family, manoeuvrable |
+| QIANFAN-71 / QIANFAN-196, five more passes the same day (04:45 to 13:38) | | 0.17 to 0.23 | 14.5 | | 6.0 | 7.8e-5 to 8.4e-5 | 6.0e-5 to 6.6e-5 | | same_family, manoeuvrable |
+
+Top 10 distinct conjunctions over all seven batches (highest balanced Pc over their observations):
+
+| batch | pair | TCA UTC | miss km | v_rel | ages d | HBR m | Pc bal | Pc cons | Pc max | label |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 10-12 | CZ-4B R/B (29507) / CZ-6A R/B (52152) | 10-12 23:26 | 0.267 | 14.9 | 1.9 / 1.7 | 10.0 | 2.00e-4 | 1.35e-4 | 6.12e-4 | same_family |
+| 10-17 | SL-3 R/B (11166) / NOAA 17 (27453) | 10-18 19:44 | 0.369 | 14.9 | 2.1 / 2.0 | 8.0 | 1.22e-4 | 1.21e-4 | 1.72e-4 | crossing |
+| 10-18 | SL-8 R/B (21231) / TBA (82693) | 10-19 01:31 | 0.194 | 14.6 | 2.6 / 2.8 | 7.0 | 1.20e-4 | 7.24e-5 | 4.79e-4 | crossing |
+| 10-14 | CZ-4 R/B (20791) / SDA_1673 (65983) | 10-15 07:32 | 0.301 | 14.2 | 1.1 / 1.1 | 8.0 | 1.14e-4 | 1.14e-4 | 2.87e-4 | crossing |
+| 10-12 | SL-3 R/B (8800) / TBA (81279) | 10-13 02:17 | 0.303 | 14.9 | 2.0 / 0.8 | 7.0 | 1.05e-4 | 1.05e-4 | 1.96e-4 | crossing |
+| 10-18 | SL-8 R/B (10355) / COSMOS 1861 (18129) | 10-18 19:23 | 0.417 | 14.6 | 0.8 / 1.0 | 8.0 | 1.03e-4 | 1.03e-4 | 1.30e-4 | crossing |
+| 10-13 | COSMOS 1766 (16881) / OBJECT B (54362) | 10-14 14:03 | 0.064 | 15.3 | 1.3 / 1.3 | 6.0 | 9.88e-5 | 7.08e-5 | 3.21e-3 | crossing |
+| 10-18 | SJ-12 (36596) / RASSVET-3 32 (100098) | 10-18 23:59 | 0.114 | 15.2 | 2.1 / 1.1 | 6.0 | 9.63e-5 | 6.66e-5 | 1.03e-3 | crossing |
+| 10-12 | SL-8 R/B (15506) / SL-8 R/B (21797) | 10-13 04:29 | 0.614 | 13.0 | 2.0 / 1.5 | 10.0 | 9.39e-5 | 9.25e-5 | 1.12e-4 | same_family |
+| 10-13 | TIANMU-1 17 (58702) / CZ-4C R/B (59729) | 10-13 13:11 | 0.306 | 14.3 | 0.2 / 0.3 | 8.0 | 9.16e-5 | 9.16e-5 | 1.89e-4 | crossing |
+
+Nearly all top events are old Soviet/Chinese rocket bodies (large radius) meeting other objects at 14 to 15 km/s; the highest Pc in the week is 2e-4. The radii are small and the error ellipses are kilometres wide, so a sub-kilometre miss still gives only about 1e-4; I have no independent truth for any of these events. (The ISS has 5 conjunction updates in the week, maximum balanced Pc 3.4e-5 and maximum worst-case Pc 6.0e-5; this query takes 61 to 71 ms.) The per-batch top-10 for 10-15 and the all-batch list are in the report output; `data/forward/summary.json` holds the all-batch list.
+
+### Manoeuvrable label
+`manoeuvrable` = an active payload from a manoeuvring constellation (name family STARLINK, ONEWEB, KUIPER, QIANFAN, HULIANWANG, GUOWANG, IRIDIUM, GLOBALSTAR, ORBCOMM). It is a list I chose, not a measurement; T2 jump rates (29 days, share of objects with a detected jump) support it for the largest families (QIANFAN 42%, STARLINK 15%, HULIANWANG 12%, KUIPER 11%), but T2's jump rule is too coarse to see Starlink's low-thrust steering. Also stored: `jump` = the object had a T2 `elements.jump` in the 7 days before the batch (7.4% of events). Over the week **85.5% of all events involve a manoeuvrable object and 71.1% have one on both sides**; Starlink x Starlink alone is most of the 788,551 `same_family` events. Of the 2,510 events above Pc 1e-5, 1,385 involve a manoeuvrable object (55%); none of the 7 above 1e-4 does.
+
+Labels, all batches pooled: crossing 305,089; same_family 788,551; same_launch 7,265; co_moving 11,313; twin 4.
+
+### Persistence between successive batches
+The overlap of batch k and k+1 is the last 12 h of k (predicted 24 to 36 h ahead) and the first 12 h of k+1 (0 to 12 h ahead). A 60 s margin at both ends is excluded. Events in that overlap are matched on the pair and TCA within 60 s. Because batches are 24 h apart and the window is 36 h, an event is seen at most twice (3 or more batches: 0 identities); 971,629 distinct conjunctions, 140,593 of them seen twice.
+
+| from -> to | events in overlap (old / new) | persisted | vanished | new | a set changed ("updated") | abs TCA shift s p50/p90/p99 | abs miss change km p50/p90/p99 | abs change of log10 Pc p50/p90/p99 |
+|---|---|---|---|---|---|---|---|---|
+| 10-12 -> 10-13 | 70,467 / 44,059 | 10,732 (15.2%) | 59,735 | 33,327 | 8,654 | 0.06 / 1.73 / 16.4 | 0.14 / 1.35 / 3.28 | 0.29 / 4.35 / 14.0 |
+| 10-13 -> 10-14 | 53,416 / 36,556 | 13,299 (24.9%) | 40,117 | 23,258 | 12,697 | 0.08 / 1.10 / 3.74 | 0.17 / 1.40 / 2.95 | 0.51 / 6.18 / 16.7 |
+| 10-14 -> 10-15 | 52,369 / 52,304 | 51,676 (98.7%) | 693 | 628 | 899 | 0.00 / 0.00 / 0.03 | 0.00 / 0.00 / 0.11 | 0.00 / 0.00 / 0.28 |
+| 10-15 -> 10-16 | 67,540 / 60,057 | 34,308 (50.8%) | 33,232 | 25,749 | 7,395 | 0.00 / 0.13 / 1.18 | 0.00 / 0.38 / 2.57 | 0.00 / 0.28 / 6.02 |
+| 10-16 -> 10-17 | 66,461 / 37,993 | 12,927 (19.5%) | 53,534 | 25,066 | 9,568 | 0.03 / 0.42 / 6.26 | 0.11 / 1.07 / 2.85 | 0.29 / 5.13 / 14.4 |
+| 10-17 -> 10-18 | 52,642 / 41,301 | 17,261 (32.8%) | 35,381 | 24,040 | 10,836 | 0.01 / 0.46 / 4.64 | 0.05 / 1.06 / 3.08 | 0.05 / 1.92 / 10.7 |
+
+The 10-14 -> 10-15 pair is special: 96% of the objects have the same element set in both batches (the 10-15 history file added almost no new sets, median set age 1.39 d), so nothing is updated and 98.7% of events persist. This is a property of the history files (they were evidently not taken at a fixed time), not of the screener. Share of old-run overlap events found again, by class:
+
+| from -> to | manoeuvrable object involved | neither manoeuvrable | label crossing | same_family | miss < 1 km | Pc bal > 1e-5 |
+|---|---|---|---|---|---|---|
+| 10-12 -> 13 | 7.3% of 62,741 | 79.6% of 7,726 | 49.6% | 5.7% | 11.5% of 4,664 | 80.2% of 111 |
+| 10-13 -> 14 | 14.2% of 45,783 | 88.8% of 7,633 | 62.2% | 10.2% | 14.6% of 3,057 | 79.4% of 126 |
+| 10-14 -> 15 | 98.8% | 98.2% | 98.1% | 98.9% | 99.4% | 100% of 157 |
+| 10-15 -> 16 | 45.5% of 60,055 | 93.3% of 7,485 | 79.4% | 42.7% | 43.4% of 5,258 | 93.1% of 72 |
+| 10-16 -> 17 | 10.6% of 58,652 | 86.0% of 7,809 | 61.0% | 7.0% | 10.0% of 4,838 | 75.0% of 68 |
+| 10-17 -> 18 | 22.2% of 44,934 | 94.3% of 7,708 | 70.3% | 17.8% | 23.2% of 3,088 | 93.0% of 100 |
+
+What the unmatched events are, checked by recomputing the pair with the other run's element sets (for 10-12 -> 10-13): of 59,735 vanished events, 1,396 are at 5 to 6 km in the new run (threshold flicker), 3,036 at 6 to 10 km, 17,742 at 10 to 50 km, 37,560 at 50 km or more (really gone); of 33,327 new ones, 1,197 / 3,137 / 14,132 / 14,849 in the same bins. Only 1 and 2 of them were within 5 km at a TCA shifted by more than 60 s (the matching rule loses nothing meaningful). The other transitions have the same shape (`forward-report.ts` prints them all). Matched events (all transitions pooled) with a manoeuvrable object: 98,866, median TCA shift 0.00 s, p90 0.34 s, miss change p50 0.00 / p90 0.67 km; without: 41,336, p50 0.01 s, 0.04 km: events that survive are stable to well under a second and a few hundred metres, except in the tails. Pc itself moves a lot between runs: a change of a factor of 10 or more at p90 in the first transitions.
+
+The Pc alerts (Pc balanced or conservative above 1e-5 in the old run's overlap): kept 77 of 118, 84 of 130, 162 of 163, 65 of 83, 38 of 88, 86 of 108; additional alerts appear in each new run from matched events (50, 48, 0, 6, 49, 21) and from events the old run did not have (65, 52, 3, 18, 44, 21). First-seen lead time of all events: p50 21.9 h, p90 33.3 h before TCA; of the 2,025 conjunctions that ever exceed 1e-5 (balanced): p50 22.8 h.
+
+### Database
+`starmap.conjunction` 971,629 rows (260 MB with indexes), `starmap.conjunction_update` 1,112,222 rows (405 MB). A lookup of all updates for the ISS: 5 rows, 61 to 71 ms. About 95 MB of table per batch; at one batch a day that is 35 GB a year (not extrapolated beyond this multiplication).
+
+### Verification
+1. **Grid recall vs brute force (T2 method).** Batch 2026-10-14, first 3 h. Targets: the ISS, the 30 objects with most events, 12 random (43 in all, seed 77) against all 32,646 objects, own SGP4 loop every 2 s, golden-section refine, same exclusions (identical sets, formation pairs): **307 approaches under 5 km, 307 found by the screener (100.00%)**, maximum TCA difference 0.000 s and miss difference 0.0000 km. The brute force took 449 s on the 4 cores (one thread). Limit: the brute force uses the same eligible object set as the screener (fence and garbage-orbit rule), so it tests the grid, not the fence; and it only covers 43 targets, not all-vs-all.
+2. **Five events recomputed exactly**, from raw element sets, 10 ms scan over plus or minus 20 s: five events from five different batches (two highest-Pc, three random), e.g. OPS 5268 / DELTA 1 DEB 0.374373 km at 2026-10-13 01:11:48.755 UTC, 14.576 km/s: stored and recomputed miss, time and speed identical (|dmiss| 0.000000 km, |dt| 0.000 s) in all five. Pc of the same five rebuilt by code that does not share the library path (own RIC vectors, own plane, polar numerical integral on a 400 x 1200 grid): balanced, conservative and no-floor values agree to the 5 digits printed (for example 1.9117e-5 against 1.9117e-5, 4.5417e-5 against 4.5417e-5). They share `sigmaRIC` and the floor and radii, so this checks the geometry and the integral, not the model.
+3. **Pc unit tests** (`collision.test.ts`, run by `check.sh`): zero miss, circular covariance equals 1 - exp(-R^2/2s^2) for six R, s pairs (relative error below 1e-7); small-disc limit equals density x area (below 1e-6); **40 random cases against a brute-force numerical 2D integral in polar coordinates, agreement better than 1e-3 relative** (the test asserts it); a needle-thin ellipse; the worst-case Pc against its closed form and a dense scan; encounter-plane geometry (axis-aligned case, and invariance under rotation of everything). `check.sh` prints "starmap check: OK".
+
+### Skipped, extrapolated, caveats
+- Not extrapolated: the seven batches and both verifications were run as described. Not checked: an all-vs-all brute force of a whole window; Pc against any independent truth (there is none in public data).
+- The U5 calibration limits carry straight into Pc: on held-out data the balanced model has 86% of cases inside 3 sigma (97% expected), the conservative one 96% but too wide in the core. Neither is tuned for a Pc tail; velocity errors, R-I correlation and the non-Gaussian tails are ignored; sets older than 14 days are extrapolated (0.3% of events).
+- Floor and radii are my assumptions (above). No tuning, no sensitivity beyond the no-floor column.
+- The batches are replays of daily files, not live ingests. The files differ in freshness; the fallback to the previous day's set (5,246, 6,341, 496, 1,605, 19,704, 11,494, 17,810 objects per batch) means some batches are screened with older sets than a live service. The persistence numbers depend on that.
+- The Pc stage runs on one thread (73 to 96 s per batch); the grid is 70% of the wall time.
+- Everything was written to the working tree, nothing committed. Outputs (gitignored): `packages/backend/data/forward/` (batch files, metas, `summary.json`, the 3 h slice).
+
+### Plain-words verdict
+**What this does.** Every day at noon it takes the newest published orbit numbers for all 32,600 tracked objects, flies them forward 36 hours, and lists every moment two objects pass within 5 km of each other. That is a "conjunction". It takes about 7 minutes on four cores and 0.9 GB of memory, so it fits easily on a small server. For each conjunction it also gives a "Pc", the probability of an actual collision: the odds that, given how uncertain we are about where each object really is, the two bodies touch. 1e-4 means one in ten thousand. Operators of real satellites start worrying around 1e-5 to 1e-4.
+
+**How often would alerts fire?** There are about 160,000 passes under 5 km in each 36 h list and about 9,000 under 1 km, which is normal for such a crowded orbit region, not a sign of danger. Per list: about 7,000 events above Pc 1e-6, about 360 above 1e-5 (about 250 with the conservative setting), and 0 to 3 above 1e-4 (7 in the whole week). So a threshold of 1e-4 would alert about once a day, 1e-5 would alert 250 to 500 times a day, which nobody can act on. The largest Pc seen was 2e-4. Almost all high-Pc events are dead rocket bodies, whose large size dominates the radius.
+
+**How stable are the predictions?** Two very different answers. For ordinary objects (not from a manoeuvring constellation), when the numbers are refreshed the same conjunction is found again 80 to 94% of the time, within a second and a few hundred metres, and the Pc changes by less than a factor of 1.3 half of the time (pooled median change 0.11 in log10). For the big manoeuvring constellations (Starlink and similar), which make up 85% of all events, only 7 to 23% of the passes survive the next update (when the element sets really changed), because those satellites steer themselves and a day-old prediction is off by tens of kilometres. For events under 1 km the survival rate was 10 to 23% as well, and 99% on the one day when almost nothing was refreshed. Of the alerts above 1e-5 in the overlap, 43% to 99% (typically about 70%) were still above the threshold after the next update, and new ones appear every time. So: treat a Starlink-to-Starlink conjunction as noise, treat a 1e-5 alert as "look again after the next update", and do not act on a single prediction.
+
+**How far can Pc be trusted?** As a ranking and an order of magnitude, yes; as a probability, no. The size of the error region comes from U5, which on held-out days was too optimistic for rare bad cases (14% outside the 3-sigma region where 3% are expected) and measures how consistent public data are with themselves, not how close they are to the truth. I added a floor of 1 km along the path because the public numbers are not better than that at the moment they are published; that single choice moves the number of events above 1e-4 from about 20 to about 1 per list. The hard-body sizes are my estimates. The "max possible" Pc is a ceiling that assumes the worst error size; it is above 1e-5 for 6,000 to 15,000 events per list, which shows how little a public element set can exclude.
+
+### Reproduce
+```
+npm run build:libs
+export STARMAP_DB=postgres://orbitwatch:orbitwatch@localhost:5432/orbitwatch
+npx tsx packages/backend/scripts/starmap/screen-forward.ts --from 2026-10-12 --to 2026-10-18 --hours 36 --workers 3   # resumable, ~7 min per batch
+npx tsx packages/backend/scripts/starmap/forward-report.ts                                                        # tables + DB load
+npx tsx packages/backend/scripts/starmap/screen-forward.ts --day 2026-10-14 --hours 3 --tag slice3h --workers 3
+npx tsx packages/backend/scripts/starmap/verify-forward.ts recall 2026-10-14 slice3h
+npx tsx packages/backend/scripts/starmap/verify-forward.ts exact --n 5
+bash packages/backend/scripts/starmap/check.sh
+```
+
+**Lead's independent check (S5).** Top non-manoeuvrable event of the 2026-10-18 batch, SL-8 R/B (21231) x
+82693: own SGP4 loop at 10 ms with the causally selected sets (21231's 10-16 11:10 set, because its 10-18 set has
+epoch 17:10, after the 12:00 batch time) gives 0.1948 km at the stored TCA (0.00 s), vs 0.1943 km stored. With the
+newer 17:10 set the same encounter is 0.144 km: one update moves the miss by 50 m, which is what the update
+history is for.
