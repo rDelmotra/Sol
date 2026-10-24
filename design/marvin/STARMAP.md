@@ -912,3 +912,412 @@ recent-window research and the error-growth experiments are dropped. Locked in:
 - Collision probability: included. The uncertainty around each prediction is measured from element-set history
   (U5, owner restored it 2026-10-24) and feeds Pc in the screener (S5). The browser pack prototype (P5) replaces
   the WASM bench: WASM only if JS SGP4 is a measured bottleneck.
+
+
+## Round 5 — U5 (cloud): uncertainty model
+
+Machine: the same cloud container (4 cores, 15 GB, no swap). Worker budget 3 threads; one other worker (browser pack
+prototype, light CPU) ran alongside. Nothing here is long: loading the 29 daily files took about 6 s and collecting
+all 2.30 M pairs 11.3 s on 3 workers; the fits took tens of seconds each (not timed separately).
+
+### What was done, in plain words
+
+The public element sets carry no error estimate. The standard way to estimate one (CSSI, SDC4; Flohrer et al., SDC5) is
+to take an object's older element set, run SGP4 forward to the moment (epoch) of a newer set, and look at how far the old
+prediction is from the newer set. Repeating this over many pairs shows how the prediction error grows with the age of
+the old set. The offset is measured in the newer set's own axes: radial (R, away from Earth), in-track (I, along the
+direction of travel) and cross-track (C, sideways, out of the orbit plane). The "error region" in the rest of this section
+is an ellipsoid with these three half-widths (sigma_R, sigma_I, sigma_C) around the predicted position; "1 sigma" is
+the typical size (about a fifth of the cases fall in the 1-sigma ellipsoid in 3D, see calibration), "2 sigma" is twice as wide.
+
+Code (all in `packages/backend/scripts/starmap/` except the pure maths): `uncertainty-pairs.ts` (+ worker) collects the
+pairs, `uncertainty-fit.ts` fits and calibrates, `uncertainty-model.ts` exports `sigmaRIC(classOrObject, ageDays)` and
+reads `packages/backend/data/uncertainty/model.json`, `uncertainty-lib.ts` (classes, bins, growth-law fit),
+`uncertainty-report.ts` prints the tables below. The RIC frame, Mahalanobis distance and chi-square(3) functions are in
+`packages/orbital-core/src/ric.ts` with tests (`ric.test.ts`); `uncertainty-lib.test.ts` and `uncertainty-model.test.ts`
+test the rest. `check.sh` passes.
+
+Method details. Pairs: for each object, every older element set against every newer one with epoch gap 0.25 to 14 days,
+over the 29 daily files 2026-09-20..10-18, deduplicated by (noradId, EPOCH). The offset is old minus new, in the new set's
+RIC frame (position and velocity). Sigma per class and gap bin is robust: 1.4826 x the median of |offset|, centred on zero
+(so tails do not inflate it). The growth law sigma(t) = a + b t + c t^2 is fitted per axis to the 8 gap-bin sigmas by
+least squares on relative error with a, b, c >= 0. Classes: regime x object type (unknown / rocket body / debris); LEO is
+further split by perigee band (below 400, 400-600, 600-800, 800 km and above) and by a drag band from |BSTAR|
+(below 1e-4, 1e-4 to 5e-4, 5e-4 to 1.5e-3, above) because the drag term is the largest single source of in-track error
+(this split was added during calibration, see before/after). A class needs 3,000 training pairs and four gap bins with
+at least 100 pairs; smaller ones fall back to the parent class (LEO/type, LEO/band, LEO, ALL). Per-object scale: for an
+object with at least 8 training pairs, the median of |offset| / class sigma per axis (own error divided by its class's),
+clamped to 0.05 .. 20, one number per axis.
+
+### Numbers
+
+**Pair counts and fences**
+
+- 29 daily files, 948,190 file rows, **477,903 unique (noradId, EPOCH) element sets**, 33,076 objects (the same set repeats
+  across days: 2.0 rows per unique set).
+- 2,296,148 pairs with gap 0.25-14 d; 298 failed in SGP4 (and 2 element sets failed on their own), **2,295,850 pairs** kept
+  as records.
+- Fenced (excluded from every fit and from the calibration; a pair can be in several): NORAD 54922: 47; objects in
+  identical-element groups (the 20 objects of the ISS stack, Tiangong stack etc.): 1,435; position below 6,400 km radius
+  (decayed): 16; offset above 100,000 km: 0; **manoeuvre jump between the two epochs (T2 rule: offset above 16.3 km AND
+  change in semi-major axis above 1 km AND above 1 km after removing the drag term): 87,104 (3.8%)**.
+  Any fence: 88,362. **Used: 2,207,488 pairs.**
+- Caveat on the jump fence: the rule uses the offset itself, so it removes the largest errors of objects that also changed
+  orbit size. Real manoeuvres are excluded on purpose, but low-thrust satellites that never trigger the rule (Starlink)
+  stay in and make the along-track numbers large, see below. Sensitivity of the fit to the fence was not measured.
+- Split: training = pairs whose newer set first appears in the files 2026-09-20..10-13 (1,594,877 pairs); **held out = newer
+  set first appears in 2026-10-14..10-18 (612,611 pairs)**. Older sets of held-out pairs can lie in the training period.
+  Tail factors were fitted on the last 5 training days (487,200 pairs) with per-object scales from the days before
+  (1,107,677 pairs), so the scales are tested out of sample inside the training period as well.
+
+Kept pairs by regime and gap bin (all 29 days):
+
+| group | pairs | 0.25-0 d | 0.5-1 d | 1-2 d | 2-3 d | 3-5 d | 5-7 d | 7-10 d | 10-14 d |
+|---|---|---|---|---|---|---|---|---|---|
+| ALL | 2207488 | 2044 | 40827 | 200800 | 202776 | 391699 | 360085 | 481486 | 527771 |
+| LEO | 1989144 | 1789 | 36356 | 180248 | 182430 | 353204 | 324251 | 434673 | 476193 |
+| MEO | 30097 | 42 | 693 | 2703 | 2658 | 5168 | 4933 | 6663 | 7237 |
+| GEO | 104068 | 63 | 2037 | 9984 | 9537 | 18019 | 17199 | 22189 | 25040 |
+| HEO | 80156 | 148 | 1676 | 7509 | 7734 | 14582 | 13034 | 17108 | 18365 |
+| OTHER | 4023 | 2 | 65 | 356 | 417 | 726 | 668 | 853 | 936 |
+
+Robust sigma in km, R / I / C, by regime and gap bin (class level, before per-object scale; fitted on all days):
+
+| regime | 0.25-0 d | 0.5-1 d | 1-2 d | 2-3 d | 3-5 d | 5-7 d | 7-10 d | 10-14 d |
+|---|---|---|---|---|---|---|---|---|
+| LEO | 0.04 / 0.28 / 0.04 | 0.10 / 1.58 / 0.10 | 0.16 / 1.73 / 0.14 | 0.23 / 3.14 / 0.20 | 0.38 / 7.59 / 0.36 | 0.58 / 15.9 / 0.52 | 0.84 / 29.1 / 0.74 | 1.22 / 50.9 / 1.04 |
+| MEO | 0.02 / 0.11 / 0.03 | 0.05 / 0.19 / 0.04 | 0.07 / 0.34 / 0.07 | 0.10 / 0.49 / 0.10 | 0.15 / 0.79 / 0.16 | 0.22 / 1.23 / 0.23 | 0.30 / 2.02 / 0.32 | 0.41 / 3.32 / 0.45 |
+| GEO | 0.09 / 0.40 / 0.04 | 0.16 / 0.46 / 0.08 | 0.31 / 0.95 / 0.14 | 0.45 / 1.30 / 0.21 | 0.71 / 2.29 / 0.34 | 1.02 / 3.86 / 0.50 | 1.35 / 6.72 / 0.72 | 1.78 / 10.1 / 0.96 |
+| HEO | 0.14 / 0.45 / 0.05 | 0.23 / 0.70 / 0.10 | 0.41 / 1.38 / 0.18 | 0.67 / 2.21 / 0.28 | 1.19 / 4.11 / 0.44 | 2.07 / 7.05 / 0.65 | 3.69 / 11.6 / 0.92 | 6.71 / 19.5 / 1.30 |
+| OTHER | n/a | 0.12 / 0.38 / 0.05 | 0.22 / 0.66 / 0.09 | 0.33 / 0.91 / 0.13 | 0.54 / 1.41 / 0.24 | 0.76 / 2.20 / 0.38 | 1.09 / 3.12 / 0.55 | 1.49 / 4.23 / 0.75 |
+
+3D offset (not a model, direct measurement) p50 / p90 / p99 in km:
+
+| regime | 0.25-0 d | 0.5-1 d | 1-2 d | 2-3 d | 3-5 d | 5-7 d | 7-10 d | 10-14 d |
+|---|---|---|---|---|---|---|---|---|
+| LEO | 0.20 / 3.85 / 22.2 | 1.09 / 17.9 / 63.4 | 1.20 / 39.3 / 230 | 2.15 / 74.4 / 468 | 5.16 / 161 / 1096 | 10.8 / 324 / 2427 | 19.7 / 585 / 4621 | 34.4 / 1023 / 8214 |
+| MEO | 0.09 / 0.28 / 0.57 | 0.16 / 0.88 / 10.0 | 0.27 / 1.24 / 20.9 | 0.40 / 2.19 / 40.5 | 0.64 / 3.56 / 75.6 | 0.97 / 4.92 / 157 | 1.52 / 7.15 / 247 | 2.40 / 11.2 / 368 |
+| GEO | 0.33 / 2.08 / 16.2 | 0.41 / 2.51 / 19.6 | 0.89 / 6.60 / 25.8 | 1.16 / 10.0 / 34.0 | 2.02 / 17.1 / 51.3 | 3.24 / 28.2 / 77.7 | 5.48 / 50.0 / 128 | 8.14 / 88.4 / 200 |
+| HEO | 0.35 / 1.29 / 7.12 | 0.59 / 2.80 / 15.8 | 1.14 / 6.22 / 33.2 | 1.78 / 11.2 / 62.2 | 3.33 / 24.5 / 100 | 5.61 / 49.2 / 162 | 9.16 / 82.3 / 277 | 15.4 / 134 / 407 |
+| OTHER | n/a | 0.31 / 0.96 / 1.77 | 0.52 / 1.52 / 6.20 | 0.75 / 2.20 / 50.1 | 1.18 / 3.64 / 94.6 | 1.79 / 5.76 / 271 | 2.48 / 9.10 / 410 | 3.37 / 14.7 / 593 |
+
+Velocity sigma in m/s (R / I / C), robust:
+
+| regime | 0.25-0 d | 0.5-1 d | 1-2 d | 2-3 d | 3-5 d | 5-7 d | 7-10 d | 10-14 d |
+|---|---|---|---|---|---|---|---|---|
+| LEO | 0.27 / 0.04 / 0.02 | 1.71 / 0.10 / 0.06 | 1.82 / 0.16 / 0.07 | 3.33 / 0.22 / 0.10 | 8.18 / 0.38 / 0.14 | 17.2 / 0.58 / 0.18 | 31.4 / 0.83 / 0.23 | 54.9 / 1.15 / 0.31 |
+| MEO | 0.02 / 0.01 / 0.01 | 0.04 / 0.01 / 0.01 | 0.06 / 0.01 / 0.01 | 0.09 / 0.02 / 0.02 | 0.14 / 0.03 / 0.03 | 0.22 / 0.05 / 0.04 | 0.36 / 0.06 / 0.06 | 0.59 / 0.09 / 0.08 |
+| GEO | 0.03 / 0.01 / 0.01 | 0.03 / 0.01 / 0.01 | 0.06 / 0.02 / 0.01 | 0.08 / 0.03 / 0.02 | 0.14 / 0.05 / 0.03 | 0.25 / 0.07 / 0.04 | 0.44 / 0.10 / 0.05 | 0.63 / 0.13 / 0.08 |
+| HEO | 0.13 / 0.04 / 0.02 | 0.22 / 0.06 / 0.04 | 0.37 / 0.10 / 0.06 | 0.65 / 0.15 / 0.09 | 1.21 / 0.24 / 0.14 | 2.21 / 0.35 / 0.21 | 3.78 / 0.49 / 0.28 | 6.88 / 0.69 / 0.39 |
+
+**Growth laws** sigma(t) = a + b t + c t^2 per axis, km, t in days since the element-set epoch (all-days fit; regime,
+type and band levels; the 4-level LEO drag classes are in model.json, 32 of them):
+
+| class | pairs | R: a, b, c | I: a, b, c | C: a, b, c |
+|---|---|---|---|---|
+| ALL | 2207488 | 0.00767, 0.0924, 0.00113 | 0.186, 0.359, 0.274 | 0.00269, 0.0857, 0.00 |
+| GEO | 104068 | 0.0409, 0.157, 0.00 | 0.00952, 0.453, 0.0353 | 0.00157, 0.0835, 0.00 |
+| HEO | 80156 | 0.0729, 0.148, 0.0334 | 0.00, 0.708, 0.0789 | 0.00497, 0.109, 0.00 |
+| LEO | 1989144 | 0.00582, 0.0897, 0.00105 | 0.0624, 0.510, 0.335 | 0.00233, 0.0863, 0.0000667 |
+| MEO | 30097 | 0.0136, 0.0341, 0.00 | 0.0664, 0.136, 0.0111 | 0.00750, 0.0369, 0.00 |
+| OTHER | 4023 | 0.0388, 0.123, 0.00 | 0.194, 0.307, 0.00345 | 0.00293, 0.0599, 0.000371 |
+| GEO/debris | 6294 | 0.122, 0.403, 0.00333 | 0.904, 0.666, 0.00864 | 0.106, 0.110, 0.00 |
+| GEO/rocket_body | 12062 | 0.0250, 0.0736, 0.00 | 0.0968, 0.237, 0.00289 | 0.0108, 0.0550, 0.000285 |
+| GEO/unknown | 85712 | 0.0542, 0.165, 0.00 | 0.0762, 0.379, 0.0680 | 0.00, 0.0883, 0.00 |
+| HEO/debris | 31014 | 0.131, 0.141, 0.0590 | 0.0269, 0.831, 0.134 | 0.0125, 0.118, 0.00 |
+| HEO/rocket_body | 40209 | 0.0361, 0.169, 0.0202 | 0.00, 0.694, 0.0556 | 0.00, 0.102, 0.000323 |
+| HEO/unknown | 8933 | 0.112, 0.0711, 0.0269 | 0.133, 0.346, 0.0556 | 0.00591, 0.0985, 0.00 |
+| LEO/debris | 540471 | 0.00, 0.0599, 0.000411 | 0.132, 0.00, 0.0716 | 0.00472, 0.0414, 0.000167 |
+| LEO/p<400 | 87985 | 0.0835, 0.00, 0.140 | 0.00, 10.4, 5.96 | 0.00, 0.225, 0.00 |
+| LEO/p>=800 | 476283 | 0.00, 0.0558, 0.0000123 | 0.118, 0.00, 0.0184 | 0.00391, 0.0383, 0.000359 |
+| LEO/p400-600 | 1044803 | 0.0737, 0.0758, 0.0150 | 0.00, 5.86, 1.14 | 0.00, 0.176, 0.00247 |
+| LEO/p600-800 | 380073 | 0.000939, 0.0632, 0.000631 | 0.0835, 0.00, 0.0938 | 0.00586, 0.0409, 0.000191 |
+| LEO/rocket_body | 83666 | 0.00, 0.0627, 0.00 | 0.0939, 0.00, 0.0208 | 0.00414, 0.0409, 0.000351 |
+| LEO/unknown | 1365007 | 0.0255, 0.0999, 0.00372 | 0.375, 3.58, 0.648 | 0.00, 0.147, 0.00286 |
+| MEO/debris | 4861 | 0.00671, 0.105, 0.00 | 0.00, 0.732, 0.0164 | 0.0145, 0.0637, 0.00 |
+| MEO/rocket_body | 6127 | 0.0145, 0.0215, 0.0000936 | 0.0883, 0.0872, 0.00745 | 0.00662, 0.0357, 0.00 |
+| MEO/unknown | 19109 | 0.0124, 0.0329, 0.00 | 0.0645, 0.119, 0.0132 | 0.00740, 0.0326, 0.0000819 |
+| LEO/debris/p>=800 | 224554 | 0.00, 0.0514, 0.0000855 | 0.146, 0.00, 0.0293 | 0.00157, 0.0468, 0.000241 |
+| LEO/debris/p400-600 | 63599 | 0.0177, 0.0607, 0.00534 | 0.00, 0.00, 0.490 | 0.0150, 0.0442, 0.000636 |
+| LEO/debris/p600-800 | 249550 | 0.000438, 0.0631, 0.000710 | 0.0691, 0.00, 0.109 | 0.00717, 0.0338, 0.000110 |
+| LEO/rocket_body/p<400 | 4302 | 0.106, 0.00, 0.0368 | 0.00, 0.00, 1.79 | 0.00539, 0.0506, 0.000504 |
+| LEO/rocket_body/p>=800 | 38094 | 0.00, 0.0507, 0.000143 | 0.0767, 0.00, 0.0122 | 0.000337, 0.0391, 0.00 |
+| LEO/rocket_body/p400-600 | 19043 | 0.00, 0.0893, 0.00 | 0.0520, 0.00, 0.104 | 0.00782, 0.0286, 0.000962 |
+| LEO/rocket_body/p600-800 | 22227 | 0.00115, 0.0571, 0.00 | 0.0624, 0.00, 0.0200 | 0.0116, 0.0534, 0.00122 |
+| LEO/unknown/p<400 | 80915 | 0.0615, 0.00, 0.172 | 0.00, 14.4, 7.53 | 0.00758, 0.236, 0.00 |
+| LEO/unknown/p>=800 | 213635 | 0.00, 0.0641, 0.0000511 | 0.0958, 0.00, 0.0123 | 0.00543, 0.0287, 0.000751 |
+| LEO/unknown/p400-600 | 962161 | 0.111, 0.0501, 0.0223 | 0.00, 7.19, 1.35 | 0.00, 0.189, 0.00249 |
+| LEO/unknown/p600-800 | 108296 | 0.00444, 0.0637, 0.000778 | 0.136, 0.00, 0.0971 | 0.0161, 0.0594, 0.00132 |
+(65 class entries in model.json, 32 of them LEO drag-band classes)
+
+Reading the law: radial and cross-track errors grow roughly linearly (about 0.09 km/day for LEO, 0.15 km/day GEO);
+in-track grows faster than linear for LEO (the t^2 term is the drag error), and is large for the lowest and the draggiest
+orbits. In-track sigma of the LEO drag classes (Starlink-like objects fall in p400-600 / b2):
+
+| class | pairs | I at 1 d | I at 3 d | R at 3 d | C at 3 d |
+|---|---|---|---|---|---|
+| LEO/unknown/p<400/b0 | 20561 | 18.9 | 35.3 | 0.63 | 1.20 |
+| LEO/unknown/p<400/b1 | 11670 | 4.58 | 41.2 | 0.88 | 0.52 |
+| LEO/unknown/p<400/b2 | 32850 | 109 | 979 | 14.4 | 1.70 |
+| LEO/unknown/p<400/b3 | 15834 | 269 | 1652 | 64.1 | 3.05 |
+| LEO/unknown/p>=800/b0 | 111852 | 0.14 | 0.26 | 0.30 | 0.23 |
+| LEO/unknown/p>=800/b1 | 76573 | 0.27 | 0.56 | 0.45 | 0.17 |
+| LEO/unknown/p>=800/b2 | 17936 | 1.01 | 2.13 | 0.51 | 0.16 |
+| LEO/unknown/p>=800/b3 | 7274 | 1.53 | 3.26 | 0.55 | 0.17 |
+| LEO/unknown/p400-600/b0 | 300101 | 11.1 | 27.4 | 0.66 | 1.27 |
+| LEO/unknown/p400-600/b1 | 250901 | 2.13 | 15.0 | 0.63 | 0.27 |
+| LEO/unknown/p400-600/b2 | 386516 | 36.5 | 209 | 3.60 | 1.31 |
+| LEO/unknown/p400-600/b3 | 24643 | 17.4 | 61.5 | 0.62 | 1.11 |
+| LEO/unknown/p600-800/b0 | 49078 | 0.22 | 0.78 | 0.41 | 0.27 |
+| LEO/unknown/p600-800/b1 | 53104 | 0.65 | 3.43 | 0.37 | 0.90 |
+| LEO/unknown/p600-800/b2 | 5282 | 1.12 | 7.56 | 0.38 | 0.47 |
+
+The class "LEO/unknown/p400-600/b2" is 4,692 Starlink of 4,958 objects (checked by name). Starlink fly electric thrusters
+and a lowering campaign was running (T2), which no element-set propagation can know; their in-track error after 3 days is
+about 209 km (1 sigma), against 0.26 km for a high-orbit low-drag object. This is a real property of the data, not a fit artefact.
+
+**Per-object scale** (own error / class error; objects with at least 8 training pairs: 31,249 of 33,055 eligible objects
+on the all-days fit, 30,699 on the training-only fit; p5 / p25 / p50 / p75 / p95):
+
+objects with scale 31249 of 33055 eligible
+| regime | objects | R | I | C |
+|---|---|---|---|---|
+| ALL | 31249 | 0.24 / 0.71 / 1.08 / 1.59 / 6.14 | 0.25 / 0.67 / 1.05 / 1.66 / 8.02 | 0.15 / 0.59 / 1.01 / 1.44 / 4.79 |
+| LEO | 27545 | 0.24 / 0.73 / 1.08 / 1.56 / 5.03 | 0.25 / 0.68 / 1.05 / 1.60 / 7.40 | 0.14 / 0.59 / 1.02 / 1.41 / 4.23 |
+| MEO | 561 | 0.20 / 0.54 / 1.10 / 1.99 / 6.56 | 0.24 / 0.68 / 1.06 / 1.83 / 7.29 | 0.31 / 0.67 / 0.95 / 1.49 / 5.61 |
+| GEO | 1550 | 0.33 / 0.72 / 1.11 / 1.51 / 2.57 | 0.27 / 0.55 / 1.06 / 2.35 / 8.95 | 0.32 / 0.59 / 0.84 / 5.56 / 20.00 |
+| HEO | 1531 | 0.18 / 0.46 / 1.13 / 3.90 / 14.07 | 0.19 / 0.48 / 1.14 / 3.10 / 12.01 | 0.17 / 0.51 / 1.02 / 1.95 / 5.60 |
+| OTHER | 62 | 0.27 / 0.57 / 1.03 / 1.56 / 3.59 | 0.53 / 0.72 / 0.92 / 1.58 / 3.04 | 0.26 / 0.71 / 0.98 / 1.26 / 16.59 |
+
+The spread is wide: the middle half of LEO objects is within 0.6x to 1.6x of its class, the worst 5% are 5x (R), 7x (I)
+or 4x (C) larger, HEO and GEO have a heavy upper end (95th percentile of the C scale for GEO is 20x, the clamp).
+
+**Tail factors** (extra multiplier on sigma so that the held-out shares come out right; by gap bin; warm = object has a scale):
+
+```
+centres 0.45 0.96 1.70 2.40 3.99 5.94 8.43 11.91
+ALL 1.61 1.20 1.12 1.15 1.08 1.16 1.17 1.15  cold 1.73  conservative x 1.97
+LEO 1.65 1.21 1.12 1.16 1.08 1.16 1.18 1.15  cold 1.94  conservative x 2.03
+MEO 1.59 1.18 1.10 1.14 1.06 1.11 1.10 1.07  cold 1.19  conservative x 1.47
+GEO 1.61 1.14 1.19 1.10 1.08 1.11 1.18 1.11  cold 1.15  conservative x 1.46
+HEO 1.50 1.08 1.06 1.00 0.96 1.04 1.08 1.14  cold 1.63  conservative x 1.66
+OTHER 1.73 1.29 1.20 1.24 1.15 1.24 1.26 1.24  cold 1.73  conservative x 1.10
+```
+"conservative" is a second multiplier (3-sigma share forced to the chi-square value); `sigmaRIC(x, age, model, true)`.
+
+### Calibration on held-out days (the mandatory check)
+
+For each held-out pair the Mahalanobis distance d = sqrt((dR/sR)^2 + (dI/sI)^2 + (dC/sC)^2) with the model's sigma at the
+pair's gap (diagonal covariance in RIC). If the model were exact, the share of pairs with d <= 1, 2, 3 would be
+**19.9%, 73.9%, 97.1%** (chi-square with 3 degrees of freedom, `chi3Cdf` in `ric.ts`, unit-tested). Stages (all on the same
+612,611 held-out pairs unless stated; "p99" is the 99th percentile of d, expected 3.37):
+
+**BEFORE: class-level model, no object scale, no tail factor (all held-out pairs)**
+
+| regime | pairs | in 1 sigma % | in 2 sigma % | in 3 sigma % | p99 of Mahalanobis |
+|---|---|---|---|---|---|
+| ALL | 612611 | 20.1 | 56.1 | 72.8 | 62.1 |
+| LEO | 555339 | 19.5 | 56.1 | 73.3 | 63.8 |
+| MEO | 8319 | 21.6 | 54.6 | 70.2 | 73.9 |
+| GEO | 26695 | 23.4 | 59.5 | 69.6 | 55.2 |
+| HEO | 21294 | 29.9 | 52.3 | 63.9 | 34.8 |
+| OTHER | 964 | 13.3 | 57.2 | 80.1 | 30.0 |
+
+**AFTER: shipped model (object scale + tail factors; cold start for objects without scale) all held-out pairs**
+
+| regime | pairs | in 1 sigma % | in 2 sigma % | in 3 sigma % | p99 of Mahalanobis |
+|---|---|---|---|---|---|
+| ALL | 612611 | 21.8 | 68.7 | 86.2 | 14.2 |
+| LEO | 555339 | 21.1 | 68.0 | 85.7 | 15.2 |
+| MEO | 8319 | 26.3 | 79.8 | 93.0 | 6.8 |
+| GEO | 26695 | 27.4 | 75.7 | 92.1 | 7.4 |
+| HEO | 21294 | 31.5 | 71.6 | 87.8 | 7.1 |
+| OTHER | 964 | 28.1 | 81.1 | 97.2 | 3.5 |
+
+**AFTER, objects with own scale only**
+
+| regime | pairs | in 1 sigma % | in 2 sigma % | in 3 sigma % | p99 of Mahalanobis |
+|---|---|---|---|---|---|
+| ALL | 605680 | 21.5 | 68.7 | 86.3 | 13.0 |
+| LEO | 549506 | 20.8 | 68.0 | 85.8 | 13.9 |
+| MEO | 8092 | 25.6 | 79.8 | 93.1 | 6.4 |
+| GEO | 26347 | 27.7 | 76.1 | 92.4 | 6.9 |
+| HEO | 20797 | 31.0 | 71.6 | 88.0 | 6.7 |
+| OTHER | 938 | 26.7 | 80.6 | 97.1 | 3.5 |
+
+**AFTER, cold-start objects (no scale)**
+
+| regime | pairs | in 1 sigma % | in 2 sigma % | in 3 sigma % | p99 of Mahalanobis |
+|---|---|---|---|---|---|
+| ALL | 6931 | 49.7 | 69.1 | 76.6 | 345.1 |
+| LEO | 5833 | 51.6 | 69.9 | 76.4 | 408.3 |
+| MEO | 227 | 49.8 | 78.9 | 89.0 | 13.4 |
+| GEO | 348 | 10.1 | 41.4 | 67.8 | 158.8 |
+| HEO | 497 | 54.3 | 72.0 | 78.7 | 65.1 |
+| OTHER | 26 | 80.8 | 100.0 | 100.0 | 1.5 |
+
+**cold-start objects BEFORE (class level, no tail)**
+
+| regime | pairs | in 1 sigma % | in 2 sigma % | in 3 sigma % | p99 of Mahalanobis |
+|---|---|---|---|---|---|
+| ALL | 6931 | 29.8 | 55.2 | 67.3 | 621.0 |
+| LEO | 5833 | 30.5 | 54.7 | 65.9 | 734.7 |
+| MEO | 227 | 17.6 | 56.4 | 75.8 | 23.0 |
+| GEO | 348 | 21.6 | 59.5 | 81.6 | 122.7 |
+| HEO | 497 | 32.8 | 56.1 | 67.6 | 121.3 |
+| OTHER | 26 | 30.8 | 84.6 | 100.0 | 2.7 |
+
+**object scale only (no tail factor), objects with scale**
+
+| regime | pairs | in 1 sigma % | in 2 sigma % | in 3 sigma % | p99 of Mahalanobis |
+|---|---|---|---|---|---|
+| ALL | 605680 | 18.3 | 66.4 | 85.2 | 13.6 |
+| LEO | 549506 | 18.1 | 66.5 | 85.1 | 14.4 |
+| MEO | 8092 | 16.2 | 70.2 | 89.8 | 7.6 |
+| GEO | 26347 | 18.5 | 64.1 | 86.8 | 8.4 |
+| HEO | 20797 | 26.1 | 66.9 | 85.0 | 7.5 |
+| OTHER | 938 | 10.4 | 57.6 | 88.5 | 4.9 |
+
+**CONSERVATIVE variant, objects with scale**
+
+| regime | pairs | in 1 sigma % | in 2 sigma % | in 3 sigma % | p99 of Mahalanobis |
+|---|---|---|---|---|---|
+| ALL | 605680 | 65.5 | 91.7 | 96.3 | 6.8 |
+| LEO | 549506 | 65.9 | 91.5 | 96.1 | 7.2 |
+| MEO | 8092 | 56.8 | 92.5 | 97.2 | 4.5 |
+| GEO | 26347 | 64.4 | 94.8 | 98.2 | 4.1 |
+| HEO | 20797 | 61.8 | 90.8 | 97.3 | 4.1 |
+| OTHER | 938 | 56.1 | 96.6 | 99.4 | 2.4 |
+
+
+By gap bin (all held-out pairs; before = class level, no scale or tail; after = shipped model):
+
+| gap | pairs | before 1/2/3 sigma % | after 1/2/3 sigma % |
+|---|---|---|---|
+| 0.25-0 d | 1288 | 15.5 / 48.6 / 66.7 | 18.1 / 52.3 / 67.5 |
+| 0.5-1 d | 28028 | 21.9 / 59.6 / 76.7 | 34.9 / 73.8 / 86.1 |
+| 1-2 d | 37244 | 22.6 / 62.4 / 79.4 | 37.2 / 79.8 / 90.5 |
+| 2-3 d | 51439 | 20.7 / 58.1 / 76.0 | 25.6 / 72.6 / 88.2 |
+| 3-5 d | 97978 | 21.7 / 59.0 / 75.7 | 25.3 / 74.3 / 89.5 |
+| 5-7 d | 93210 | 19.3 / 54.8 / 70.7 | 18.2 / 65.4 / 83.8 |
+| 7-10 d | 131848 | 17.7 / 53.2 / 70.7 | 13.9 / 61.5 / 83.8 |
+| 10-14 d | 171576 | 20.4 / 54.8 / 70.8 | 21.3 / 68.5 / 86.1 |
+
+By LEO class (shipped model):
+
+| class | pairs | 1/2/3 sigma % |
+|---|---|---|
+| LEO/unknown/p<400/b1 | 3073 | 23.2 / 54.4 / 68.9 |
+| LEO/unknown/p<400/b0 | 5901 | 19.0 / 55.4 / 70.5 |
+| LEO/unknown/p<400/b2 | 8778 | 17.4 / 54.8 / 74.2 |
+| LEO/unknown/p400-600/b3 | 4761 | 25.4 / 60.8 / 74.6 |
+| LEO/debris/p400-600/b3 | 3916 | 24.3 / 58.7 / 75.1 |
+| LEO/unknown/p400-600/b2 | 112275 | 17.5 / 59.6 / 79.3 |
+(best: LEO/rocket_body/p>=800/b0 25.6 / 87.5 / 97.2; 34 classes)
+
+History of the model, 1 / 2 / 3 sigma shares on the held-out pairs (each step was run before the next was added):
+first fit with plain least squares and regime/type/perigee classes (the in-track growth law failed to fit and fell back to
+a constant): 33.9 / 57.3 / 67.4, with only 47.3% inside 3 sigma at 10-14 d gaps; non-negative relative-error growth fit:
+26.6 / 53.9 / 65.4; plus the drag band in the LEO classes: 20.1 / 56.1 / 72.8 (all pairs); plus per-object scale (objects
+that have one): 18.3 / 66.4 / 85.2; plus tail factors **21.5 / 68.7 / 86.3** (objects with a scale; 21.8 / 68.7 / 86.2 for all
+held-out pairs including cold-start objects).
+
+**Where it is right and where it is not (honest reading).**
+- The 1-sigma share (21.8%) is close to the 19.9% target for all regimes (21% LEO to 31% HEO).
+- The 2-sigma share is 68.7% against 73.9% (MEO and GEO reach 80% and 76%); the 3-sigma share is **86.2% against 97.1%**,
+  so the model is **not** calibrated in the tails: about 14% of the pairs are outside 3 sigma where 3% are expected. The
+  p99 of d dropped from 62 to 14 (expected 3.4) but stays 4x too large. The cause is that the error of one object is not a
+  steady Gaussian: one bad element set (for example a poor drag fit) throws all its pairs far out. A single scale per
+  object and class cannot follow that. Gap trend (2-sigma share): 0.5-5 d gaps are close (72.6-79.8%), 5-10 d gaps are under-covered (65.4% and 61.5%), 10-14 d 68.5%.
+- Objects with no scale (fewer than 8 training pairs: 6,931 held-out pairs, 1.1%; probably new objects, not checked) are poor: 49.7 / 69.1 / 76.6
+  after the cold-start factor, p99 of d = 345. Their errors are very heavy-tailed (p99 of d 345 against 3.4 expected). Treat their error regions as
+  unreliable and widen them by hand.
+- Fix offered: the **conservative variant** (extra multiplier per regime, about 1.5 to 2) gives, for objects with a scale,
+  **65.5 / 91.7 / 96.3 %** (LEO 96.1, MEO 97.2, GEO 98.2, HEO 97.3, OTHER 99.4 in 3 sigma): the tail now matches, the core is
+  over-wide (65% inside 1 sigma against 20%). For a collision probability the safe use is the conservative variant, or the balanced one with
+  the 86%-at-3-sigma limitation stated. I did not find a model that matches all three levels at once; a heavy-tailed
+  distribution (e.g. a scale mixture) is the next step and was not tried.
+
+### Error region sizes from the shipped model
+
+Typical class-level 1-sigma half-widths in km, R / I / C and the 3D radius in brackets (no per-object scale, no tail
+factor; below 6 h the value at 0.25 d is used, since nothing shorter was measured):
+
+| regime (class used) | 1 h | 1 d | 3 d | 7 d |
+|---|---|---|---|---|
+| LEO (regime level) (LEO) | 0.05 / 0.41 / 0.05 (0.42) | 0.19 / 1.76 / 0.17 (1.78) | 0.55 / 8.93 / 0.51 (8.96) | 1.33 / 38.9 / 1.18 (38.9) |
+| LEO Starlink-like (LEO/unknown/p400-600/b2) | 0.03 / 6.02 / 0.10 (6.02) | 0.40 / 36.5 / 0.41 (36.5) | 3.60 / 209 / 1.31 (209) | 19.6 / 951 / 3.47 (952) |
+| LEO low drag, high orbit (LEO/unknown/p>=800/b0) | 0.02 / 0.12 / 0.03 (0.13) | 0.10 / 0.14 / 0.08 (0.19) | 0.30 / 0.26 / 0.23 (0.46) | 0.70 / 0.90 / 0.56 (1.27) |
+| MEO (MEO/unknown) | 0.02 / 0.11 / 0.02 (0.12) | 0.05 / 0.23 / 0.05 (0.25) | 0.13 / 0.64 / 0.13 (0.67) | 0.29 / 1.84 / 0.29 (1.89) |
+| GEO (regime level) (GEO) | 0.09 / 0.14 / 0.03 (0.17) | 0.23 / 0.57 / 0.10 (0.62) | 0.59 / 1.93 / 0.29 (2.04) | 1.31 / 5.63 / 0.67 (5.82) |
+| GEO (GEO/unknown) | 0.11 / 0.20 / 0.03 (0.23) | 0.25 / 0.60 / 0.10 (0.66) | 0.63 / 2.09 / 0.30 (2.21) | 1.39 / 6.95 / 0.71 (7.13) |
+| HEO (regime level) (HEO) | 0.18 / 0.30 / 0.05 (0.35) | 0.41 / 1.28 / 0.18 (1.36) | 1.33 / 4.62 / 0.54 (4.83) | 4.48 / 14.4 / 1.25 (15.1) |
+| HEO (HEO/unknown) | 0.21 / 0.36 / 0.05 (0.42) | 0.34 / 0.87 / 0.17 (0.95) | 0.92 / 2.72 / 0.49 (2.92) | 3.14 / 8.60 / 1.13 (9.23) |
+
+Directly measured 3D offset between an old prediction and the next set, p50 / p90 / p99 km (gap bin containing 1 d and 3 d):
+
+LEO 1 d (bin 1-2): 1.20 / 39.3 / 230; 3 d (bin 3-5): 5.16 / 161 / 1096
+MEO 1 d (bin 1-2): 0.27 / 1.24 / 20.9; 3 d (bin 3-5): 0.64 / 3.56 / 75.6
+GEO 1 d (bin 1-2): 0.89 / 6.60 / 25.8; 3 d (bin 3-5): 2.02 / 17.1 / 51.3
+HEO 1 d (bin 1-2): 1.14 / 6.22 / 33.2; 3 d (bin 3-5): 3.33 / 24.5 / 100
+
+### Plain-words verdict for the owner
+
+**What is measured.** An element set gives no promise about its own accuracy, so I asked a different question: if you
+predict a position from yesterday's numbers and later receive today's numbers, how far apart are they? Repeated 2.2
+million times over four weeks, this gives an honest error region that grows with the age of the numbers. It is measured
+in three directions: up/down (radial), along the path (in-track) and sideways (cross-track). Along the path is by far
+the largest, because a small error in speed becomes a large error in position as time passes.
+
+**How big is it?** After one hour (below the shortest gap I could measure, so this is the 6-hour value): about half a
+kilometre or less along the path for ordinary low orbits, a few kilometres for the drag-heavy ones (Starlink class at about
+6 km), 0.1 km for medium orbits (GPS class), 0.2 km for geostationary, 0.4 km for the stretched orbits. After one day: low orbits
+about 2 km typical (regime level), but 36 km for the Starlink class; medium orbits 0.25 km; geostationary 0.7 km;
+stretched orbits 1.4 km. After three days: low orbits about 9 km (Starlink class 209 km, high quiet orbits 0.3 km), medium
+0.7 km, geostationary 2 km, stretched 4.8 km. Sideways and up/down errors are ten to a hundred times smaller than along-path ones in low orbit.
+These are 1-sigma sizes; the region that holds roughly 70% of cases is twice as wide, the one that holds about 86% three times.
+
+**Can the model be trusted?** For the typical case, yes, as an order of magnitude and a ranking: the central part of the
+distribution matches within a few percentage points (22% inside 1 sigma against 20%), and about 86% of the pairs on held-out
+days the model never saw fall inside 3 sigma. For rare bad cases it is too optimistic: about one case in seven lies beyond the 3-sigma region where one in thirty-five is
+expected, mostly objects whose newest element set is poor or that are being steered. For a collision probability that must
+not under-state risk, use the conservative variant (matches the tail, 96% inside 3 sigma, but 65% inside 1 sigma, i.e. too wide in the
+core). New objects with under 8 pairs and objects that manoeuvre are the weak spot and are handled badly.
+
+**What it is not.** It measures how consistent successive public sets are, not the true error against an independent precise
+orbit. Both sets come from the same tracking data, so some common error cancels and the true error is likely larger than
+the numbers here, especially at short ages (the sigma at 6 h is the smallest I could measure, 0.04 km radial and 0.28 km in-track for LEO, which is
+below the 1 km usually quoted at epoch). Do not use the short-age numbers as a floor without a margin; apply an
+explicit minimum in the screener. The bins above 14 days and below 6 hours were not measured (beyond 14 days the model
+extends linearly from the 14-day value; below 0.25 days it stays at the 0.25-day value).
+
+### Skipped, fenced, extrapolated
+
+- Fenced: 87,104 jump pairs, 1,435 identical-set pairs, 47 for NORAD 54922, 16 low-radius pairs, 298 SGP4-failed pairs (and 2 element
+  sets that failed on their own); the fence for jumps was not varied. Not fenced: low-thrust satellites and decaying objects, which inflate the LEO
+  low-perigee and Starlink classes (kept because they are real prediction error).
+- No sampling: every pair in range was used.
+- Extrapolated: ages below 0.25 d (flat at the 0.25 d value) and above 14 d (linear continuation); classes with too few pairs use
+  the parent class (65 class entries in model.json); OTHER regime (79 objects) is thinly measured; velocity sigma is
+  tabulated per bin in model.json but has no growth law and is not used by `sigmaRIC`.
+- No off-diagonal covariance (R-I correlation exists for eccentric orbits and is the likely reason the radial axis has heavy
+  tails); the pair sigma includes the newer set's own epoch error (about 1/sqrt(2) over-statement in the worst case at zero gap).
+- The shipped `model.json` is fitted on all 29 days; the calibration numbers come from the training-only fit
+  (`model-holdout.json`), so the shipped model's own numbers on days 10-14..10-18 are not independent.
+
+### State and shared load
+
+Done: model, tests, calibration, tables. Not committed (per instruction). Outputs (gitignored, in
+`packages/backend/data/uncertainty/`): `pairs.bin` (101 MB), `pairs-meta.json`, `model.json` (2.3 MB, shipped, all days),
+`model-holdout.json`, `fit-report.json`, `fit-report-all.json`. No database used, no remote access. During the runs the
+machine was shared with the browser pack prototype worker (light CPU); the pair collection used 3 threads.
+
+Reproduce (repo root, after `setup-env.sh`):
+```
+npm run build:libs
+npx tsx packages/backend/scripts/starmap/uncertainty-pairs.ts --workers 3
+npx tsx packages/backend/scripts/starmap/uncertainty-fit.ts                      # held-out fit + calibration
+npx tsx packages/backend/scripts/starmap/uncertainty-fit.ts --holdout-days 0     # shipped model.json
+npx tsx packages/backend/scripts/starmap/uncertainty-report.ts                   # prints the tables
+bash packages/backend/scripts/starmap/check.sh
+```
