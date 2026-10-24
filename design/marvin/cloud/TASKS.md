@@ -201,3 +201,24 @@ Then write a short plain-words summary paragraph at the top of that section for 
 Rerun the daily coverage + events job for one day with `--workers 1, 2, 4, 8, 16, …` up to the
 machine's cores. Report the speed-up curve, and estimate the time for one day and for a 5-year
 backfill on Railway-like machines (8 and 32 vCPU).
+
+---
+
+## T6 — 36 h forward conjunction screener (owner decision 2026-10-24)
+
+Build `screen-forward.ts`: from the latest element set per object, screen all-vs-all for the next 36 h with
+the per-step SpaceCell hash grid (5 s step, neighbour cells covered) and exact refine to the time of closest
+approach. Store events in `starmap.conjunction` (pair, tca, miss_km, vrel, radial/along/cross miss, epochs,
+category, first_seen, last_updated) and match events across runs (same pair, tca within 60 s) so updates
+replace rather than duplicate. Exclude formation pairs and identical element sets (T2 rules).
+- Run: replay ingest using consecutive history days as successive batches; report run time, events, how
+  many events persist / change / vanish between batches.
+- Verify: grid recall vs brute force on a 3 h slice for the ISS + 30 busiest + 12 random objects (T2 method);
+  5 events recomputed exactly.
+- Done when: recall 100%, timings and counts in STARMAP.md as "## Round 5 — T6".
+
+## T7 — SGP4 in the browser: JS worker vs WASM (bench only)
+
+Time SGP4 for the full catalog at one instant and for one object over 24 h at 10 s, in the existing JS
+worker path and in a WASM build of the same algorithm (any maintained SGP4 compiled to WASM). Report
+speed-up, bundle size and agreement (positions within 1 m). Done when: a keep-JS or port-to-WASM verdict.

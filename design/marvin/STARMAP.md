@@ -882,3 +882,32 @@ on 4 cores; on 8 and 32 vCPU roughly 95 h and 25 h if it scales linearly. Scalin
 - Only India's polygon is careful; the other region polygons are rough.
 - No whole-day all-vs-all brute force was run for close approaches (recall was checked on 3 hours × 43 objects).
 - TEME vs J2000 (~0.3°) is tagged, not converted.
+
+## Decision update (owner, 2026-10-24): three operational layers
+
+Owner rulings: storage is not a constraint (~500 GB available); compute is not a constraint; the 14-day
+recent-window research and the error-growth experiments are dropped. Locked in:
+
+1. **Client: browser, Web Workers (WASM optional).** Single-satellite paths for the next 18–24 h and the live
+   globe animation stay dynamic: SGP4 on the fly into typed arrays, nothing stored on the backend. A 24 h path at
+   10 s is ~8,600 SGP4 calls, a few ms. WASM only if a bench shows a real gain over the existing JS worker (T7).
+2. **Backend: conjunction screener, next 36 h.** All-vs-all, precomputed, written to the database.
+3. **Backend: history archive.** Layers 1–3 of the decision above (element sets forever, daily star-map lists at
+   orders 3 and 4, derived events). With 500 GB, hourly order-4 lists (~129 GB / 5 y), region passes for watched
+   regions (~33 GB) and the full close-approach set under 5 km may also be kept forever instead of dropped.
+
+**Screener design (engineering choice, from rounds 2 and T2).**
+- Filter: the SpaceCell key used as a hash grid per time step (5 s), with neighbour cells covered, then exact
+  refine. This is "the spatial box index" applied per step. A per-object, whole-window box filter prunes almost
+  nothing in LEO (round 2: orbit-shape filters keep 28–77%; the per-step grid was ~1,500× faster).
+- Re-run policy: about 28,000 of ~33,000 objects get new element sets each day (measured, 2026-10-17 → 10-18), and
+  the cost of a screen is dominated by propagating everything, not by pair checks. So each ingest batch reruns
+  the full 36 h screen (~210 s on 4 cores, from T2's 140 s/day grid) rather than an "affected objects only"
+  pass, which would save pair checks but still propagate the whole catalog. Event identity is kept across runs
+  (same pair, time of closest approach within a tolerance), so each conjunction carries its update history.
+- Stored per event: pair, time of closest approach, miss distance, relative speed, radial / along-track /
+  cross-track miss, element-set epochs used, category label (crossing / same_family / same_launch), first seen,
+  last updated. Formation pairs and identical element sets are excluded as in T2. Screening threshold 5 km
+  (~110k events per 36 h window); events under 1 km flagged.
+- Not included: collision probability. It needs an uncertainty for each element set, which the public data
+  does not give and whose measurement was dropped. Miss distance and relative speed are reported instead.
