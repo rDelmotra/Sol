@@ -204,21 +204,62 @@ backfill on Railway-like machines (8 and 32 vCPU).
 
 ---
 
-## T6 — 36 h forward conjunction screener (owner decision 2026-10-24)
+# Round 5 (owner decisions 2026-10-24): uncertainty, forward screener, browser pack
 
-Build `screen-forward.ts`: from the latest element set per object, screen all-vs-all for the next 36 h with
-the per-step SpaceCell hash grid (5 s step, neighbour cells covered) and exact refine to the time of closest
-approach. Store events in `starmap.conjunction` (pair, tca, miss_km, vrel, radial/along/cross miss, epochs,
-category, first_seen, last_updated) and match events across runs (same pair, tca within 60 s) so updates
-replace rather than duplicate. Exclude formation pairs and identical element sets (T2 rules).
-- Run: replay ingest using consecutive history days as successive batches; report run time, events, how
-  many events persist / change / vanish between batches.
-- Verify: grid recall vs brute force on a 3 h slice for the ISS + 30 busiest + 12 random objects (T2 method);
-  5 events recomputed exactly.
-- Done when: recall 100%, timings and counts in STARMAP.md as "## Round 5 — T6".
+Owner rulings: storage (~500 GB) and compute are not constraints. 14-day recent-window box index dropped. Three
+operational layers: (1) browser computes single-object paths and the live globe; (2) backend screens all-vs-all
+for the next 36 h; (3) history archive as decided. Uncertainty (an error region around each prediction) is
+needed for collision probability, so it is measured from history. Order: U5 and P5 in parallel, then S5.
 
-## T7 — SGP4 in the browser: JS worker vs WASM (bench only)
+## U5 — Uncertainty model from element-set history
 
-Time SGP4 for the full catalog at one instant and for one object over 24 h at 10 s, in the existing JS
-worker path and in a WASM build of the same algorithm (any maintained SGP4 compiled to WASM). Report
-speed-up, bundle size and agreement (positions within 1 m). Done when: a keep-JS or port-to-WASM verdict.
+Element sets carry no error estimate. Estimate one the standard way (CSSI, SDC4; Flohrer et al., SDC5):
+propagate an object's older element set to the epoch of a newer one, and take the position and velocity
+difference in the newer one's radial / along-track / cross-track frame (RIC). Collect this for all pairs with
+epoch gap 0.25–14 days, over the 29 daily files 2026-09-20..10-18 (deduplicate element sets by
+(noradId, EPOCH)).
+- Output `packages/backend/data/uncertainty/model.json`: per class (regime x object type x perigee band for
+  LEO) and per gap bin: sigma_R, sigma_I, sigma_C (robust: from median absolute deviation, also p50/p90/p99), and
+  a fitted growth law sigma(t) = a + b·t + c·t² per axis. Plus a per-object scale factor where an object has
+  >= 8 pairs (its own error / its class's).
+- Fence: SGP4 failures, NORAD 54922, objects with manoeuvre jumps between the two epochs (T2 rule) are excluded
+  from fitting and counted.
+- Calibration (mandatory): hold out the last 5 days. For held-out pairs compute the Mahalanobis distance
+  using the model covariance (diagonal in RIC); report the fraction inside 1, 2, 3 sigma vs the chi-square(3)
+  expectation (19.9%, 73.9%, 97.1%), per regime. Fix the model until coverage is close, or say where it isn't.
+- Done when: the table, the growth curves by regime, the calibration table, and a plain verdict are in
+  STARMAP.md as "## Round 5 — U5".
+
+## S5 — 36 h forward conjunction screener with collision probability
+
+`screen-forward.ts`: from the latest element set per object at a batch time, screen all-vs-all for the next
+36 h (`--hours` adjustable) with the per-step SpaceCell hash grid (5 s step, neighbour cells; reuse T2's grid
+code) and exact refine to the time of closest approach (TCA). Threshold 5 km.
+- Per event: pair, TCA, miss km, relative speed, RIC miss, epochs, category label (crossing / same_family /
+  same_launch), covariances from U5 at age (TCA − epoch) for each object, combined and projected on the
+  encounter plane, collision probability Pc by the 2D Foster method with a stated hard-body radius (by object
+  type; say the values), and the maximum possible Pc as a cross-check.
+- Store in `starmap.conjunction` (+ `starmap.conjunction_update`), matched across batches (same pair, TCA
+  within 60 s) so updates form a history.
+- Run: replay batches using consecutive history days 2026-10-12..10-18 as successive ingests (batch time =
+  that day 12:00 UTC); report run time per batch, events, Pc distribution, how events persist / change /
+  vanish between batches, and the top events by Pc.
+- Verify: grid recall vs brute force on a 3 h slice (ISS + 30 busiest + 12 random vs all; T2 method); 5 events
+  recomputed exactly; Pc code unit-tested against analytic cases (zero miss with circular covariance:
+  Pc = 1 − exp(−R²/2σ²)) and against a numerical 2D integration.
+- Done when: recall 100%, tests pass, results in STARMAP.md as "## Round 5 — S5".
+
+## P5 — Browser pack prototype (offline Perceptor in the browser)
+
+Like browser game ports that download a pack once and keep it in the Origin Private File System (OPFS):
+build a versioned pack, load it in the browser, answer questions locally in a Web Worker.
+- `build-pack.ts`: pack = live catalog elements, the last 14 days of element sets, daily star-map lists of the
+  last 14 days (T1 format), U5 model (if present), S5 conjunctions (if present), a manifest with hashes and
+  sizes; `.tar.gz` or a chunked format, plus a small daily delta (new element sets only). Report sizes.
+- A static prototype page under `packages/backend/scripts/starmap/pack-web/` (not the app): downloads the pack,
+  stores it in OPFS, reopens it offline, and in a worker answers: who is over India now (SGP4 + polygon), the
+  ISS path for the next 24 h, which objects were in a given star-map box on a given past day.
+- Test in headless Chromium via Playwright (pre-installed; do not run `playwright install`): first-load time,
+  reload-from-OPFS time, query times, and agreement with the same questions answered in Node.
+- Done when: sizes, timings and agreement are in STARMAP.md as "## Round 5 — P5", with a verdict on whether to
+  build this into the app and whether WASM is needed (only if JS SGP4 is a measured bottleneck).

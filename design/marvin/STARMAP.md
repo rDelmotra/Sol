@@ -909,5 +909,6 @@ recent-window research and the error-growth experiments are dropped. Locked in:
   cross-track miss, element-set epochs used, category label (crossing / same_family / same_launch), first seen,
   last updated. Formation pairs and identical element sets are excluded as in T2. Screening threshold 5 km
   (~110k events per 36 h window); events under 1 km flagged.
-- Not included: collision probability. It needs an uncertainty for each element set, which the public data
-  does not give and whose measurement was dropped. Miss distance and relative speed are reported instead.
+- Collision probability: included. The uncertainty around each prediction is measured from element-set history
+  (U5, owner restored it 2026-10-24) and feeds Pc in the screener (S5). The browser pack prototype (P5) replaces
+  the WASM bench: WASM only if JS SGP4 is a measured bottleneck.
