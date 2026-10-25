@@ -263,3 +263,41 @@ build a versioned pack, load it in the browser, answer questions locally in a We
   reload-from-OPFS time, query times, and agreement with the same questions answered in Node.
 - Done when: sizes, timings and agreement are in STARMAP.md as "## Round 5 — P5", with a verdict on whether to
   build this into the app and whether WASM is needed (only if JS SGP4 is a measured bottleneck).
+
+## S6 — Faster, industry-shaped 36 h screener (owner approval 2026-10-25)
+
+Upgrade `screen-forward.ts` (S5) on the current codebase and TLE (GP) input. No external test sets (TraCSS
+dataset skipped by the owner: ephemeris input, 22 GB).
+1. **Apogee–perigee pre-filter** in front of the grid. Use each object's MEASURED radius range over the window
+   (a coarse SGP4 pass, padded), not mean-element perigee/apogee (round 2: LEO p99 19 km off, HEO up to 265 km).
+   Sort by r_min, sweep, drop pairs whose shells are apart by more than the largest screening extent. Report pairs
+   removed and whether it removes propagation work (objects with no overlapping partner) or only pair checks.
+2. **Adaptive time stepping.** Coarse step with a provably conservative pad (cell size / neighbour cover large
+   enough that no pair inside the screening volume between samples is missed, using a bound on relative
+   motion), then fine refinement only on candidate pairs and their time windows. State the bound in the code.
+3. **Space Flight Safety Handbook screening volumes** in RIC (U radial, V in-track, W cross-track), by the
+   primary's regime; report a conjunction only if the local minimum of miss distance lies inside the volume:
+
+| ID | U km | V km | W km | regime |
+|---|---|---|---|---|
+| 1 | 10 | 10 | 10 | deep space: 1300 < period < 1800 min, e < 0.25, i < 35° |
+| 2 | 0.4 | 2 | 2 | LEO4: 1200 < perigee ≤ 2000 km, e < 0.25 |
+| 3 | 0.4 | 12 | 12 | LEO3: 750 < perigee ≤ 1200 km, e < 0.25 |
+| 4 | 0.4 | 25 | 25 | LEO2: 500 < perigee ≤ 750 km, e < 0.25 |
+| 5 | 0.4 | 44 | 51 | LEO1: perigee ≤ 500 km, e < 0.25 |
+| 6 | 20 | 20 | 20 | other deep space: period > 225 min |
+| 7 | 2 | 25 | 25 | other near Earth: period < 225 min |
+| 8 | 20 | 50 | 20 | hyperbolic: e ≥ 1 |
+
+   (Table 3 of the 2026 TraCSS/Aerospace Conjunction Screening Testset Users Guide, citing the SFS Handbook v1.7.)
+   Screen asymmetric volumes as the guide says: a pair is reported with A as primary if B is in A's volume, and
+   vice versa. Also keep a 5 km sphere mode so results compare with S5.
+4. **Pc validated against NASA CARA reference cases** in unit tests (CARA_Analysis_Tools publishes Pc test
+   cases with expected values; fetch only those small public files, read-only, cite paths and commit them as
+   fixtures if their licence allows, else store expected values with a citation).
+
+Run on the same 7 batches (2026-10-12..10-18, batch 12:00 UTC, 36 h). Report per batch: SGP4 calls (instrumented,
+not formula), wall time, peak RSS, vs S5. Recall must be 100%: reference = S5's 5 s grid run with a sphere at
+least as large as the largest volume's half-diagonal (validated vs brute force in S5), plus a fresh brute-force
+3 h slice for the new volumes. Done when: recall 100%, SGP4-call and time reduction tables, CARA tests pass,
+results in STARMAP.md as "## Round 5 — S6".
