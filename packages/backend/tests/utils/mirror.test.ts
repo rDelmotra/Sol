@@ -6,11 +6,18 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { FileBlobStore } from '../../src/utils/storage/file-store.ts';
 import { Mirror, MTIME_TOLERANCE_MS, type MirrorSpec } from '../../src/utils/storage/mirror.ts';
 import type { BlobStore } from '../../src/utils/storage/types.ts';
-import { initMirror, mirrorSpec, resetMirrorForTests } from '../../src/utils/storage/mirror-runtime.ts';
+import {
+  initMirror,
+  mirrorBootIncomplete,
+  mirrorSpec,
+  resetMirrorForTests,
+  retryMirrorBoot,
+} from '../../src/utils/storage/mirror-runtime.ts';
 import { cacheAgeMs, isCacheFresh, writeCache } from '../../src/cache/file-cache.ts';
 
 const NOW = Date.now();
 const HOUR = 3_600_000;
+const FAST = { attempts: 2, sleep: async () => {} };
 const SPEC: MirrorSpec = { files: ['a.json', 'version.json'], dirs: ['dso'], archiveDirs: ['history/raw'] };
 
 function write(root: string, rel: string, text: string, mtimeMs = NOW): void {
@@ -137,7 +144,7 @@ describe('Mirror', () => {
     };
     write(local, 'a.json', 'A');
     const m = new Mirror(local, flaky, SPEC);
-    const boot = await m.syncAtBoot();
+    const boot = await m.syncAtBoot(FAST);
     assert.equal(boot.failed, 1);
     assert.equal((await m.flush()).failed, 1);
     failing = false;
@@ -159,6 +166,118 @@ describe('Mirror', () => {
     const started = Date.now();
     await m.close(150);
     assert.ok(Date.now() - started < 2_000);
+  });
+
+  /** A remote that can be switched off: while `down`, every call rejects. */
+  function switchable(): { store: BlobStore; set: (down: boolean) => void; calls: () => number } {
+    let down = false;
+    let calls = 0;
+    const guard = <T>(fn: () => Promise<T>) => async (): Promise<T> => {
+      calls++;
+      if (down) throw new Error('bucket unreachable');
+      return fn();
+    };
+    return {
+      set: (d) => { down = d; },
+      calls: () => calls,
+      store: {
+        kind: 's3',
+        put: (k, d, o) => guard(() => remote.put(k, d, o))(),
+        get: (k) => guard(() => remote.get(k))(),
+        stat: (k) => guard(() => remote.stat(k))(),
+        list: (p) => guard(() => remote.list(p))(),
+        delete: (k) => guard(() => remote.delete(k))(),
+      },
+    };
+  }
+
+  it('bootOutcome is null before a boot sync and complete after a clean one', async () => {
+    const m = new Mirror(local, remote, SPEC);
+    assert.equal(m.bootOutcome, null);
+    await m.syncAtBoot(FAST);
+    assert.equal(m.bootOutcome, 'complete');
+  });
+
+  it('retries a failing boot sync and completes once the bucket answers', async () => {
+    write(remoteDir, 'a.json', 'A', NOW - HOUR);
+    const sw = switchable();
+    sw.set(true);
+    const waits: number[] = [];
+    let pass = 0;
+    const m = new Mirror(local, sw.store, SPEC);
+    const boot = await m.syncAtBoot({
+      attempts: 4,
+      baseDelayMs: 1_000,
+      sleep: async (ms) => { waits.push(ms); if (++pass === 2) sw.set(false); },
+    });
+    assert.equal(m.bootOutcome, 'complete');
+    assert.equal(boot.failed, 0);
+    assert.deepEqual(boot.downloaded, ['a.json']);
+    assert.equal(read(local, 'a.json'), 'A');
+    assert.deepEqual(waits, [1_000, 2_000], 'it slept between passes and stopped as soon as it worked');
+  });
+
+  it('backs off 1, 2, 4 ... seconds, capped, and gives up as incomplete without throwing', async () => {
+    const sw = switchable();
+    sw.set(true);
+    const waits: number[] = [];
+    const m = new Mirror(local, sw.store, SPEC);
+    const boot = await m.syncAtBoot({ attempts: 5, baseDelayMs: 1_000, maxDelayMs: 3_000, sleep: async (ms) => void waits.push(ms) });
+    assert.deepEqual(waits, [1_000, 2_000, 3_000, 3_000]);
+    assert.equal(m.bootOutcome, 'incomplete');
+    assert.ok(boot.failed >= 1);
+  });
+
+  it('retries only the files that failed, not the ones already done', async () => {
+    write(local, 'a.json', 'A');
+    write(local, 'version.json', 'V');
+    let failVersionOnce = true;
+    const picky: BlobStore = {
+      kind: 's3',
+      put: (k, d, o) => remote.put(k, d, o),
+      get: (k) => remote.get(k),
+      stat: async (k) => {
+        if (k === 'version.json' && failVersionOnce) { failVersionOnce = false; throw new Error('blip'); }
+        return remote.stat(k);
+      },
+      list: (p) => remote.list(p),
+      delete: (k) => remote.delete(k),
+    };
+    const m = new Mirror(local, picky, SPEC);
+    const boot = await m.syncAtBoot(FAST);
+    assert.equal(m.bootOutcome, 'complete');
+    assert.deepEqual(boot.uploaded.sort(), ['a.json', 'version.json']);
+    assert.equal(boot.uploaded.filter((k) => k === 'a.json').length, 1, 'a.json was uploaded once, not once per pass');
+  });
+
+  it('never overwrites a newer bucket copy with an older local file after a failed sync', async () => {
+    write(remoteDir, 'a.json', 'NEWER-IN-BUCKET', NOW);
+    write(local, 'a.json', 'older-local', NOW - 5 * HOUR);
+    const sw = switchable();
+    sw.set(true);
+    const m = new Mirror(local, sw.store, SPEC);
+    await m.syncAtBoot(FAST);
+    assert.equal(m.bootOutcome, 'incomplete');
+
+    sw.set(false);
+    await m.flush();
+    assert.equal(read(remoteDir, 'a.json'), 'NEWER-IN-BUCKET', 'the old local copy must not win');
+
+    await m.syncAtBoot(FAST); // the bucket is back: now the real comparison runs
+    assert.equal(m.bootOutcome, 'complete');
+    assert.equal(read(local, 'a.json'), 'NEWER-IN-BUCKET');
+  });
+
+  it('still uploads a file this process wrote after a failed boot sync', async () => {
+    const sw = switchable();
+    sw.set(true);
+    const m = new Mirror(local, sw.store, SPEC);
+    await m.syncAtBoot(FAST);
+    sw.set(false);
+    write(local, 'a.json', 'fresh-from-this-process', Date.now() + 1_000);
+    const report = await m.flush();
+    assert.deepEqual(report.uploaded, ['a.json']);
+    assert.equal(read(remoteDir, 'a.json'), 'fresh-from-this-process');
   });
 
   it('a fresh disk keeps the catalog age: a 30 h old catalog must still look stale after a restore', async () => {
@@ -217,6 +336,18 @@ describe('mirror runtime', () => {
     const m = initMirror();
     assert.ok(m);
     assert.equal(initMirror(), m);
+  });
+
+  it('mirrorBootIncomplete: false when off, true until a boot sync has completed', async () => {
+    assert.equal(mirrorBootIncomplete(), false);
+    assert.equal(await retryMirrorBoot(), true, 'nothing to retry when mirroring is off');
+    process.env.STORAGE_BACKEND = 's3';
+    Object.assign(process.env, {
+      AWS_S3_BUCKET_NAME: 'b', AWS_ENDPOINT_URL: 'https://t3.storageapi.dev', AWS_ACCESS_KEY_ID: 'i',
+      AWS_SECRET_ACCESS_KEY: 's', AWS_DEFAULT_REGION: 'auto',
+    });
+    assert.ok(initMirror());
+    assert.equal(mirrorBootIncomplete(), true);
   });
 
   it('mirrors history/raw only when the archive is under CACHE_DIR', () => {

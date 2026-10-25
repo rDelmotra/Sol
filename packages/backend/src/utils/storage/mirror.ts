@@ -43,6 +43,22 @@ export interface SyncReport {
   failed: number;
 }
 
+export interface BootSyncOptions {
+  /** Passes over the files that failed (default 7: waits of 1, 2, 4, 8, 16 and 32 s, about a minute). */
+  attempts?: number;
+  baseDelayMs?: number;
+  maxDelayMs?: number;
+  /** Test seam. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/** 'complete': every file reconciled. 'incomplete': some could not be, after all retries. */
+export type BootOutcome = 'complete' | 'incomplete';
+
+const DEFAULT_BOOT_ATTEMPTS = 7;
+const DEFAULT_BOOT_BASE_DELAY_MS = 1_000;
+const DEFAULT_BOOT_MAX_DELAY_MS = 32_000;
+
 /** Two mtimes closer than this count as equal (S3 metadata is rounded, clocks differ a little). */
 export const MTIME_TOLERANCE_MS = 2_000;
 
@@ -62,6 +78,12 @@ export class Mirror {
   private debounce: NodeJS.Timeout | null = null;
   private failureStreak = 0;
   private archiveSync: Promise<void> = Promise.resolve();
+  private outcome: BootOutcome | null = null;
+  private bootStartedAt = 0;
+  /** Keys the last boot sync could not reconcile; their pre-boot local copy is not uploaded (see doFlush). */
+  private unreconciled = new Set<string>();
+  /** Keys whose comparison succeeded and found the local copy newer: safe to upload even if the upload failed once. */
+  private uploadApproved = new Set<string>();
 
   constructor(
     localRoot: string,
@@ -77,25 +99,59 @@ export class Mirror {
 
   // ---------- boot ----------
 
+  /** null until a boot sync has run. */
+  get bootOutcome(): BootOutcome | null {
+    return this.outcome;
+  }
+
   /**
-   * Reconcile local and remote for files and dirs (awaited), then start the archive
-   * backfill in the background (see waitForArchiveSync). Never throws.
+   * Reconcile local and remote for files and dirs (awaited), retrying the files that
+   * fail with a growing wait, then start the archive backfill in the background (see
+   * waitForArchiveSync). Never throws. After the last pass, whatever still failed is
+   * logged once and bootOutcome is 'incomplete'.
    */
-  async syncAtBoot(): Promise<SyncReport> {
+  async syncAtBoot(opts: BootSyncOptions = {}): Promise<SyncReport> {
+    const attempts = Math.max(1, opts.attempts ?? DEFAULT_BOOT_ATTEMPTS);
+    const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
     const report = emptyReport();
-    try {
-      const keys = new Set<string>(this.spec.files);
-      for (const dir of this.spec.dirs) {
-        for (const o of await this.local.list(`${dir}/`)) keys.add(o.key);
-        for (const o of await this.remote.list(`${dir}/`)) keys.add(o.key);
+    const lastError = new Map<string, string>();
+    this.bootStartedAt = Date.now();
+    this.uploadApproved.clear();
+
+    let pending: Set<string> | null = null; // null until the file lists could be read
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      if (pending === null) {
+        try {
+          pending = await this.collectBootKeys();
+        } catch (err) {
+          lastError.set('(file list)', (err as Error).message);
+        }
       }
-      for (const key of keys) await this.reconcile(key, report);
-    } catch (err) {
-      report.failed++;
-      logger.warn(`Storage mirror: boot sync could not list files (${(err as Error).message}) — carrying on with the local copy`);
+      if (pending !== null) {
+        for (const key of [...pending]) {
+          const error = await this.reconcile(key, report);
+          if (error === null) pending.delete(key);
+          else lastError.set(key, error);
+        }
+        if (pending.size === 0) break;
+      }
+      if (attempt < attempts) {
+        const wait = Math.min(
+          (opts.baseDelayMs ?? DEFAULT_BOOT_BASE_DELAY_MS) * 2 ** (attempt - 1),
+          opts.maxDelayMs ?? DEFAULT_BOOT_MAX_DELAY_MS,
+        );
+        await sleep(wait);
+      }
+    }
+
+    this.unreconciled = pending === null ? new Set(this.spec.files) : pending;
+    report.failed = pending === null ? 1 : pending.size;
+    this.outcome = report.failed === 0 ? 'complete' : 'incomplete';
+    for (const key of this.unreconciled) {
+      logger.warn(`Storage mirror: could not sync ${key} after ${attempts} tries (${lastError.get(key) ?? lastError.get('(file list)') ?? 'unknown error'})`);
     }
     logger.info(
-      `Storage mirror: boot sync done (${report.downloaded.length} downloaded, ${report.uploaded.length} uploaded, ` +
+      `Storage mirror: boot sync ${this.outcome} (${report.downloaded.length} downloaded, ${report.uploaded.length} uploaded, ` +
         `${report.skipped} already in sync, ${report.failed} failed)`,
     );
     this.archiveSync = this.backfillArchives().catch((err) =>
@@ -104,29 +160,44 @@ export class Mirror {
     return report;
   }
 
+  private async collectBootKeys(): Promise<Set<string>> {
+    const keys = new Set<string>(this.spec.files);
+    for (const dir of this.spec.dirs) {
+      for (const o of await this.local.list(`${dir}/`)) keys.add(o.key);
+      for (const o of await this.remote.list(`${dir}/`)) keys.add(o.key);
+    }
+    return keys;
+  }
+
   /** Resolves when the background archive backfill started by syncAtBoot has finished (tests, shutdown). */
   waitForArchiveSync(): Promise<void> {
     return this.archiveSync;
   }
 
-  private async reconcile(key: string, report: SyncReport): Promise<void> {
+  /** null on success, otherwise the error message (the caller retries and logs once at the end). */
+  private async reconcile(key: string, report: SyncReport): Promise<string | null> {
     try {
       const [l, r] = await Promise.all([this.local.stat(key), this.remote.stat(key)]);
-      if (!l && !r) return;
-      if (l && !r) return void (await this.upload(key, l.size, l.mtimeMs, report));
-      if (!l && r) return void (await this.download(key, r.mtimeMs, report));
-      const diff = l!.mtimeMs - r!.mtimeMs;
-      if (Math.abs(diff) <= MTIME_TOLERANCE_MS) {
-        this.known.set(key, Mirror.sig(l!.size, l!.mtimeMs));
-        report.skipped++;
-      } else if (diff > 0) {
-        await this.upload(key, l!.size, l!.mtimeMs, report);
-      } else {
-        await this.download(key, r!.mtimeMs, report);
+      if (!l && !r) return null;
+      if (l && !r) {
+        this.uploadApproved.add(key);
+        await this.upload(key, l.size, l.mtimeMs, report);
+      } else if (!l && r) await this.download(key, r.mtimeMs, report);
+      else {
+        const diff = l!.mtimeMs - r!.mtimeMs;
+        if (Math.abs(diff) <= MTIME_TOLERANCE_MS) {
+          this.known.set(key, Mirror.sig(l!.size, l!.mtimeMs));
+          report.skipped++;
+        } else if (diff > 0) {
+          this.uploadApproved.add(key);
+          await this.upload(key, l!.size, l!.mtimeMs, report);
+        } else {
+          await this.download(key, r!.mtimeMs, report);
+        }
       }
+      return null;
     } catch (err) {
-      report.failed++;
-      logger.warn(`Storage mirror: could not sync ${key} (${(err as Error).message})`);
+      return (err as Error).message;
     }
   }
 
@@ -182,6 +253,13 @@ export class Mirror {
         const l = await this.local.stat(key);
         if (!l) continue;
         if (this.known.get(key) === Mirror.sig(l.size, l.mtimeMs)) {
+          report.skipped++;
+          continue;
+        }
+        // The boot sync could not compare this file with the bucket. A copy that was already on the
+        // disk before this process started may be OLDER than the bucket's, so it must not overwrite
+        // it. A file this process wrote since boot is new by construction and is uploaded.
+        if (this.unreconciled.has(key) && !this.uploadApproved.has(key) && l.mtimeMs < this.bootStartedAt) {
           report.skipped++;
           continue;
         }
@@ -243,6 +321,8 @@ export class Mirror {
     if (!data) return; // vanished between stat and read
     await this.remote.put(key, data, { mtimeMs });
     this.known.set(key, Mirror.sig(size, mtimeMs));
+    this.unreconciled.delete(key);
+    this.uploadApproved.delete(key);
     report.uploaded.push(key);
   }
 
@@ -254,6 +334,7 @@ export class Mirror {
     // and a mismatch here would make the next flush upload the file again for nothing.
     const stored = await this.local.stat(key);
     this.known.set(key, Mirror.sig(stored?.size ?? data.length, stored?.mtimeMs ?? mtimeMs));
+    this.unreconciled.delete(key);
     report.downloaded.push(key);
   }
 }

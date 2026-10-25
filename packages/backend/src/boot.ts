@@ -2,7 +2,7 @@ import { isCacheFresh, readVersion, readCache } from './cache/file-cache.js';
 import { primeTlePayload } from './cache/tle-payload-cache.js';
 import { loadEnrichment, getDecayedCatalog } from './enrichment/store.js';
 import { getAnalyticRegistry } from './analytic/index.js';
-import { scheduleTLEUpdater } from './cron/tle-updater.js';
+import { runUpdateCycle, scheduleTLEUpdater } from './cron/tle-updater.js';
 import {
   initHistory,
   ingestCurrentGp,
@@ -10,7 +10,12 @@ import {
   isHistoryReady,
 } from './history/index.js';
 import { logger } from './utils/logger.js';
-import { installMirrorShutdown, startMirror } from './utils/storage/mirror-runtime.js';
+import {
+  installMirrorShutdown,
+  mirrorBootIncomplete,
+  retryMirrorBoot,
+  startMirror,
+} from './utils/storage/mirror-runtime.js';
 import { reportDiskAndAlert } from './utils/volume-alert.js';
 
 export interface BootStep {
@@ -117,12 +122,89 @@ const initHistoryDb: BootStep = {
   },
 };
 
+export type BootFetchDecision = 'serve-cache' | 'fetch' | 'wait-for-bucket';
+
+/**
+ * Pure policy for the boot-time Space-Track fetch.
+ *  - cache fresh                         -> serve it, no fetch
+ *  - stale/missing, bucket state intact  -> fetch now (as always)
+ *  - stale/missing, bucket not readable  -> wait: the attempt log and catalog that the bucket
+ *    holds were not restored, so a fetch now would run with the daily counter at zero
+ */
+export function decideBootFetch(cacheFresh: boolean, mirrorIncomplete: boolean): BootFetchDecision {
+  if (cacheFresh) return 'serve-cache';
+  return mirrorIncomplete ? 'wait-for-bucket' : 'fetch';
+}
+
+/** How long to wait before looking at the bucket again, and how many times before giving up. */
+export const MIRROR_RECOVERY_DELAY_MS = 15 * 60_000;
+export const MIRROR_RECOVERY_MAX_ATTEMPTS = 3;
+
+export interface MirrorRecoveryDeps {
+  delayMs: number;
+  maxAttempts: number;
+  /** Re-run the bucket sync; true when it now completes cleanly. */
+  retry: () => Promise<boolean>;
+  cacheFresh: () => boolean;
+  fetchNow: () => void;
+  setTimer: (fn: () => void, ms: number) => unknown;
+}
+
+/**
+ * After a boot where the bucket could not be read and the cache is stale: look at the bucket
+ * again every `delayMs`. The first clean sync restores the real state (counters, catalog), then
+ * the fetch runs only if the restored cache is still stale. After `maxAttempts` failed looks it
+ * fetches anyway: an empty or stale site is worse than one extra call, and the attempt gate and
+ * the 5-a-day cap still apply. The 02:00 cron is independent of all this.
+ */
+export function armMirrorRecovery(deps: MirrorRecoveryDeps, attempt = 1): void {
+  deps.setTimer(() => {
+    void (async () => {
+      const ok = await deps.retry();
+      if (ok) {
+        logger.info('Storage mirror recovered after boot');
+        if (!deps.cacheFresh()) deps.fetchNow();
+        return;
+      }
+      if (attempt >= deps.maxAttempts) {
+        logger.error(
+          `Storage mirror still unreadable after ${attempt} more tries — fetching without restored state (the attempt gate and daily cap still apply)`,
+        );
+        if (!deps.cacheFresh()) deps.fetchNow();
+        return;
+      }
+      armMirrorRecovery(deps, attempt + 1);
+    })();
+  }, deps.delayMs);
+}
+
 const tleFreshness: BootStep = {
   name: 'tle-freshness',
   run() {
     // If the cache is missing or older than the 24h TTL, kick off an immediate fetch.
     // The cron job is always scheduled so subsequent refreshes happen daily at 02:00 UTC.
-    const needsImmediateFetch = !isCacheFresh();
+    const decision = decideBootFetch(isCacheFresh(), mirrorBootIncomplete());
+    if (decision === 'wait-for-bucket') {
+      logger.warn(
+        'Cache is stale and the bucket could not be read at boot — not fetching from Space-Track yet; ' +
+          `checking the bucket again in ${MIRROR_RECOVERY_DELAY_MS / 60_000} min (the 02:00 cron still runs)`,
+      );
+      scheduleTLEUpdater(false);
+      armMirrorRecovery({
+        delayMs: MIRROR_RECOVERY_DELAY_MS,
+        maxAttempts: MIRROR_RECOVERY_MAX_ATTEMPTS,
+        retry: retryMirrorBoot,
+        cacheFresh: isCacheFresh,
+        fetchNow: () => void runUpdateCycle('boot').catch((err) => logger.error('Recovery fetch error:', err)),
+        setTimer: (fn, ms) => {
+          const t = setTimeout(fn, ms);
+          t.unref();
+          return t;
+        },
+      });
+      return;
+    }
+    const needsImmediateFetch = decision === 'fetch';
     scheduleTLEUpdater(needsImmediateFetch);
 
     if (!needsImmediateFetch) {

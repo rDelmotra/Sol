@@ -54,6 +54,26 @@ export function getMirror(): Mirror | null {
   return current;
 }
 
+/**
+ * True when a mirror is configured but its boot sync did not finish cleanly (a file could
+ * not be compared with the bucket after all retries, or the sync is still running). False
+ * when mirroring is off. The boot fetch decision reads this: restored state may be missing.
+ */
+export function mirrorBootIncomplete(): boolean {
+  return current !== null && current.bootOutcome !== 'complete';
+}
+
+/** Run the boot sync again (with its own retries). True when it now completes cleanly. Never throws. */
+export async function retryMirrorBoot(): Promise<boolean> {
+  if (!current) return true;
+  try {
+    await current.syncAtBoot();
+  } catch (err) {
+    logger.warn(`Storage mirror: retry failed (${(err as Error).message})`);
+  }
+  return current.bootOutcome === 'complete';
+}
+
 /** Called after a small state file is written. A no-op unless the mirror is running. */
 export function requestMirrorFlush(): void {
   current?.requestFlush();
