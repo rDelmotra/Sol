@@ -82,6 +82,20 @@ export function isManoeuvrable(o: { name: string; objectType?: string }): boolea
 }
 
 // ---------------- event evaluation ----------------
+/** S6: which screening volume the event lies in (see s6-lib.ts). Absent on S5 events. */
+export interface VolInfo {
+  /** volume id (1-8) of a and of b, by their own regime */
+  va: number; vb: number;
+  /** b is inside a's volume / a is inside b's volume (box test) */
+  inA: boolean; inB: boolean;
+  /** same with the ellipsoid inscribed in the box */
+  ellA: boolean; ellB: boolean;
+  /** within the 5 km sphere of S5 */
+  in5: boolean;
+  /** position of a relative to b in b's radial / in-track / cross-track frame, km */
+  ricB: V3;
+}
+
 export interface FwdEvent {
   a: number; b: number; nameA: string; nameB: string;
   tca: number; miss: number; vrel: number;
@@ -95,11 +109,15 @@ export interface FwdEvent {
   /** combined balanced error ellipse in the encounter plane: 1-sigma major / minor, km (with floor) */
   sMaj: number; sMin: number;
   pcBal: number; pcCons: number; pcMax: number; pcBalNoFloor: number;
+  vol?: VolInfo;
 }
 
 export interface EvalObj { cat: CatFull; prop: Prop }
 
+/** SGP4 calls made by evaluateEvent in this thread (real counter). */
+export const evalCalls = { n: 0 };
 const pv = (p: Prop, tMs: number): { r: V3; v: V3 } | null => {
+  evalCalls.n++;
   const o = satellite.sgp4(p.satrec, (tMs - p.epochMs) / 60_000);
   const r = o ? o.position : null, v = o ? o.velocity : null;
   if (!r || !v || typeof r === 'boolean' || typeof v === 'boolean' || !Number.isFinite(r.x) || !Number.isFinite(v.x)) return null;

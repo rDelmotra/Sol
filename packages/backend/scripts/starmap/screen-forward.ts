@@ -1,5 +1,10 @@
 // ============================================================
-// SPIKE — not production. S5: 36 h forward conjunction screener with collision probability.
+// SPIKE — not production. S5/S6: 36 h forward conjunction screener with collision probability.
+//   --mode s6 (default)  the faster, industry-shaped screener (screen-s6.ts: measured-radius pre-filter, adaptive steps, SFS RIC volumes)
+//   --mode s5            the S5 screener unchanged (5 s grid, 5 km sphere), now with a real SGP4 call counter
+//   --mode ref           the recall reference for s6: S5's 5 s grid with a per-pair sphere that contains both volumes
+//   s6/ref options: --volumes sfs|sphere (default sfs)  --sphere 5 (km; sfs adds this sphere, 0 = volumes only)  --dt 60  --slow-factor 5  --no-prefilter  --prune 10 (ref)  --form-stride 5 (0 = S5's every-minute formation share)  --hot-vmax 8.2 (0 = one grid)
+//   tags keep the modes apart (use e.g. --tag s5i, --tag s6, --tag ref): the untagged files are the original S5 run.
 //   export STARMAP_DB=postgres://orbitwatch:orbitwatch@localhost:5432/orbitwatch      (only used to read recent manoeuvre flags)
 //   npx tsx packages/backend/scripts/starmap/screen-forward.ts --from 2026-10-12 --to 2026-10-18 [--hours 36] [--dt 5] [--workers 3]
 //   npx tsx packages/backend/scripts/starmap/screen-forward.ts --day 2026-10-15 --hours 3 --tag slice3h     (a short slice for verification)
@@ -25,24 +30,10 @@ import { EvPool } from './events-pool.js';
 import { identicalGroups, posAt, DB_URL, epochMsOf, type CatFull } from './events.js';
 import type { CaOut } from './events-worker.js';
 import { classifyCa, type ElsetLite } from './events-ca.js';
-import { batchTimeMs, causalCatalog, evaluateEvent, quantile, type FwdEvent } from './forward-lib.js';
+import { batchTimeMs, causalCatalog, evaluateEvent, evalCalls, quantile, type FwdEvent } from './forward-lib.js';
+import { FORWARD_DIR, batchFile, FENCED_IDS, CA_KM, FORM_KM, FORM_FRAC, secs, recentJumps } from './forward-common.js';
 
-export const FORWARD_DIR = fileURLToPath(new URL('../../data/forward/', import.meta.url));
-export const batchFile = (day: string, tag = '', ext = 'jsonl.gz') => `${FORWARD_DIR}batch-${day}${tag ? '-' + tag : ''}.${ext}`;
-export const FENCED_IDS = new Set([54922]);
-export const CA_KM = 5;
-export const FORM_KM = 50;
-export const FORM_FRAC = 0.5;
-const secs = (t: number) => +((Date.now() - t) / 1000).toFixed(2);
-
-async function recentJumps(t0: number): Promise<{ set: Set<number>; ok: boolean }> {
-  const c = new pg.Client({ connectionString: DB_URL, connectionTimeoutMillis: 4000 });
-  try {
-    await c.connect();
-    const r = await c.query("SELECT DISTINCT subjects[1] AS id FROM starmap.event WHERE kind = 'elements.jump' AND t_end <= to_timestamp($1 / 1000.0) AND t_end > to_timestamp($2 / 1000.0)", [t0, t0 - 7 * 86_400_000]);
-    return { set: new Set((r.rows as Array<{ id: number }>).map((x) => x.id)), ok: true };
-  } catch { return { set: new Set(), ok: false }; } finally { await c.end().catch(() => undefined); }
-}
+export { FORWARD_DIR, batchFile, FENCED_IDS, CA_KM, FORM_KM, FORM_FRAC };
 
 async function runBatch(day: string, hours: number, dtS: number, workers: number, tag: string): Promise<void> {
   const T = Date.now();
@@ -56,12 +47,13 @@ async function runBatch(day: string, hours: number, dtS: number, workers: number
   const objs: CatFull[] = [];
   let fenced = 0, unusable = 0, garbage = 0;
   const props: Prop[] = [];
+  let mainCalls = 0; // SGP4 calls on the main thread in the garbage-orbit check (exact loop count)
   for (const o of cc.objs) {
     if (FENCED_IDS.has(o.noradId)) { fenced++; continue; }
     const p = makeProp(o.omm);
     if (!p) { unusable++; continue; }
     let bad = false;
-    for (const t of [t0, (t0 + t1) / 2, t1]) { const r = posAt(p, t); if (!r) { bad = true; break; } const rad = Math.hypot(r[0], r[1], r[2]); if (rad < 6340 || rad > 1e6) { bad = true; break; } }
+    for (const t of [t0, (t0 + t1) / 2, t1]) { mainCalls++; const r = posAt(p, t); if (!r) { bad = true; break; } const rad = Math.hypot(r[0], r[1], r[2]); if (rad < 6340 || rad > 1e6) { bad = true; break; } }
     if (bad) { garbage++; continue; }
     objs.push(o); props.push(p);
   }
@@ -74,6 +66,8 @@ async function runBatch(day: string, hours: number, dtS: number, workers: number
   const pool = new EvPool(workers);
   await pool.start({ type: 'init', omm: objs.map((o) => o.omm), group });
   timing.poolInit = secs(tm);
+  await pool.calls(); // reset the workers' SGP4 counters
+  const measured: Record<string, number> = {};
 
   // ---- grid: every dt seconds, hash cells of L km, neighbour cells, linear closest-approach test (events-worker.ts `ca`) ----
   tm = Date.now();
@@ -84,6 +78,7 @@ async function runBatch(day: string, hours: number, dtS: number, workers: number
   for (let s = 0; s <= nSteps; s += SL) tasks.push({ type: 'ca', s0: s, s1: Math.min(nSteps + 1, s + SL), t0Ms: t0, dtMs, L, thr: CA_KM, slack, formEvery, formKm: FORM_KM });
   const outs = await pool.map<CaOut>(tasks);
   timing.grid = secs(tm);
+  measured.grid = await pool.calls();
   const gridCpu = outs.reduce((s, o) => s + o.ms, 0) / 1000;
   const pairTests = outs.reduce((s, o) => s + o.tests, 0);
 
@@ -102,6 +97,7 @@ async function runBatch(day: string, hours: number, dtS: number, workers: number
   for (const f of fouts) for (let k = 0; k < f.length; k += 4) if (f[k + 2]! > FORM_FRAC) { formation.add(f[k]! * N + f[k + 1]!); formationPairs.push([objs[f[k]!]!.noradId, objs[f[k + 1]!]!.noradId]); }
   const formSteps = Math.floor((t1 - t0) / 60_000);
   timing.formation = secs(tm);
+  measured.formation = await pool.calls();
 
   // ---- candidates -> one per encounter (30 s gap) -> exact refine ----
   tm = Date.now();
@@ -138,6 +134,7 @@ async function runBatch(day: string, hours: number, dtS: number, workers: number
   const found: Array<[number, number, number, number, number]> = [];
   for (const r of routs) for (let k = 0; k < r.length; k += 5) if (r[k + 2]! < CA_KM) found.push([r[k]!, r[k + 1]!, r[k + 2]!, r[k + 3]!, r[k + 4]!]);
   found.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[3] - b[3]);
+  measured.refine = await pool.calls();
   await pool.close();
   timing.refine = secs(tm);
 
@@ -161,6 +158,9 @@ async function runBatch(day: string, hours: number, dtS: number, workers: number
     events.push(ev);
   }
   timing.pc = secs(tm);
+  measured.pc = evalCalls.n;
+  measured.garbageCheck = mainCalls;
+  measured.total = measured.grid! + measured.formation! + measured.refine! + measured.pc + mainCalls;
 
   // ---- write ----
   tm = Date.now();
@@ -181,7 +181,9 @@ async function runBatch(day: string, hours: number, dtS: number, workers: number
     objects: { historyFile: cc.objs.length + cc.droppedNoEarlier, usedFallbackSetFromPreviousDay: cc.fallback, droppedNoEarlierSet: cc.droppedNoEarlier, fencedIds: fenced, unusableSatrec: unusable, garbageOrbit: garbage, screened: N, identicalGroups: groups.length, identicalObjects: groups.reduce((s, g) => s + g.length, 0) },
     recentJumpFlagsAvailable: jumps.ok, recentJumpObjects: jumps.set.size,
     grid: { cellKm: L, steps: nSteps + 1, pairTests, candidates: nCand, encounters: nEnc, refinedUnder5km: found.length, dupDropped: dup, outsideWindow: outside, longClusters, formationCandidates: formSet.size, formationPairs: formationPairs.length, formationPairList: formationPairs, gridCpuSeconds: +gridCpu.toFixed(1) },
+    mode: 's5',
     sgp4Calls: { ...calls, total: calls.grid + calls.formation + calls.refine + calls.event },
+    sgp4CallsMeasured: measured,
     timing: { ...timing, total: secs(T) },
     maxRssMB: Math.round(process.resourceUsage().maxRSS / 1024),
     events: { lt5: events.length, lt1: below(1), lt05: below(0.5), lt025: below(0.25), evalFailed: evalFail, slowUnder05kms: events.filter((e) => e.slow).length, ageOver14d: events.filter((e) => e.old).length, manoeuvrableEither: events.filter((e) => e.manA || e.manB).length, manoeuvrableBoth: events.filter((e) => e.manA && e.manB).length },
@@ -195,13 +197,26 @@ async function runBatch(day: string, hours: number, dtS: number, workers: number
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const hours = Number(args.get('hours') ?? 36), dt = Number(args.get('dt') ?? 5), workers = Number(args.get('workers') ?? 3), tag = args.get('tag') ?? '';
-  if (args.has('day')) { await runBatch(args.get('day')!, hours, dt, workers, tag); return; }
+  const mode = args.get('mode') ?? 's6';
+  const hours = Number(args.get('hours') ?? 36), tag = args.get('tag') ?? '';
+  const runOne = async (day: string): Promise<void> => {
+    if (mode === 's5') { await runBatch(day, hours, Number(args.get('dt') ?? 5), Number(args.get('workers') ?? 3), tag); return; }
+    const { runS6, runRef, S6_DEFAULTS } = await import('./screen-s6.js');
+    const o = {
+      ...S6_DEFAULTS, day, hours, tag, workers: Number(args.get('workers') ?? S6_DEFAULTS.workers), dtS: Number(args.get('dt') ?? S6_DEFAULTS.dtS),
+      slowFactor: Number(args.get('slow-factor') ?? S6_DEFAULTS.slowFactor), volumes: (args.get('volumes') ?? S6_DEFAULTS.volumes) as 'sfs' | 'sphere',
+      sphereKm: Number(args.get('sphere') ?? S6_DEFAULTS.sphereKm), prefilter: !args.has('no-prefilter'), pruneKm: Number(args.get('prune') ?? S6_DEFAULTS.pruneKm), formStride: Number(args.get('form-stride') ?? S6_DEFAULTS.formStride), hotVmax: Number(args.get('hot-vmax') ?? S6_DEFAULTS.hotVmax),
+    };
+    if (mode === 'ref') await runRef(o); else await runS6(o);
+  };
+  if (args.has('day')) { await runOne(args.get('day')!); return; }
   const from = args.get('from') ?? '2026-10-12', to = args.get('to') ?? '2026-10-18';
+  const skip = new Set(['from', 'to', 'day', 'force']);
+  const pass = [...args].filter(([k]) => !skip.has(k)).flatMap(([k, v]) => (v === 'true' ? ['--' + k] : ['--' + k, v]));
   for (let d = Date.parse(from + 'T00:00:00Z'); d <= Date.parse(to + 'T00:00:00Z'); d += 86_400_000) {
     const day = new Date(d).toISOString().slice(0, 10);
     if (!args.has('force') && existsSync(batchFile(day, tag, 'meta.json'))) { console.log(`[${day}] already done (resume; --force to redo)`); continue; }
-    const r = spawnSync(process.execPath, [...process.execArgv, fileURLToPath(import.meta.url), '--day', day, '--hours', String(hours), '--dt', String(dt), '--workers', String(workers), ...(tag ? ['--tag', tag] : [])], { stdio: 'inherit' });
+    const r = spawnSync(process.execPath, [...process.execArgv, fileURLToPath(import.meta.url), '--day', day, ...pass], { stdio: 'inherit' });
     if (r.status !== 0) { console.error(`[${day}] batch failed (exit ${r.status})`); process.exit(1); }
   }
 }

@@ -3,6 +3,10 @@
 //   npx tsx packages/backend/scripts/starmap/verify-forward.ts recall <day> <tag> [--busy 30] [--random 12]
 //        brute force on the slice written by `screen-forward.ts --day <day> --hours 3 --tag <tag>`: the ISS + the busiest objects + random ones
 //        against every other object, SGP4 every 2 s, golden-section refine, vs the screener's event list (same pair, TCA within 20 s).
+//   npx tsx packages/backend/scripts/starmap/verify-forward.ts recall6 <day> <tag> [--busy 30] [--random 12] [--sphere 5]
+//        the same brute force for an S6 slice (`screen-forward.ts --day <day> --hours 3 --tag <tag>`): every sampled local minimum closer than the
+//        pair's volume half-diagonal + 15 km is refined (golden section) and kept if it lies inside either object's handbook volume (RIC box)
+//        or within the sphere; compared with the S6 events (same pair, TCA within 20 s). Reports box and sphere recall separately.
 //   npx tsx packages/backend/scripts/starmap/verify-forward.ts exact [--n 5]
 //        random stored events (full 36 h batches) recomputed: 10 ms scan over +-20 s from the raw element sets, and Pc rebuilt with an
 //        independent covariance projection and a polar numerical integral.
@@ -14,11 +18,14 @@ import { parseArgs, rng } from './catalog.js';
 import { makeProp, type Prop } from './runs.js';
 import { identicalGroups, posAt, epochMsOf } from './events.js';
 import { batchFile, FENCED_IDS } from './screen-forward.js';
+import { readLines } from './forward-common.js';
 import { batchTimeMs, causalCatalog, floorSigma, hardBodyRadiusKm, type FwdEvent } from './forward-lib.js';
 import { sigmaRIC } from './uncertainty-model.js';
+import { SFS_VOLUMES, inBox, ricBasis, toRic, type V3 } from './s6-lib.js';
+import { volumesFor, S6_DEFAULTS } from './screen-s6.js';
 
 const mode = process.argv[2] ?? 'recall';
-const args = parseArgs(process.argv.slice(mode === 'recall' ? 5 : 3));
+const args = parseArgs(process.argv.slice(mode === 'recall' || mode === 'recall6' ? 5 : 3));
 const GR = 0.6180339887498949;
 
 type P3 = { x: number; y: number; z: number };
@@ -32,7 +39,7 @@ const dist = (a: Prop, b: Prop, t: number): number => { const A = state(a, t), B
 if (mode === 'recall') {
   const day = process.argv[3]!, tag = process.argv[4]!;
   const meta = JSON.parse(readFileSync(batchFile(day, tag, 'meta.json'), 'utf8')) as { grid: { formationPairList: Array<[number, number]> }; hours: number };
-  const ev = gunzipSync(readFileSync(batchFile(day, tag))).toString().split('\n').filter(Boolean).map((l) => JSON.parse(l) as FwdEvent);
+  const ev = readLines(batchFile(day, tag)).map((l) => JSON.parse(l) as FwdEvent);
   const t0 = batchTimeMs(day), t1 = t0 + meta.hours * 3_600_000;
   // same eligible objects as the screener (catalog as of the batch time; fence and garbage-orbit rule), nothing else shared
   const cc = causalCatalog(day);
@@ -149,4 +156,93 @@ if (mode === 'exact') {
     const pBal = polar(m1, covPlane(false, true), hbr), pCons = polar(m1, covPlane(true, true), hbr), pNo = polar(m1, covPlane(false, false), hbr);
     console.log(`EXACT ${day} ${e.nameA} (${e.a}) / ${e.nameB} (${e.b}): stored miss ${e.miss.toFixed(6)} km at ${new Date(e.tca).toISOString()}, v ${e.vrel.toFixed(3)}; recomputed (10 ms scan) miss ${best.toFixed(6)} km at ${new Date(bt).toISOString()}, v ${vrel.toFixed(3)}; |dmiss| ${Math.abs(best - e.miss).toFixed(6)} km, |dt| ${(Math.abs(bt - e.tca) / 1000).toFixed(3)} s | Pc stored/recomputed: balanced ${e.pcBal.toExponential(4)} / ${pBal.toExponential(4)}, conservative ${e.pcCons.toExponential(4)} / ${pCons.toExponential(4)}, no-floor ${e.pcBalNoFloor.toExponential(4)} / ${pNo.toExponential(4)}`);
   }
+}
+
+if (mode === 'recall6') {
+  const day = process.argv[3]!, tag = process.argv[4]!;
+  const sphereKm = Number(args.get('sphere') ?? 5);
+  const meta = JSON.parse(readFileSync(batchFile(day, tag, 'meta.json'), 'utf8')) as { grid: { formationPairList: Array<[number, number]> }; hours: number };
+  const ev = readLines(batchFile(day, tag)).map((l) => JSON.parse(l) as FwdEvent);
+  const t0 = batchTimeMs(day), t1 = t0 + meta.hours * 3_600_000;
+  const cc = causalCatalog(day);
+  const objs = [] as typeof cc.objs; const props: Prop[] = [];
+  for (const o of cc.objs) {
+    if (FENCED_IDS.has(o.noradId)) continue;
+    const p = makeProp(o.omm); if (!p) continue;
+    let bad = false;
+    for (const t of [t0, (t0 + t1) / 2, t1]) { const r = posAt(p, t); if (!r) { bad = true; break; } const rad = Math.hypot(r[0], r[1], r[2]); if (rad < 6340 || rad > 1e6) { bad = true; break; } }
+    if (!bad) { objs.push(o); props.push(p); }
+  }
+  const N = objs.length;
+  const prep = volumesFor(objs, { ...S6_DEFAULTS, day, tag, volumes: 'sfs', sphereKm });
+  const { group } = identicalGroups(objs);
+  const formPairs = new Set(meta.grid.formationPairList.map(([a, b]) => (a < b ? `${a}-${b}` : `${b}-${a}`)));
+  const cnt = new Map<number, number>();
+  for (const e of ev) { cnt.set(e.a, (cnt.get(e.a) ?? 0) + 1); cnt.set(e.b, (cnt.get(e.b) ?? 0) + 1); }
+  const busiest = [...cnt].sort((x, y) => y[1] - x[1]).slice(0, Number(args.get('busy') ?? 30)).map((x) => x[0]);
+  const rnd = rng(77);
+  const randoms = Array.from({ length: Number(args.get('random') ?? 12) }, () => objs[Math.floor(rnd() * N)]!.noradId);
+  const idx = new Map(objs.map((o, i) => [o.noradId, i]));
+  const targets = [...new Set([25544, ...busiest, ...randoms])].map((id) => idx.get(id)).filter((i): i is number => i !== undefined);
+  const DT = 2000, nSteps = Math.round((t1 - t0) / DT);
+  const prev2 = targets.map(() => new Float64Array(N)), prev1 = targets.map(() => new Float64Array(N));
+  const pos = new Float64Array(N * 3);
+  const volOf = (i: number) => SFS_VOLUMES[prep.volId[i]! - 1]!;
+  const ricPair = (a: Prop, b: Prop, t: number): { ricB: V3; ricA: V3; miss: number } | null => {
+    const A = state(a, t), B = state(b, t); if (!A || !B) return null;
+    const ra: V3 = [A.r.x, A.r.y, A.r.z], va: V3 = [A.v.x, A.v.y, A.v.z], rb: V3 = [B.r.x, B.r.y, B.r.z], vb: V3 = [B.v.x, B.v.y, B.v.z];
+    const d: V3 = [rb[0] - ra[0], rb[1] - ra[1], rb[2] - ra[2]];
+    const Ba = ricBasis(ra, va), Bb = ricBasis(rb, vb); if (!Ba || !Bb) return null;
+    return { ricB: toRic(d, Ba), ricA: toRic([-d[0], -d[1], -d[2]], Bb), miss: Math.hypot(d[0], d[1], d[2]) };
+  };
+  const found: Array<{ ti: number; j: number; d: number; t: number; box: boolean; in5: boolean }> = [];
+  const T = Date.now();
+  let refined = 0;
+  for (let s = 0; s <= nSteps; s++) {
+    const tm = t0 + s * DT;
+    for (let i = 0; i < N; i++) { const st = state(props[i]!, tm); if (!st) { pos[3 * i] = NaN; continue; } pos[3 * i] = st.r.x; pos[3 * i + 1] = st.r.y; pos[3 * i + 2] = st.r.z; }
+    targets.forEach((ti, k) => {
+      for (let j = 0; j < N; j++) {
+        if (j === ti || pos[3 * j] !== pos[3 * j] || pos[3 * ti] !== pos[3 * ti]) { prev2[k]![j] = prev1[k]![j]!; prev1[k]![j] = Infinity; continue; }
+        const d = Math.hypot(pos[3 * j]! - pos[3 * ti]!, pos[3 * j + 1]! - pos[3 * ti + 1]!, pos[3 * j + 2]! - pos[3 * ti + 2]!);
+        const a = prev2[k]![j]!, b = prev1[k]![j]!;
+        if (s >= 2 && b <= a && b <= d && b < Math.max(prep.hr[ti]!, prep.hr[j]!) + 15 && !(group[ti]! >= 0 && group[ti] === group[j])) {
+          const tc = tm - DT;
+          let l = tc - DT, h = tc + DT;
+          for (let it = 0; it < 30; it++) { const x1 = h - GR * (h - l), x2 = l + GR * (h - l); if (dist(props[ti]!, props[j]!, x1) < dist(props[ti]!, props[j]!, x2)) h = x2; else l = x1; }
+          const tb = (l + h) / 2;
+          refined++;
+          const g = ricPair(props[ti]!, props[j]!, tb);
+          const key = [objs[ti]!.noradId, objs[j]!.noradId].sort((x, y) => x - y).join('-');
+          if (g && tb >= t0 && tb <= t1 && !formPairs.has(key)) {
+            const box = inBox(g.ricB, volOf(ti)) || inBox(g.ricA, volOf(j));
+            if (box || g.miss < sphereKm) found.push({ ti, j, d: g.miss, t: tb, box, in5: g.miss < sphereKm });
+          }
+        }
+        prev2[k]![j] = b; prev1[k]![j] = d;
+      }
+    });
+  }
+  const seen = new Set<string>();
+  const uniq = found.filter((f) => { const k = [objs[f.ti]!.noradId, objs[f.j]!.noradId].sort((x, y) => x - y).join('-') + '@' + Math.round(f.t / 5000); if (seen.has(k)) return false; seen.add(k); return true; });
+  const byPair = new Map<string, FwdEvent[]>();
+  for (const e of ev) { const k = `${e.a}-${e.b}`; (byPair.get(k) ?? byPair.set(k, []).get(k)!).push(e); }
+  const tIds = new Set(targets.map((i) => objs[i]!.noradId));
+  const rep = (name: string, pick: (f: (typeof uniq)[number]) => boolean) => {
+    let n = 0, matched = 0, maxDt = 0, maxDd = 0;
+    const miss: string[] = [];
+    for (const f of uniq) {
+      if (!pick(f)) continue;
+      n++;
+      const a = objs[f.ti]!.noradId, b = objs[f.j]!.noradId, k = a < b ? `${a}-${b}` : `${b}-${a}`;
+      const hit = (byPair.get(k) ?? []).find((e) => Math.abs(e.tca - f.t) < 20_000);
+      if (hit) { matched++; maxDt = Math.max(maxDt, Math.abs(hit.tca - f.t)); maxDd = Math.max(maxDd, Math.abs(hit.miss - f.d)); } else miss.push(`${k} ${new Date(f.t).toISOString()} miss=${f.d.toFixed(3)} box=${f.box}`);
+    }
+    console.log(`RECALL6 ${day} ${tag} [${name}]: ${N} objects, ${targets.length} targets (ISS + ${busiest.length} busiest + ${randoms.length} random), brute force every 2 s + golden section over ${meta.hours} h (${refined} minima refined): ${n} approaches; found by the screener ${matched} => recall ${((100 * matched) / Math.max(1, n)).toFixed(2)}%; max |TCA diff| ${(maxDt / 1000).toFixed(3)} s, max |miss diff| ${maxDd.toFixed(4)} km`);
+    if (miss.length) console.log('MISSING:\n' + miss.join('\n'));
+  };
+  rep('inside either handbook volume', (f) => f.box);
+  rep(`within ${sphereKm} km`, (f) => f.in5);
+  const inSlice = ev.filter((e) => tIds.has(e.a) || tIds.has(e.b)).length;
+  console.log(`screener events involving the targets: ${inSlice}; brute force took ${((Date.now() - T) / 1000).toFixed(0)} s`);
 }

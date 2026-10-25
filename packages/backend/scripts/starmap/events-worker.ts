@@ -9,6 +9,10 @@ import { gmst, regionMask, lastLL, chordNeedsWalk } from './events.js';
 import type { InitMsg } from './events-pool.js';
 import { scanRegions } from './events-region.js';
 
+/** Real SGP4 call counter (per worker); the pool reads and resets it with a 'calls' message. */
+let sgp4Calls = 0;
+const sgp4c = (rec: Prop['satrec'], tsince: number) => { sgp4Calls++; return satellite.sgp4(rec, tsince); };
+
 let props: Array<Prop | null> = [];
 let grp: Int32Array;
 
@@ -49,7 +53,7 @@ function ca(t: CaTask): CaOut {
       const p = props[o];
       let ok = false;
       if (p) {
-        const pv = satellite.sgp4(p.satrec, (tMs - p.epochMs) / 60_000);
+        const pv = sgp4c(p.satrec, (tMs - p.epochMs) / 60_000);
         const r = pv ? pv.position : null, v = pv ? pv.velocity : null;
         if (r && v && typeof r !== 'boolean' && typeof v !== 'boolean' && Number.isFinite(r.x) && Number.isFinite(r.y) && Number.isFinite(r.z) && Number.isFinite(v.x)) {
           px[o] = r.x; py[o] = r.y; pz[o] = r.z; vx[o] = v.x; vy[o] = v.y; vz[o] = v.z; ok = true;
@@ -101,7 +105,7 @@ function ca(t: CaTask): CaOut {
 const GR = 0.6180339887498949;
 export interface RefineTask { type: 'refine'; buf: Float64Array; win: number }
 function dist(a: Prop, b: Prop, tm: number): { d: number; v: number } {
-  const pa = satellite.sgp4(a.satrec, (tm - a.epochMs) / 60_000), pb = satellite.sgp4(b.satrec, (tm - b.epochMs) / 60_000);
+  const pa = sgp4c(a.satrec, (tm - a.epochMs) / 60_000), pb = sgp4c(b.satrec, (tm - b.epochMs) / 60_000);
   const ra = pa ? pa.position : null, rb = pb ? pb.position : null, va = pa ? pa.velocity : null, vb = pb ? pb.velocity : null;
   if (!ra || !rb || !va || !vb || typeof ra === 'boolean' || typeof rb === 'boolean' || typeof va === 'boolean' || typeof vb === 'boolean') return { d: Infinity, v: 0 };
   return { d: Math.hypot(ra.x - rb.x, ra.y - rb.y, ra.z - rb.z), v: Math.hypot(va.x - vb.x, va.y - vb.y, va.z - vb.z) };
@@ -147,7 +151,7 @@ function formFrac(t: FormTask): Float64Array {
 // ---------------- region passes ----------------
 export interface RegionTask { type: 'region'; o0: number; o1: number; idx?: Int32Array; t0Ms: number; t1Ms: number; stepMs: number }
 function maskAt(p: Prop, tMs: number, theta?: number): number {
-  const pv = satellite.sgp4(p.satrec, (tMs - p.epochMs) / 60_000);
+  const pv = sgp4c(p.satrec, (tMs - p.epochMs) / 60_000);
   const r = pv ? pv.position : null;
   if (!r || typeof r === 'boolean' || !Number.isFinite(r.x)) return 0;
   return regionMask(theta ?? gmst(tMs), r.x, r.y, r.z, false);
@@ -165,7 +169,7 @@ function region(t: RegionTask): Float64Array {
   return Float64Array.from(out);
 }
 
-type Msg = InitMsg | CaTask | RefineTask | FormTask | RegionTask;
+type Msg = InitMsg | CaTask | RefineTask | FormTask | RegionTask | { type: 'calls' };
 parentPort!.on('message', (m: { id: number; msg: Msg }) => {
   const x = m.msg;
   let out: unknown = null;
@@ -174,5 +178,6 @@ parentPort!.on('message', (m: { id: number; msg: Msg }) => {
   else if (x.type === 'refine') out = refine(x);
   else if (x.type === 'formFrac') out = formFrac(x);
   else if (x.type === 'region') out = region(x);
+  else if (x.type === 'calls') { out = sgp4Calls; sgp4Calls = 0; }
   parentPort!.postMessage({ id: m.id, out });
 });
