@@ -81,7 +81,7 @@ function radius(t: RadiusTask): Float64Array {
     const pad = radiusPad(K, dt);
     const lo = rmin - pad;
     out[q] = lo; out[q + 1] = rmax + pad;
-    out[q + 2] = vm + (1.02 * MU) / (lo * lo) * (dt / 2);
+    out[q + 2] = vm + K * (dt / 2); // |v| changes at most (mu/r^2) |rdot|/|v| <= (mu/r^2) e per second: the same curvature constant K as the radius
     out[q + 3] = samples; out[q + 4] = fail; out[q + 5] = pad;
   }
   return out;
