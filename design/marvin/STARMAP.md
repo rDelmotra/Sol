@@ -1665,3 +1665,99 @@ event, update history kept (S5). (3) History archive: element sets, daily star-m
 **Open.** No independent truth for Pc (operator CDMs are not public); no whole-window all-vs-all brute force
 for the screener (3 h slice only); browser pack tested in headless Chromium only; Safari/Firefox/phones and real
 networks untested; non-India region polygons rough.
+
+
+## Round 5 — S6 (cloud): faster screener
+
+Machine: the cloud container (4 cores, 15 GB, no swap, Node 22), 3 worker threads plus the main thread, nothing else running during the timed S5 and S6 runs (the recall checks, the reference and the brute force were run before or after, never inside a timed batch; one early attempt that overlapped two chains was killed and redone from scratch). Local TimescaleDB 2.31. Same 7 batches as S5 (2026-10-12..10-18, 12:00 UTC, 36 h), same causal catalog, same exclusions (identical element sets, formation pairs, NORAD 54922, garbage orbits), same Pc code.
+
+### What was built
+- `s6-lib.ts` (+ `s6-lib.test.ts`): the eight Space Flight Safety Handbook volumes and the regime rule, the conservative window bound (the proof is in its header comment), the radius-sampling rule, shell-overlap counts, the local-minimum finder.
+- `s6-worker.ts`, `screen-s6.ts`, `forward-common.ts`: radius pass, coarse stage, refinement with Pc in the workers, and the reference. `screen-forward.ts --mode s5|s6|ref`; `--mode s5` is the S5 screener unchanged except for a real SGP4 counter in every worker (S5 output is bit-identical: the same 132,493 events on 10-14).
+- `s6-recall.ts`, `verify-forward.ts recall6`, `s6-bound-check.ts`, `forward-report6.ts` (tables and the new DB table `starmap.conjunction_s6`; the S5 tables are untouched).
+- `packages/orbital-core/src/collision-cara.fixture.ts`, `collision-cara.test.ts`: NASA CARA reference cases for Pc.
+
+### How S6 works (and what each part removes)
+1. **Radius pass.** Every object is sampled for 36 h at a spacing set by its own measured curvature bound (circular LEO: about 280 s; highly eccentric: down to 15 s), giving a measured radius range [rlo, rhi] and top speed, padded by at most 2 km. 17.7 M SGP4 calls (1.5% of S5's). No failed samples, mean-element ranges were not used.
+2. **Apogee-perigee pre-filter** on the measured ranges, with the widest volume half-diagonal (67.5 km) as the gap. Pairs (10-14): 532.7 M in total, 164.9 M survive (69% removed). By regime of the catalog label (pairs / surviving): LEO-LEO 407.6 M / 132.7 M; LEO-MEO 18.6 M / 1.10 M; LEO-GEO 46.8 M / 0; LEO-HEO 49.2 M / 27.1 M; MEO-MEO 0.21 M / 0.036 M; GEO-GEO 1.34 M / 0.67 M; GEO-HEO 2.82 M / 0.78 M; HEO-HEO 1.48 M / 1.44 M. **What this buys:** it removes pair checks, almost no propagation. Only 0 to 3 objects per batch have no partner at all (they are not propagated); every GEO object has a partner among the HEO/GTO objects, and in LEO nearly every object has one. In the grid, of 4.29 G pair tests per batch, 1.01 G fall inside the gather radius and 485 M of those survive the shell test (52% rejected before any vector maths). The grid already did not look at LEO-GEO pairs, so the filter's 46.8 M "removed" pairs there were never tested in either mode. This confirms round 2: in the crowded shells the filter is a cheap reject, not a saving in SGP4.
+3. **Coarse stage, adaptive step.** SGP4 every 60 s (S5: 5 s). Two-step bound (the full argument is in `s6-lib.ts`): the relative position in a window of half-width h = 30 s stays within eps = a_max h^2 / 2 of the straight line through the two SGP4 states, with a_max = 2.3 mu/r^3 x D + 0.011 mu/r^2 (gravity gradient times the separation D, plus 1.1% of local gravity for everything SGP4 adds); a local minimum (r.v = 0) can lie only within lambda = (|w| eps + m eps_v + eps eps_v) / (|w| (|w| - eps_v)) of the line's foot point; the primary's RIC frame is predicted at the middle of that piece and widened by |p| (omega x half-length + 3e-5). A window is dropped only if that piece, as a segment, misses the widened box of both objects (for the 5 km sphere, a 5 km cube). The grid cell is the fixed point L = rho + |w|max h, 565 km for the bulk and 711 km for the 1,456 objects faster than 8.2 km/s (they are gathered on a second grid), eps cap 1.7 km, rotation pad cap 4.5 km. Real SGP4 calls in the coarse stage: 70.5 M instead of 846 M.
+4. **Refinement.** Adjacent candidate windows of a pair are merged into a run; in each run the sign changes of r.v on a 10 s grid are polished to 0.01 ms (about 30 SGP4 calls per run instead of 120), the point must lie inside the primary's volume at the exact minimum, then Pc (same four variants) in the workers (S5: one thread).
+5. **Formation.** Same rule as S5. The share of the window within 50 km is first estimated from every 5th minute and decided if it is below 0.3 or above 0.7, else computed from every minute: 54 M SGP4 calls instead of 273 M; the formation pair lists are identical to S5's (104 = 104 on 10-14).
+
+Volumes: the table of the card, read as half-extents of a RIC box around the primary; reported when B is in A's box or A in B's. The ellipsoid inscribed in the box is also flagged, and a 5 km sphere is kept so results compare with S5 (an S6 event is kept if it is in either; `box only`, `5 km only` and both are counted). Assumption: the guide's numbers are half-widths of a box. If they are full widths the reference sphere (67.5 km) and all counts are 2 to 4 times too large; if the volume is an ellipsoid, the "in ellipsoid" column applies.
+
+### SGP4 calls (instrumented counters in every worker and the main thread), wall time, memory: S5 vs S6, same inputs
+S5 = `--mode s5 --tag s5i` (re-run, counters on; events identical to the earlier S5 files). Calls in millions; wall in seconds; RSS is the whole process.
+
+| batch | S5 calls | S6 calls | S5/S6 | S5 wall | S6 wall | S5/S6 | S5 RSS MB | S6 RSS MB | S5 events (5 km) | S6 events (volumes or 5 km) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 10-12 | 1179.3 | 225.9 | 5.2 | 427.4 | 231.0 | 1.85 | 1327 | 2085 | 188,532 | 730,239 |
+| 10-13 | 1158.7 | 217.1 | 5.3 | 403.3 | 209.4 | 1.93 | 911 | 2105 | 144,542 | 654,388 |
+| 10-14 | 1153.6 | 214.6 | 5.4 | 394.4 | 210.3 | 1.88 | 913 | 2165 | 132,493 | 650,866 |
+| 10-15 | 1174.0 | 225.3 | 5.2 | 416.2 | 227.4 | 1.83 | 914 | 2332 | 181,719 | 795,029 |
+| 10-16 | 1178.9 | 226.5 | 5.2 | 419.3 | 229.3 | 1.83 | 911 | 2292 | 190,485 | 784,718 |
+| 10-17 | 1157.7 | 214.9 | 5.4 | 385.3 | 203.8 | 1.89 | 900 | 2160 | 134,391 | 637,065 |
+| 10-18 | 1160.7 | 215.6 | 5.4 | 390.0 | 204.4 | 1.91 | 925 | 2123 | 140,060 | 632,932 |
+| total | 8162.9 | 1539.8 | 5.30 | 2836 | 1515 | 1.87 | | | | |
+
+Per stage, batch 10-14 (calls M / seconds). S5: grid 846.1 / 275.4, formation 270.7 / 36.6, refine 36.4 / 5.5, Pc 0.4 (main thread) / 73.3. S6: radius 17.7 / 3.4, coarse 70.5 / 93.0, formation 54.4 / 8.3, refine plus Pc in workers 72.0 / 91.6, write 12.0 (S5 2.9). Pc and event output are now the larger part of S6: 650,866 events instead of 132,493. Coarse pair tests per batch 4.29 G (CPU 277 s in 3 workers): the 60 s step needs a 565 km cell, so the pair loop, not SGP4, sets the time of the coarse stage. SGP4 calls fall 5.3x; wall time 1.9x.
+
+Honest reading: the hoped-for order-of-magnitude is not there. The calls fell 5.3x, but 144 M of the 215 M left are the formation share (54 M), the radius pass (18 M) and the refinement of volumes that now yield 5x more events (72 M), and the time is spent in pair tests and in Pc, not in SGP4. Step sweep on a 3 h slice (volumes plus 5 km, before the second grid): step 20 / 30 / 45 / 60 s gave 25.5 / 19.7 / 16.3 / 14.8 M calls and 10.9 / 9.5 / 9.2 / 9.8 s of coarse wall, with the same 45,011 events every time: smaller steps cost SGP4 and save pair tests, so the wall is flat. With 4 workers instead of 3 the stages scale (not run for the table, to keep S5 and S6 comparable).
+
+Events by volume (batch totals; 10-14): 650,866 events, 536,392 in a handbook box, 319,646 in the inscribed ellipsoid, 132,512 within 5 km (518,354 box only, 114,474 5 km only). By the primary's volume id (10-14): LEO1 (id 5) 520,562, LEO2 (4) 7,774, LEO3 (3) 3,532, other deep space (6) 4,320, other near Earth (7) 148, GEO-like (1) 17, LEO4 (2) 39; the other days have the same shape (87 to 88% LEO1). Pc balanced above 1e-5 / 1e-4 per batch: 297 / 2, 451 / 0, 515 / 1, 328 / 0, 229 / 0, 341 / 1, 372 / 3 (S5: 294 / 2, 451 / 0, 505 / 1, 318 / 0, 229 / 0, 341 / 1, 372 / 3 on the 5 km events). All S6 events are in `starmap.conjunction_s6` (4,885,237 rows, 1.15 GB; ISS lookup 20 ms).
+
+### Recall
+References: (a) S5's 5 s grid with a per-pair sphere that contains both volumes (up to 67.5 km), S5's own golden-section refine, then the same RIC volume test (`--mode ref`, 7 full batches, 518 s and 2.0 G SGP4 calls for 10-18); its linear-closest-approach prune (volume plus 10 km) was checked on a 3 h slice against an unpruned run: identical 45,011 events. (b) The S5 events of the same batches. (c) A fresh brute force, 3 h slice of 10-14, 43 targets (ISS, 30 busiest, 12 random) against all 32,646 objects, own SGP4 loop every 2 s, golden-section refine of every sampled minimum closer than the pair's half-diagonal plus 15 km, RIC volume test.
+
+- **Brute force (independent code path): 1,094 of 1,094 approaches inside a handbook box found, 123 of 123 within 5 km, max TCA difference 0.000 s, max miss difference 0.0000 km** (494 s on one thread).
+- **vs S5, 5 km sphere, 7 batches:** 1,112,222 S5 events; 18 not matched, none of them a real encounter. Each was checked with SGP4: they are slow pairs (relative speed 1 to 5 m/s) whose distance is flat to micrometres and S5's golden section reports a flat maximum or an arbitrary point, not a minimum. S6 also has 174 events S5 does not (slow co-moving pairs where S5's grid skipped the real minimum; spot-checked by direct scan: genuine minima at 2 to 5 km).
+- **vs reference, handbook boxes, 7 batches:** reference 3,955,314 events; 467 not matched by S6 (per batch 106, 39, 77, 76, 58, 44, 67), of which 462 are not local minima (artifacts of the reference's refine, same kind as above). The other 5 are true minima that lie outside the box at the exact root of r.v by 0.02 m, 15 m, 0.02 m, 1.1 m and 0.08 m: the reference's golden section put them 2 cm to 15 m inside the box edge. At the exact minimum they are not in the volume, so they are boundary cases of the reference, not S6 misses. Matching rule: same pair, TCA within 2 s, or (very slow pairs, 26 events) within 60 s with the same miss to 10 m.
+- An earlier S6 version polished the minimum only to 1 ms; boundary cases then differed by metres. It is now 0.01 ms and the table above is from that version.
+- **Bound check on real pairs** (`s6-bound-check.ts`, 6,000 random S6 events, extrapolating from up to 30 s away): actual error / eps: median 0.083, p99 0.149, max 0.59; none above 1. On synthetic orbits (unit tests): 15,786 gathered pair windows, worst 34% of the bound. Negative control: with the acceleration bound removed, the coarse test at 600 s misses 5 of 52 in-volume encounters; with the bound, 0.
+
+Unit tests (`s6-lib.test.ts`, in `check.sh`): synthetic 15 km/s head-on equatorial crossings (80 pairs, 3 steps x 4 grid offsets, at least 30 in-volume encounters), 300 engineered crossing pairs with relative speeds 0.07 to 15.2 km/s (234 in-volume encounters, LEO1 and LEO3 volumes, steps 30/60/120 s), slow GEO co-location (60 pairs, 59 in-volume minima, steps 300 and 600 s): never missed, and the gather radius always contains the candidate pair.
+
+### CARA Pc reference cases
+Source: NASA CARA_Analysis_Tools (github.com/nasa/CARA_Analysis_Tools, branch master, fetched read-only from raw.githubusercontent.com on 2026-10-30; only `DistributedMatlab/ProbabilityOfCollision/UnitTests/Pc2D_Foster_UnitTest.m`, `Utils/GetAlfanoTestCases.m`, `Utils/get_alfano_test_case.m`, `Pc2D_Foster.m` and the eleven `DataFiles/AlfanoInputData/Alfano_2009_Test_Cases/Case<N> data at TCA.xls` files, plus the two README files to find the paths). Test: Omitron case 01 (circular hard body 20 m) and the 11 Alfano (2009) cases that CARA's own unit test uses, with CARA's expected values and its relative tolerance of 1e-3. Our `pcFoster` agrees with all 12: Omitron 2.9e-6 relative; Alfano cases 3.3e-7, 8.9e-9, 1.6e-6, 2.7e-5, 1.1e-4, 2.4e-7, 3.3e-6, 1.1e-6, 5.3e-5, 5.3e-5 (cases 9 and 10 share their numbers), 2.9e-6. Not covered: the square and equal-area-square hard bodies and the non-positive-definite remediation case (our function is circle only). Licence: the SDK is released under NASA Open Source Agreements (README lists NOSA_GSC-18593-1, -18848-1, -19374-1; I did not fetch the agreements). The fixture (`collision-cara.fixture.ts`) holds only the numeric inputs and expected values with the citation and the copyright notice kept in its header; no NASA code is copied. If the lead prefers not to commit the numbers, delete the fixture and the test; the table above stays as the record.
+
+### Skipped, failed, extrapolated, caveats
+- Not run: S6 with 4 workers; a full-window all-vs-all brute force (the brute force is the 3 h, 43-target slice, as in S5); the ellipsoid reading of the volumes as a separate screening run (it is a flag on the box events).
+- Experiment that did not pay: a slow class (objects with rlo above 10,000 km stepped at 5x the step, `--slow-factor 5`). The HEO/GTO objects (1.7 k) reach every MEO/GEO object and move at 8 to 10 km/s near perigee, so the slow pass has to include all objects with a 3.5 thousand km cell and an eps cap of 274 km; on a 3 h slice it cost 21.9 CPU s against 21.7 for the whole fast pass. Default is off (`--slow-factor 1`); the capability remains for experiments. GEO belt objects therefore are stepped like LEO.
+- The a_max constant (1.1% of gravity for what SGP4 adds) is an assumption, checked on real pairs and synthetic orbits as above, not derived. A decaying object with extreme drag would break it; those objects are in the S5 garbage-orbit fence.
+- Pc and its inputs are the S5 ones (floor, radii, U5 model): the larger event count comes only from the larger volumes.
+- The S6 counts are from the final code on all 7 batches; earlier S6 runs with the same logic but a 1 ms root tolerance and a looser speed bound were overwritten.
+- Everything was written to the working tree; large outputs are in the gitignored `packages/backend/data/forward/`.
+
+### Plain-words verdict
+**What changed.** The screener used to look at every object every 5 seconds. Now it looks every 60 seconds, but at each look it also uses the speed of the two objects to prove that nothing could have slipped between two looks. Only pairs that could not be ruled out get a careful look, second by second. We also ask, as real operators do, whether the second object is inside a box around the first (a few hundred metres up and down, tens of kilometres along and across the orbit, sizes from the Space Flight Safety Handbook), instead of "within 5 km in any direction".
+
+**Did we lose anything?** No real close approach was lost. A separate slow check of 43 objects against everything over 3 hours found every one of the 1,094 approaches inside the boxes and every one of the 123 within 5 km. Over the full week, against the old 5-second method with a bigger net, the only differences are about 470 "events" the old method reported that are not real minima (two satellites drifting side by side at a few metres per second, where the distance is flat) and five cases that sit within 15 m of the edge of a box, which the old method counted as inside and an exact calculation does not.
+
+**How much faster?** Less than hoped. The number of orbit calculations fell by a factor of 5.3 (from 1.16 billion per day's run to 0.21 billion) and the total time by a factor of 1.9 (from about 6.8 minutes to 3.5 minutes on three cores). Two things limit it: the pair-by-pair neighbour search now dominates, and the bigger boxes produce five times more close passes to evaluate (650,000 instead of 130,000 per run), each of which gets its collision probability computed. The check "can this orbit shell meet that one at all" removes two thirds of all pairs, but in the crowded low orbits almost every object has neighbours, so it saves pair checks, not orbit calculations; for the high orbits it removes most pairs but those were never looked at together anyway.
+
+**Is the collision probability right?** The collision-probability maths reproduces the 12 published NASA test cases to better than 0.02%. That checks the formula, not the inputs: the size of the uncertainty and the object radii are still the assumptions from the earlier round.
+
+**What to do next.** If wall time matters, the cheap wins are four cores instead of three, and computing collision probability only for events that pass a coarse screen; the algorithmic change itself is sound and now tested against synthetic fly-bys at 15 km/s and in the geostationary belt.
+
+### Reproduce
+```
+npm run build:libs
+export STARMAP_DB=postgres://orbitwatch:orbitwatch@localhost:5432/orbitwatch
+export NODE_OPTIONS=--max-old-space-size=9000          # the reference needs the larger heap
+S=packages/backend/scripts/starmap
+npx tsx $S/screen-forward.ts --mode s5 --from 2026-10-12 --to 2026-10-18 --tag s5i --workers 3     # instrumented S5, ~7 min per batch
+npx tsx $S/screen-forward.ts --from 2026-10-12 --to 2026-10-18 --tag s6                              # S6, ~3.5 min per batch
+npx tsx $S/screen-forward.ts --mode ref --from 2026-10-12 --to 2026-10-18 --tag ref                  # recall reference, ~9 min per batch
+for d in 12 13 14 15 16 17 18; do npx tsx $S/s6-recall.ts 2026-10-$d s6 ref; npx tsx $S/s6-recall.ts 2026-10-$d s6 s5:s5i; done
+npx tsx $S/screen-forward.ts --day 2026-10-14 --hours 3 --tag sl-s6
+npx tsx $S/verify-forward.ts recall6 2026-10-14 sl-s6                                                 # brute force, ~8 min
+npx tsx $S/s6-bound-check.ts 2026-10-14 s6 --n 6000
+npx tsx $S/forward-report6.ts                                                                         # tables + starmap.conjunction_s6
+bash $S/check.sh
+```
+
+**Lead's check (S6).** The guide states the SFSH volumes are half-volumes ("10 km in the radial (U) direction is
+the maximum absolute value of radial separation"), so S6's half-width reading is correct. Independent recompute
+of a random LEO2 box-only event (2026-10-16 batch, 27687 x 89003, causal element sets, own SGP4 loop at 5 ms):
+miss 23.198 km at the stored TCA (0.000 s), RIC 0.192 / -2.967 / -23.006 km vs stored 0.192 / -2.978 / -23.005,
+inside 0.4 x 25 x 25. CARA fixture kept as numbers with a citation (no NASA files committed).

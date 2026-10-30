@@ -34,7 +34,7 @@ while (k < n) {
   const rad = Math.min(Math.hypot(a.position.x, a.position.y, a.position.z), Math.hypot(b.position.x, b.position.y, b.position.z));
   const rf = rad - 15 * h, rn = Math.hypot(r[0]!, r[1]!, r[2]!), wn = Math.hypot(w[0]!, w[1]!, w[2]!);
   const eps = 0.5 * relAccelBound(maxSeparation(rn, wn, h, rf), rf) * Math.abs(tau) ** 2;
-  if (eps <= 0) continue;
+  if (eps <= 0 || Math.abs(tau) < 2) continue; // at tau ~ 0 both err and eps are ~1e-9 km: the ratio is rounding noise
   const ratio = err / eps; ratios.push(ratio); k++;
   if (ratio > worst) { worst = ratio; worstAt = `${e.nameA} / ${e.nameB} tau ${tau.toFixed(1)} s err ${err.toFixed(4)} km eps ${eps.toFixed(4)} km`; }
   if (ratio > 1) over++;

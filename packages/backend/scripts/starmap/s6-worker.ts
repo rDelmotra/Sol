@@ -278,7 +278,7 @@ function refine6(t: Refine6Task): Refine6Out {
       if (!ev(pb, tMs)) return null;
       return { r: [X - ax, Y - ay, Z - az], v: [VX - avx, VY - avy, VZ - avz] };
     };
-    for (const tca of findMinima(rel, ta, tb, sub, 1)) {
+    for (const tca of findMinima(rel, ta, tb, sub, 0.01)) {
       minima++;
       const g = geometry(a, b, tca);
       if (!g || !g.accepted) continue;
