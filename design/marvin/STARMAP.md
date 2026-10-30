@@ -1761,3 +1761,9 @@ the maximum absolute value of radial separation"), so S6's half-width reading is
 of a random LEO2 box-only event (2026-10-16 batch, 27687 x 89003, causal element sets, own SGP4 loop at 5 ms):
 miss 23.198 km at the stored TCA (0.000 s), RIC 0.192 / -2.967 / -23.006 km vs stored 0.192 / -2.978 / -23.005,
 inside 0.4 x 25 x 25. CARA fixture kept as numbers with a citation (no NASA files committed).
+
+## Freeze — backend screener (owner, 2026-10-30)
+
+The S6 screener (`screen-forward.ts --mode s6`, commit 741b895) is frozen: no further optimisation. About 3.5 min
+per run on 3 cores is negligible on a 24 h schedule. Next phase: wire its outputs (and the derived events,
+star-map lists, uncertainty model and browser pack) into the app's API and frontend. Branch `spike/starmap` is kept.
