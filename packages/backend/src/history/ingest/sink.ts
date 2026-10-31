@@ -7,6 +7,7 @@ import type { HistoryDimRow, HistoryFactRow } from '../types.js';
 import { getPool, isHistoryReady } from '../db/pool.js';
 import { upsertDailyBatch } from '../db/queries.js';
 import { mapEnriched } from './map.js';
+import { insertOmmUpdates } from './omm-updates.js';
 import { writeRawArchive } from '../archive/raw-writer.js';
 import { logger } from '../../utils/logger.js';
 
@@ -94,4 +95,16 @@ export async function ingestCurrentGp(
     `History ingest: ${ingested} daily rows upserted from ${source}` +
       (skipped ? ` (${skipped} skipped)` : ''),
   );
+
+  // Every element set, not one per object per day: the encounter screener's causal catalog. Its failure must not
+  // undo the daily rows above, so it is logged and swallowed here.
+  const pool = getPool();
+  if (pool) {
+    try {
+      const added = await insertOmmUpdates(pool, enriched);
+      logger.info(`History ingest: ${added} new element sets added to omm_updates`);
+    } catch (err) {
+      logger.warn('History omm_updates insert failed (non-fatal):', (err as Error).message);
+    }
+  }
 }

@@ -378,11 +378,18 @@ describe('non-critical worker isolation', () => {
 
 describe('defaultChildren', () => {
   it('runs the API and the DSO worker from the given dist directory', () => {
-    const specs = defaultChildren('/app/packages/backend/dist');
+    const specs = defaultChildren('/app/packages/backend/dist', {});
     assert.deepEqual(specs, [
       { name: 'api', script: '/app/packages/backend/dist/index.js' },
       { name: 'dso-worker', script: '/app/packages/backend/dist/dso-worker.js', critical: false },
     ]);
+  });
+
+  it('adds the non-critical SSA worker only when DATABASE_URL is set', () => {
+    const specs = defaultChildren('/app/packages/backend/dist', { DATABASE_URL: 'postgres://x/y' });
+    assert.deepEqual(specs.map((s) => s.name), ['api', 'dso-worker', 'ssa-worker']);
+    assert.deepEqual(specs[2], { name: 'ssa-worker', script: '/app/packages/backend/dist/ssa-worker.js', critical: false });
+    assert.equal(defaultChildren('/app/packages/backend/dist', { DATABASE_URL: '' }).length, 2);
   });
 });
 

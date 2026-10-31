@@ -275,12 +275,18 @@ export const spawnReal: SpawnFn = (spec) => {
   };
 };
 
-export function defaultChildren(dir: string = path.dirname(fileURLToPath(import.meta.url))): ChildSpec[] {
-  return [
+export function defaultChildren(
+  dir: string = path.dirname(fileURLToPath(import.meta.url)),
+  env: NodeJS.ProcessEnv = process.env,
+): ChildSpec[] {
+  const specs: ChildSpec[] = [
     { name: 'api', script: path.join(dir, 'index.js') },
     // Non-critical: the deep-space feature is isolated. A dead worker is restarted alone.
     { name: 'dso-worker', script: path.join(dir, 'dso-worker.js'), critical: false },
   ];
+  // Non-critical, and only when the history database is configured: the nightly encounter screening writes to it.
+  if (env.DATABASE_URL) specs.push({ name: 'ssa-worker', script: path.join(dir, 'ssa-worker.js'), critical: false });
+  return specs;
 }
 
 function main(): void {

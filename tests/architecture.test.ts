@@ -225,6 +225,25 @@ const RULES: Rule[] = [
     forbidden: only('history', 'types', 'utils'),
   },
   {
+    id: 'be-ssa-isolated',
+    why: 'ssa/ (encounter screening) is a self-contained namespace: only ssa/, types/, utils/, history/db (pool + migrations), and the packages orbital-core, contracts, satellite.js, pg and node builtins.',
+    applies: from('backend', 'ssa'),
+    forbidden: (e) => {
+      if (e.toZone.startsWith('pkg:')) {
+        const p = e.toZone.slice(4);
+        return !(p === 'satellite.js' || p === 'pg' || p === '@orbitwatch/orbital-core' || p === '@orbitwatch/contracts' || p.startsWith('node:'));
+      }
+      if (e.toZone === 'history') return !/^packages\/backend\/src\/history\/db\/(pool|migrations\/.*)$/.test(e.to);
+      return !['ssa', 'types', 'utils'].includes(e.toZone);
+    },
+  },
+  {
+    id: 'no-prod-imports-starmap',
+    why: 'scripts/starmap/ is the frozen reference spike: production code (src/) never imports it; the port lives in packages/backend/src/ssa/.',
+    applies: () => true,
+    forbidden: (e) => e.to.includes('scripts/starmap'),
+  },
+  {
     id: 'be-enrichment-isolated',
     why: 'enrichment/ is the static metadata plane: only enrichment/ and utils/.',
     applies: from('backend', 'enrichment'),
@@ -240,7 +259,7 @@ const RULES: Rule[] = [
     id: 'be-low-tiers-stay-low',
     why: 'cache/, utils/ and types/ are the bottom tier: they import no feature modules.',
     applies: from('backend', 'cache', 'utils', 'types'),
-    forbidden: (e) => ['services', 'analytic', 'routes', 'cron', 'history', 'dso', 'eval', 'enrichment'].includes(e.toZone),
+    forbidden: (e) => ['services', 'analytic', 'routes', 'cron', 'history', 'dso', 'eval', 'enrichment', 'ssa'].includes(e.toZone),
   },
   {
     id: 'be-services-no-analytic',
