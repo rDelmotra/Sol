@@ -158,12 +158,21 @@ const STATE_KEYS = [
   'viewMode',
   'visualList',
   'wallClockMs',
+  'encountersByNorad',
+  'encounterStatusByNorad',
+  'loadEncounters',
+  'selectEncounter',
+  'selectedEncounterId',
+  'setTriggerClearEncounter',
+  'setTriggerShowEncounter',
+  'triggerClearEncounter',
+  'triggerShowEncounter',
 ];
 
 const TRIGGER_SLOTS = [
   'selectByIndex', 'triggerFlyTo', 'triggerJoyride', 'triggerResetCamera',
   'triggerRunAnalytic', 'triggerFlyToDso', 'triggerJoyrideDso', 'triggerSimTimeJump',
-  'triggerScrubPreview', 'triggerReturnToPresent',
+  'triggerScrubPreview', 'triggerReturnToPresent', 'triggerShowEncounter', 'triggerClearEncounter',
 ] as const;
 
 const allOn = <T extends string>(ks: T[]) => Object.fromEntries(ks.map((k) => [k, true]));
@@ -234,11 +243,14 @@ const INITIAL_VALUES: Record<string, unknown> = {
   askBarOpen: false,
   controlsSheetOpen: false,
   locationPopoverOpen: false,
+  encountersByNorad: {},
+  encounterStatusByNorad: {},
+  selectedEncounterId: null,
 };
 
 test('store exposes exactly today\'s keys (state + actions)', () => {
   assert.deepEqual(Object.keys(initial).sort(), [...STATE_KEYS].sort());
-  assert.equal(STATE_KEYS.length, 136);
+  assert.equal(STATE_KEYS.length, 145);
 });
 
 test('initial values of every non-function key', () => {
@@ -252,7 +264,7 @@ test('initial values of every non-function key', () => {
   for (const k of nonFn) assert.deepEqual(s[k], expected[k], k);
 });
 
-test('the 10 command trigger slots start null; every other non-state key is an action', () => {
+test('the 12 command trigger slots start null; every other non-state key is an action', () => {
   const s = initial as unknown as Record<string, unknown>;
   for (const k of TRIGGER_SLOTS) assert.equal(s[k], null, k);
   const nonSlotFns = Object.keys(s).filter((k) => !(TRIGGER_SLOTS as readonly string[]).includes(k) && !(k in INITIAL_VALUES) && k !== 'simTimeMs' && k !== 'wallClockMs');

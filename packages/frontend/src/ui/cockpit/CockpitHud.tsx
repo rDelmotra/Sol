@@ -5,6 +5,7 @@ import { CompassStrip } from './ground/CompassStrip';
 import { ControlsSheet } from './controls/ControlsSheet';
 import { Dock } from './dock/Dock';
 import { EdgeArc } from './hud/EdgeArc';
+import { EncounterCountdown } from './hud/EncounterCountdown';
 import { FocusPanes } from './panes/FocusPanes';
 import { HudErrorBoundary } from './primitives/HudErrorBoundary';
 import { ObjectDisc } from './hud/ObjectDisc';
@@ -58,6 +59,10 @@ export default function CockpitHud() {
       </HudErrorBoundary>
       <HudErrorBoundary region="focus panes">
         <FocusPanes />
+      </HudErrorBoundary>
+
+      <HudErrorBoundary region="encounter countdown">
+        <EncounterCountdown />
       </HudErrorBoundary>
 
       <HudErrorBoundary region="time console">

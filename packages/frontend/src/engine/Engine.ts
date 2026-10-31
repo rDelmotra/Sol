@@ -24,6 +24,8 @@ import { ObserverMarkerLayer } from './world/layers/ObserverMarkerLayer';
 import { HorizonLayer } from './world/layers/HorizonLayer';
 import { DomeSkyLayer } from './world/layers/DomeSkyLayer';
 import { PassArcLayer } from './world/layers/PassArcLayer';
+import { EncounterLayer } from './world/layers/EncounterLayer';
+import { EncounterFlyby } from './command/EncounterFlyby';
 import { registerEngineCommands, type EngineCommands } from './command/EngineCommands';
 import type { FrameContext } from './render/Layer';
 import { AnalyticRuntime } from './analytic/AnalyticRuntime';
@@ -55,6 +57,7 @@ export class Engine {
   private inputManager: InputManager | null = null;
   private trailsLayer: TrailsLayer;
   private nav: NavigationController;
+  private encounterFlyby: EncounterFlyby;
   /** P2: one-shot program execution + standing programs re-evaluated every SGP4
    *  worker tick (~1 Hz) via SatellitesLayer's onTick callback. Cross-cutting
    *  orchestration (not a layer concern) — reads live data through the layer's port. */
@@ -121,6 +124,10 @@ export class Engine {
     this.world.register(new StarfieldLayer());
     this.world.register(this.trailsLayer);
     this.world.register(this.dsoLayer);
+    // Reads the two objects' rendered positions through the satellite renderer (Engine-wired callback).
+    this.world.register(
+      new EncounterLayer((index, t) => this.satellitesLayer.renderer?.getInterpolatedPosition(index, t) ?? null),
+    );
     // Satellites registered last so the point cloud is added to the scene last
     // (drawn over Earth/DSO), matching the prior inline order. (ObserverMarker
     // parents to the Earth group, not the scene root, so its order is irrelevant.)
@@ -175,6 +182,11 @@ export class Engine {
       this.createTrackingSource(),
       { onCancelJoyrideLook: () => this.inputManager?.cancelJoyrideLook() },
     );
+    this.encounterFlyby = new EncounterFlyby({
+      selectByIndex: (i) => this.nav.selectByIndex(i),
+      flyTo: (i) => this.nav.flyToSatellite(i),
+      frameSeparation: (km) => this.nav.frameSeparation(km),
+    });
     this.liveKinematics = new LiveKinematicsPublisher(this.createTrackingSource());
     this.fly = new FlyController(this.camera, this.controls, this.nav);
     this.passPlanner.start();
@@ -428,6 +440,8 @@ export class Engine {
       simTimeJump: () => this.onSimTimeJump(),
       scrubPreview: () => this.timeline.onScrubPreview(),
       returnToPresent: () => this.timeline.startGlideToLive(),
+      showEncounter: (id) => this.encounterFlyby.show(id),
+      clearEncounter: () => this.encounterFlyby.clear(),
       runAnalytic: (program) => {
         const out = this.analyticRuntime.run(program);
         return 'notReady' in out ? null : out;
@@ -640,6 +654,7 @@ export class Engine {
     this.removeAnalyticDevHooks?.();
     this.removeAnalyticDevHooks = null;
     this.analyticRuntime.dispose();
+    this.encounterFlyby.clear();
     this.timeline.dispose();
     stopDsoClient();
     if (this.animationId !== null) {

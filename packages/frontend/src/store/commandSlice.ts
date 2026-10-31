@@ -11,6 +11,8 @@ export const createCommandSlice: Slice<CommandSlice> = (set) => ({
   triggerSimTimeJump: null,
   triggerScrubPreview: null,
   triggerReturnToPresent: null,
+  triggerShowEncounter: null,
+  triggerClearEncounter: null,
   setTriggerFlyTo: (fn) => set({ triggerFlyTo: fn }),
   setTriggerJoyride: (fn) => set({ triggerJoyride: fn }),
   setTriggerResetCamera: (fn) => set({ triggerResetCamera: fn }),
@@ -21,4 +23,6 @@ export const createCommandSlice: Slice<CommandSlice> = (set) => ({
   setTriggerReturnToPresent: (fn) => set({ triggerReturnToPresent: fn }),
   setTriggerFlyToDso: (fn) => set({ triggerFlyToDso: fn }),
   setTriggerJoyrideDso: (fn) => set({ triggerJoyrideDso: fn }),
+  setTriggerShowEncounter: (fn) => set({ triggerShowEncounter: fn }),
+  setTriggerClearEncounter: (fn) => set({ triggerClearEncounter: fn }),
 });

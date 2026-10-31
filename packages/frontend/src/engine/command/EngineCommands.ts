@@ -31,6 +31,10 @@ export interface EngineCommands {
   scrubPreview: () => void;
   /** Animate the view-clock smoothly back to the live present (store invokes from "Now"). */
   returnToPresent: () => void;
+  /** Watch an encounter (flyby): pair filter, clock to TCA − 2 min, camera on the primary. */
+  showEncounter: (encounterId: number) => void;
+  /** Leave the flyby and restore what it replaced. */
+  clearEncounter: () => void;
   /** Run a validated analytic program on the live engine; null if not ready yet. */
   runAnalytic: (program: AnalyticProgram) => ExecuteOutcome | null;
 }
@@ -48,4 +52,6 @@ export function registerEngineCommands(commands: EngineCommands): void {
   store.setTriggerScrubPreview(commands.scrubPreview);
   store.setTriggerReturnToPresent(commands.returnToPresent);
   store.setTriggerRunAnalytic(commands.runAnalytic);
+  store.setTriggerShowEncounter(commands.showEncounter);
+  store.setTriggerClearEncounter(commands.clearEncounter);
 }

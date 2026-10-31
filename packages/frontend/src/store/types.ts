@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { CatalogType, FacetCounts, GeodeticObserver } from '../data/types';
-import type { EnrichedTLEObject, ObjectCategory, OrbitalRegime, Purpose, OrbitalStatus, DsoSnapshot } from '@orbitwatch/contracts';
+import type { EncounterSummary, EnrichedTLEObject, ObjectCategory, OrbitalRegime, Purpose, OrbitalStatus, DsoSnapshot } from '@orbitwatch/contracts';
 import type { SectorFilterKey } from '../data/metadata-types';
 import type { DsoObject } from '../data/dso-types';
 import type { VisualListSource, VisualListStatus } from '../data/visualList';
@@ -149,6 +149,10 @@ export interface CommandSlice {
   triggerScrubPreview: (() => void) | null;
   /** Engine hook to animate the view-clock back to now, set by the Engine. */
   triggerReturnToPresent: (() => void) | null;
+  /** Engine hook: watch an encounter (flyby): pair filter, clock to TCA − 2 min, camera on the primary. */
+  triggerShowEncounter: ((encounterId: number) => void) | null;
+  /** Engine hook: leave the flyby (restores the filter the flyby replaced). */
+  triggerClearEncounter: (() => void) | null;
   setTriggerFlyTo: (fn: (index: number) => void) => void;
   setTriggerJoyride: (fn: (index: number) => void) => void;
   setTriggerResetCamera: (fn: () => void) => void;
@@ -159,6 +163,8 @@ export interface CommandSlice {
   setTriggerReturnToPresent: (fn: () => void) => void;
   setTriggerFlyToDso: (fn: (dsoId: string) => void) => void;
   setTriggerJoyrideDso: (fn: (dsoId: string) => void) => void;
+  setTriggerShowEncounter: (fn: (encounterId: number) => void) => void;
+  setTriggerClearEncounter: (fn: () => void) => void;
 }
 
 export interface InteractionSlice {
@@ -344,6 +350,22 @@ export interface DsoSlice {
   setDsoEphemeris: (dsoId: string, snapshot: DsoSnapshot) => void;
 }
 
+/** Where a per-object encounter list stands. */
+export type EncounterStatus = 'loading' | 'ready' | 'unavailable' | 'error';
+
+export interface SsaSlice {
+  /** Encounters (flybys) by the NORAD id of the object asked about, soonest TCA first. */
+  encountersByNorad: Record<number, EncounterSummary[]>;
+  /** Load state per NORAD id; absent = never requested. 'unavailable' = service off (503). */
+  encounterStatusByNorad: Record<number, EncounterStatus>;
+  /** The encounter being watched (flyby), or null. The pair is drawn on the globe. */
+  selectedEncounterId: number | null;
+  /** Fetch (cached per object and run) the encounters of one object. Never throws. */
+  loadEncounters: (noradId: number) => Promise<void>;
+  /** Plain state write; the Engine's showEncounter / clearEncounter commands do the rest. */
+  selectEncounter: (id: number | null) => void;
+}
+
 export type AppState = BootSlice &
   CatalogSlice &
   CommandSlice &
@@ -355,6 +377,7 @@ export type AppState = BootSlice &
   HistorySlice &
   DsoSlice &
   FlightSlice &
-  HudSlice;
+  HudSlice &
+  SsaSlice;
 
 export type Slice<T> = StateCreator<AppState, [], [], T>;

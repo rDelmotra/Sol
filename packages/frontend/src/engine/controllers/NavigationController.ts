@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ER_KM } from '@orbitwatch/orbital-core';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CameraAnimator, HOME_POSITION, HOME_TARGET } from './CameraAnimator';
 import { ObserverSkyController } from './ObserverSkyController';
@@ -334,6 +335,18 @@ export class NavigationController {
     this.arrivalTime = -1;
     this.cameraController.flyTo(this.trackingPos, this.controls.target);
     store.setCameraMode('flying');
+  }
+
+  /**
+   * Pull the follow camera back so an object up to `separationKm` from the followed
+   * one is inside the view (the followed object is at the centre). Call after
+   * flyToSatellite; the setting lasts until the next fly-to recomputes it.
+   */
+  frameSeparation(separationKm: number): void {
+    if (!(separationKm > 0)) return;
+    const halfFov = THREE.MathUtils.degToRad(this.camera.fov / 2);
+    const dist = (1.15 * separationKm / ER_KM) / Math.tan(halfFov);
+    this.cameraController.followOffsetDist = Math.min(Math.max(dist, this.cameraController.followOffsetDist), 2.0);
   }
 
   joyrideSatellite(index: number): void {
