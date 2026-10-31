@@ -16,6 +16,7 @@ import {
 import { createQueryRouter } from './routes/query.js';
 import { readVersion } from './cache/file-cache.js';
 import { historyRouter } from './history/index.js';
+import ssaRouter from './routes/ssa.js';
 import { frontendDistDir } from './utils/paths.js';
 import { IMMUTABLE_CACHE_CONTROL, isHashedAsset } from './utils/static-cache.js';
 import { readDiskUsage } from './utils/disk-usage.js';
@@ -96,6 +97,8 @@ export function createApp(deps: AppDeps = {}): Express {
     // Optional history routes — 503 cleanly when DATABASE_URL is unset, so mounting
     // unconditionally is safe.
     ['/api/history', historyRouter],
+    // Encounter (close-approach) read API — 503s the same way when history is off.
+    ['/api/ssa', ssaRouter],
   ];
   for (const [prefix, router] of routes) app.use(prefix, router);
 
