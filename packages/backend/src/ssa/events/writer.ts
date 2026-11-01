@@ -4,13 +4,18 @@
 // formation pass failed keeps its earlier close.formation rows.
 // ============================================================
 import type { Pool } from 'pg';
+import { markDone } from '../day-status.js';
 import type { ChangeKind, EventRow } from './types.js';
 
 const BATCH = 20_000;
 
 export interface WriteEventsResult { deleted: number; inserted: number; perKind: Record<string, number> }
 
-export async function writeDayEvents(pool: Pool, day: string, kinds: readonly ChangeKind[], rows: EventRow[]): Promise<WriteEventsResult> {
+/**
+ * `done`: also record the 'changes' completion of the day (ssa_day_status) in the same transaction as the rows, so a day is never
+ * marked done without its events and never written without the mark.
+ */
+export async function writeDayEvents(pool: Pool, day: string, kinds: readonly ChangeKind[], rows: EventRow[], done?: { stats?: unknown }): Promise<WriteEventsResult> {
   for (const r of rows) if (!kinds.includes(r.kind)) throw new Error(`writeDayEvents: row of kind ${r.kind} is not in the kind set`);
   const c = await pool.connect();
   try {
@@ -25,6 +30,7 @@ export async function writeDayEvents(pool: Pool, day: string, kinds: readonly Ch
         [day, part.map((r) => r.kind), part.map((r) => `{${r.subjects.join(',')}}`), part.map((r) => r.tStart), part.map((r) => r.tEnd), part.map((r) => JSON.stringify(r.payload))],
       );
     }
+    if (done) await markDone(c, day, 'changes', done.stats ?? {});
     await c.query('COMMIT');
     const perKind: Record<string, number> = {};
     for (const r of rows) perKind[r.kind] = (perKind[r.kind] ?? 0) + 1;

@@ -12,8 +12,8 @@
 // - Coverage is measured at boot over the real spine, never copied from docs.
 // ============================================================
 
-import type { AnalyticDataSource, FieldValue, Universe } from '@orbitwatch/analytic';
-import { FIELD_REGISTRY } from '@orbitwatch/analytic';
+import type { AnalyticDataSource, AnalyticProgram, FieldValue, Universe } from '@orbitwatch/analytic';
+import { FIELD_REGISTRY, collectProgramRefs } from '@orbitwatch/analytic';
 import { createServerSource } from './server-source.js';
 import type {
   FieldCapability,
@@ -25,7 +25,7 @@ import type {
 } from './types.js';
 
 const ALL_FNS: readonly FnName[] = [
-  'elevationDeg', 'rangeKm', 'observerDark', 'visuallyVisible', 'distToKm', 'descendsFrom',
+  'elevationDeg', 'rangeKm', 'observerDark', 'visuallyVisible', 'distToKm', 'descendsFrom', 'passedOver',
 ];
 
 /** Top-N values kept per string field (frequency-sorted, most frequent first). */
@@ -48,6 +48,9 @@ function chainGetByNorad(chain: FieldProvider[], noradId: number, field: string,
   }
   return null;
 }
+
+/** A server-side function of the program could not be prepared (its data is unavailable). The ask route answers it as a runtime error. */
+export class PrepareError extends Error {}
 
 export class DataSourceRegistry {
   private readonly states = new Map<Universe, UniverseState>();
@@ -106,6 +109,32 @@ export class DataSourceRegistry {
     const s = this.states.get(universe);
     if (!s?.spine) return null;
     return createServerSource(s.spine.spine(), s.fieldChain, s.fnOwner);
+  }
+
+  /**
+   * Async preparation of the data a program's server-side functions look up (today: passedOver, whose passes are computed once per
+   * program and memoized by the provider). Returns notes to show with the answer. Throws PrepareError when a needed function has no
+   * working provider.
+   */
+  async prepare(program: AnalyticProgram, nowMs: number = Date.now()): Promise<string[]> {
+    const s = this.states.get(program.universe);
+    const notes: string[] = [];
+    if (!s) return notes;
+    const seen = new Set<string>();
+    for (const e of collectProgramRefs(program).fnExprs) {
+      if (e.fn !== 'passedOver') continue;
+      const key = JSON.stringify(e);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const owner = s.fnOwner.get('passedOver');
+      if (!owner?.preparePassedOver) throw new PrepareError('ground-pass data is not available on this server');
+      try {
+        notes.push(...(await owner.preparePassedOver(e, nowMs)));
+      } catch (err) {
+        throw err instanceof PrepareError ? err : new PrepareError((err as Error).message);
+      }
+    }
+    return notes;
   }
 
   /** Boot-time measured capability+coverage. Memoized — call invalidate() in tests. */

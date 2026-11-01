@@ -8,11 +8,12 @@ export class WorkerPool {
   private waiting = new Map<number, { res: (v: unknown) => void; rej: (e: Error) => void }>();
   private seq = 0;
   private failure: Error | null = null;
-  constructor(readonly size: number) {}
+  /** `workerBase`: the worker module next to this file, without extension ('worker' = the screener, 'coverage/worker' = the coverage build / pass refine). */
+  constructor(readonly size: number, private readonly workerBase = 'worker') {}
 
   async start(init: unknown): Promise<void> {
     const isTs = fileURLToPath(import.meta.url).endsWith('.ts');
-    const worker = new URL(isTs ? './worker.ts' : './worker.js', import.meta.url);
+    const worker = new URL(isTs ? `./${this.workerBase}.ts` : `./${this.workerBase}.js`, import.meta.url);
     for (let i = 0; i < this.size; i++) {
       const w = isTs
         ? new Worker(new URL('./worker-boot.mjs', import.meta.url), { workerData: { file: worker.href } })

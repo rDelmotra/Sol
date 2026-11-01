@@ -17,7 +17,7 @@ import {
   type ResolvedObserver,
 } from '@orbitwatch/analytic';
 import { createAnalyticCompiler, type AnalyticCompiler, type CompileOutcome } from '../services/analytic-compiler.js';
-import { getAnalyticRegistry, type DataSourceRegistry } from '../analytic/index.js';
+import { getAnalyticRegistry, PrepareError, type DataSourceRegistry } from '../analytic/index.js';
 import { computeLowBasisFields } from '../eval/hollow.js';
 import { logger } from '../utils/logger.js';
 
@@ -163,6 +163,18 @@ export function createQueryRouter(deps: QueryRouterDeps = {}): Router {
         return;
       }
 
+      // Server-side functions with a whole-catalog answer (passedOver) are computed once, here, before the synchronous executor runs.
+      let notes: string[] = [];
+      try {
+        notes = await registry.prepare(program, nowMs());
+      } catch (err) {
+        if (err instanceof PrepareError) {
+          res.status(200).json({ ok: false, runtime: { code: 'E-UNAVAILABLE', message: err.message } });
+          return;
+        }
+        throw err;
+      }
+
       const execStart = nowMs();
       const execOutcome = execute(program, { live: live ?? undefined, all: all ?? undefined }, { nowMs: tMs, observer });
       const execMs = nowMs() - execStart;
@@ -201,6 +213,7 @@ export function createQueryRouter(deps: QueryRouterDeps = {}): Router {
         ok: true, mode: 'result', program,
         interpretation: outcome.interpretation, cached: outcome.cached,
         result: toWireResult(execOutcome.result),
+        ...(notes.length ? { notes } : {}),
       });
     } catch (err) {
       logger.error('POST /api/query/ask failed:', err);

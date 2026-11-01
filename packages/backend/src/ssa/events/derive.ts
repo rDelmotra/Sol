@@ -66,7 +66,8 @@ export async function deriveDay(pool: Pool, day: string, opts: DeriveDayOpts = {
   const perKind: Record<string, number> = Object.fromEntries(kinds.map((k) => [k, 0]));
   for (const r of out) perKind[r.kind] = (perKind[r.kind] ?? 0) + 1;
   if (opts.dryRun) return { day, status: 'dry-run', prevObjects: prev.length, curObjects: cur.length, perKind, changes, ...(formation ? { formation } : {}), ...(formationError ? { formationError } : {}), wallS: wall() };
-  await writeDayEvents(pool, day, kinds, out);
+  // the day is marked done only when every kind was written: a failed formation pass leaves it for the next catch-up tick
+  await writeDayEvents(pool, day, kinds, out, formationError ? undefined : { stats: { perKind, prevObjects: prev.length, curObjects: cur.length, wallS: wall() } });
   logger.info(`SSA changes ${day}: ${Object.entries(perKind).map(([k, n]) => `${k} ${n}`).join(', ')}`);
   return { day, status: 'written', prevObjects: prev.length, curObjects: cur.length, perKind, changes, ...(formation ? { formation } : {}), ...(formationError ? { formationError } : {}), wallS: wall() };
 }

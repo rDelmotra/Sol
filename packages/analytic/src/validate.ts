@@ -11,6 +11,7 @@
 // ============================================================
 
 import { FUTURE_HORIZON_DAYS, MAX_PROPAGATION_DAYS } from '@orbitwatch/orbital-core';
+import { SSA_PASS_CIRCLE_MAX_KM, SSA_PASS_CIRCLE_MIN_KM, SSA_PASS_MAX_WINDOW_DAYS, SSA_PASS_REGION_IDS } from '@orbitwatch/contracts';
 import type { AnalyticProgram, Universe } from './types.js';
 import { FIELD_REGISTRY, FN_SPECS, SORTABLE_KINDS, type FieldKind } from './schema.js';
 
@@ -147,6 +148,35 @@ function checkObserver(ctx: Ctx, obs: unknown, path: string): boolean {
   return false;
 }
 
+/** passedOver: region (named id or circle), from < to ISO instants, at most SSA_PASS_MAX_WINDOW_DAYS apart. */
+function checkPassedOver(ctx: Ctx, e: Record<string, unknown>, path: string): boolean {
+  const r = e.region;
+  if (typeof r === 'string') {
+    if (!(SSA_PASS_REGION_IDS as readonly string[]).includes(r)) {
+      issue(ctx, 'V-SHAPE', `${path}.region`, `unknown region '${r}' (known: ${SSA_PASS_REGION_IDS.join(', ')}); for any other place use a circle {latDeg, lonDeg, radiusKm}`);
+      return false;
+    }
+  } else if (isRecord(r)) {
+    const lat = r.latDeg, lon = r.lonDeg, km = r.radiusKm;
+    if (typeof lat !== 'number' || !Number.isFinite(lat) || lat < -90 || lat > 90) { issue(ctx, 'V-SHAPE', `${path}.region.latDeg`, 'latDeg must be a number in -90..90'); return false; }
+    if (typeof lon !== 'number' || !Number.isFinite(lon) || lon < -180 || lon > 180) { issue(ctx, 'V-SHAPE', `${path}.region.lonDeg`, 'lonDeg must be a number in -180..180'); return false; }
+    if (typeof km !== 'number' || !Number.isFinite(km) || km < SSA_PASS_CIRCLE_MIN_KM || km > SSA_PASS_CIRCLE_MAX_KM) {
+      issue(ctx, 'V-SHAPE', `${path}.region.radiusKm`, `radiusKm must be ${SSA_PASS_CIRCLE_MIN_KM}..${SSA_PASS_CIRCLE_MAX_KM}`); return false;
+    }
+    if (Math.abs(lat) + km / 111.19 > 85) { issue(ctx, 'V-SHAPE', `${path}.region`, 'a circle must stay within 85 degrees of latitude (no polar circles)'); return false; }
+  } else {
+    issue(ctx, 'V-SHAPE', `${path}.region`, 'region must be a named region id or {latDeg, lonDeg, radiusKm}');
+    return false;
+  }
+  const t = (k: 'from' | 'to'): number => (typeof e[k] === 'string' ? Date.parse(e[k] as string) : NaN);
+  const [a, b] = [t('from'), t('to')];
+  if (!Number.isFinite(a)) { issue(ctx, 'V-SHAPE', `${path}.from`, 'from must be an ISO-8601 instant'); return false; }
+  if (!Number.isFinite(b)) { issue(ctx, 'V-SHAPE', `${path}.to`, 'to must be an ISO-8601 instant'); return false; }
+  if (b <= a) { issue(ctx, 'V-SHAPE', path, 'passedOver: from must be before to'); return false; }
+  if (b - a > SSA_PASS_MAX_WINDOW_DAYS * 86_400_000) { issue(ctx, 'V-SHAPE', path, `passedOver: the window may be at most ${SSA_PASS_MAX_WINDOW_DAYS} days`); return false; }
+  return true;
+}
+
 /** Type-check an expression tree → its kind (null if any issue was recorded). */
 function checkExpr(ctx: Ctx, e: unknown, path: string, depth: number): FieldKind | null {
   if (depth > MAX_EXPR_DEPTH) {
@@ -179,6 +209,8 @@ function checkExpr(ctx: Ctx, e: unknown, path: string, depth: number): FieldKind
       if (!isInt(e.target)) return issue(ctx, 'V-SHAPE', path, 'distToKm.target must be a noradId int');
     } else if (e.fn === 'descendsFrom') {
       if (!isInt(e.ancestor)) return issue(ctx, 'V-SHAPE', path, 'descendsFrom.ancestor must be a noradId int');
+    } else if (e.fn === 'passedOver') {
+      if (!checkPassedOver(ctx, e as Record<string, unknown>, path)) return null;
     } else if (!checkObserver(ctx, (e as Record<string, unknown>).observer, `${path}.observer`)) {
       return null;
     }

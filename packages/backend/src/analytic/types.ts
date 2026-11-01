@@ -7,11 +7,11 @@
 // nothing outside providers/ + registration changes.
 // ============================================================
 
-import type { FieldValue, ResolvedObserver, Universe } from '@orbitwatch/analytic';
+import type { FieldValue, PassedOverExpr, ResolvedObserver, Universe } from '@orbitwatch/analytic';
 
 export type FnName =
   | 'elevationDeg' | 'rangeKm' | 'observerDark'
-  | 'visuallyVisible' | 'distToKm' | 'descendsFrom';
+  | 'visuallyVisible' | 'distToKm' | 'descendsFrom' | 'passedOver';
 
 export interface FieldProvider {
   /** 'catalog' | 'enrichment' | 'sgp4' | 'fixture:*' */
@@ -37,6 +37,14 @@ export interface FieldProvider {
   visuallyVisible?(noradId: number, obs: ResolvedObserver, tMs: number): boolean | null;
   distToKm?(noradId: number, targetNoradId: number, tMs: number): number | null;
   descendsFrom?(noradId: number, ancestorNoradId: number): boolean;
+  /** Ground-pass membership: synchronous lookup in what preparePassedOver loaded for this spec (null when not prepared). */
+  passedOver?(noradId: number, spec: PassedOverExpr, tMs: number): boolean | null;
+  /**
+   * Async step the ask route runs ONCE per program before the (synchronous) executor: load / compute what passedOver(spec) will
+   * look up. Memoized per canonical spec by the provider. Returns notes for the answer (days without data, a window cut at now).
+   * Throws when the data is unavailable.
+   */
+  preparePassedOver?(spec: PassedOverExpr, nowMs: number): Promise<string[]>;
 }
 
 /** The spine defines the universe's object list. Ordered, deduped noradIds. */

@@ -231,6 +231,8 @@ export const FN_SPECS: Record<string, FnSpec> = {
   visuallyVisible: { plane: 'live', returns: 'bool' },
   distToKm: { plane: 'live', returns: 'number' },
   descendsFrom: { plane: 'static', returns: 'bool' },
+  // History-derived (the backend's star-map coverage), a window of its own: never client-served, valid under both universes.
+  passedOver: { plane: 'catalog', returns: 'bool' },
 };
 
 /** Sortable kinds — sort.by must resolve to one of these. */

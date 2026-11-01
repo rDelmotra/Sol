@@ -2,6 +2,7 @@ import * as m0001 from './0001_init.js';
 import * as m0002 from './0002_ssa.js';
 import * as m0003 from './0003_omm_updates.js';
 import * as m0004 from './0004_encounter_manoeuvre.js';
+import * as m0005 from './0005_ssa_day_status.js';
 
 // ============================================================
 // Ordered migration list. The runner (migrate.ts) applies each entry not yet in
@@ -19,4 +20,5 @@ export const migrations: Migration[] = [
   { name: m0002.name, sql: m0002.sql },
   { name: m0003.name, sql: m0003.sql },
   { name: m0004.name, sql: m0004.sql },
+  { name: m0005.name, sql: m0005.sql },
 ];

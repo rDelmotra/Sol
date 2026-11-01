@@ -10,7 +10,7 @@
 // ============================================================
 
 import { FIELD_REGISTRY } from './schema.js';
-import type { AnalyticProgram, Expr, Stage, Agg } from './types.js';
+import type { AnalyticProgram, Expr, FnExpr, Stage, Agg } from './types.js';
 
 /** Fields the frontend live-source adapter returns null for (verified against
  *  live-source.ts's documented "known adapter gaps"). */
@@ -45,12 +45,15 @@ export const CLIENT_SERVED_FIELDS: ReadonlySet<string> = new Set(
 export interface ProgramRefs {
   fields: Set<string>;
   fns: Set<string>;
+  /** every fn expression node the program evaluates (a server that must prepare data for a fn, e.g. passedOver, reads its arguments here) */
+  fnExprs: FnExpr[];
 }
 
 /** Walk every stage/expr the program can reference a source field/fn through. */
 export function collectProgramRefs(program: AnalyticProgram): ProgramRefs {
   const fields = new Set<string>();
   const fns = new Set<string>();
+  const fnExprs: FnExpr[] = [];
   const derivedLocal = new Set<string>();
   // Once a program crosses aggregate/groupBy, the relation becomes a GROUP
   // relation: later stages (sort/filter/limit, output.columns) reference
@@ -66,7 +69,7 @@ export function collectProgramRefs(program: AnalyticProgram): ProgramRefs {
     if ('lit' in e) return;
     if ('fn' in e) {
       fns.add(e.fn);
-      if (e.fn === 'distToKm' || e.fn === 'descendsFrom') return;
+      fnExprs.push(e);
       return;
     }
     switch (e.op) {
@@ -167,7 +170,7 @@ export function collectProgramRefs(program: AnalyticProgram): ProgramRefs {
     for (const c of program.output.columns) if (!derivedLocal.has(c)) fields.add(c);
   }
 
-  return { fields, fns };
+  return { fields, fns, fnExprs };
 }
 
 /** true ⇢ the program must execute server-side. */

@@ -110,3 +110,68 @@ export interface SsaEventsResponse {
 export interface SsaErrorResponse {
   error: string;
 }
+
+// ── Ground passes over time (/api/ssa/passes, /api/ssa/regions) ─────────────
+/**
+ * Named regions the pass queries know. Only India is a careful outline; the others are rough polygons (`approximate: true`).
+ * The backend asserts that its region table has exactly these ids (tests/ssa/regions-contract.test.ts).
+ */
+export const SSA_PASS_REGION_IDS = ['india', 'usa_conus', 'europe', 'china', 'brazil', 'australia', 'japan'] as const;
+export type SsaPassRegionId = (typeof SSA_PASS_REGION_IDS)[number];
+/** Longest window a pass query accepts, in days (a longer one is a 400). */
+export const SSA_PASS_MAX_WINDOW_DAYS = 90;
+/** A circle region: radius limits in km. */
+export const SSA_PASS_CIRCLE_MIN_KM = 5;
+export const SSA_PASS_CIRCLE_MAX_KM = 3000;
+
+export interface SsaRegionInfo {
+  /** 'india' | ... for a named region; 'circle:<lat>,<lon>,<km>' for a circle */
+  id: string;
+  name: string;
+  kind: 'polygon' | 'circle';
+  /** true for the rough outlines (everything but India); circles are exact */
+  approximate: boolean;
+  latDeg?: number;
+  lonDeg?: number;
+  radiusKm?: number;
+}
+
+export interface SsaRegionsResponse {
+  regions: SsaRegionInfo[];
+  circle: { minRadiusKm: number; maxRadiusKm: number };
+  maxWindowDays: number;
+}
+
+export interface SsaPassInterval {
+  /** first and last sample inside the region, ISO-8601 UTC (1 s resolution) */
+  start: string;
+  end: string;
+}
+
+export interface SsaPassObject {
+  noradId: number;
+  name: string | null;
+  passes: SsaPassInterval[];
+  /** number of passes listed for this object */
+  count: number;
+}
+
+export interface SsaPassesResponse {
+  region: SsaRegionInfo;
+  from: string;
+  to: string;
+  /** true when `to` was in the future and was cut at the current time */
+  clippedToNow: boolean;
+  /** objects with at least one pass in the window (all of them) */
+  totalObjects: number;
+  /** the objects listed below, lowest NORAD id first, at most `limit` (their passes are complete) */
+  objects: SsaPassObject[];
+  /** UTC days of the window without coverage files: not searched (listed, never silently skipped) */
+  missingDays: string[];
+  /** days without coverage that were computed on the fly by brute force (`fill=1`, at most 2 days) */
+  filledDays: string[];
+  /** what "passed over" and the answer's accuracy mean */
+  guarantee: string;
+  definition: string;
+  timing: { wallS: number; days: number; candidateObjectDays: number; refinedObjectDays: number };
+}

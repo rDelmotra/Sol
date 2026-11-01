@@ -11,7 +11,7 @@
 // ============================================================
 
 export * from './types.js';
-export { DataSourceRegistry } from './registry.js';
+export { DataSourceRegistry, PrepareError } from './registry.js';
 export { createServerSource } from './server-source.js';
 
 import { DataSourceRegistry } from './registry.js';
@@ -20,6 +20,7 @@ import { createEnrichmentProvider } from './providers/enrichment.js';
 import { createSgp4Provider } from './providers/sgp4.js';
 import { createSpaceWeatherProvider } from './providers/space-weather.js';
 import { createSsaProvider } from './providers/ssa.js';
+import { createPassesProvider } from './providers/passes.js';
 import { getPool, isHistoryEnabled, isHistoryReady } from '../history/db/pool.js';
 
 let singleton: DataSourceRegistry | null = null;
@@ -60,12 +61,17 @@ export function getAnalyticRegistry(): DataSourceRegistry {
       isEnabled: isHistoryEnabled,
     });
 
+    // Ground passes over a past window ("who passed over India in the last 30 days"): the passedOver fn, served from the nightly
+    // star-map coverage files. Prepared once per program by the ask route, then a Set lookup per object.
+    const passes = createPassesProvider({ getDb: () => (isHistoryReady() ? getPool() : null) });
+
     registry.registerSpine('live', catalog);
     registry.register('live', catalog);
     registry.register('live', enrichment);
     registry.register('live', sgp4);
     registry.register('live', spaceWeather);
     registry.register('live', ssa);
+    registry.register('live', passes);
 
     registry.registerSpine('all', allSpine);
     registry.register('all', catalog);
@@ -73,6 +79,7 @@ export function getAnalyticRegistry(): DataSourceRegistry {
     registry.register('all', enrichment);
     registry.register('all', spaceWeather);
     registry.register('all', ssa);
+    registry.register('all', passes);
 
     singleton = registry;
     void ssa.refresh(); // warm in the background; a no-op until history is ready

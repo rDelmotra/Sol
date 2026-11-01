@@ -56,5 +56,9 @@ export function createServerSource(
       const owner = fnOwner.get('descendsFrom');
       return owner ? owner.descendsFrom!(spine[i], ancestorNoradId) : false;
     },
+    passedOver: (i, spec, tMs) => {
+      const owner = fnOwner.get('passedOver');
+      return owner ? (owner.passedOver!(spine[i], spec, tMs) ?? null) : null;
+    },
   };
 }

@@ -10,3 +10,8 @@ export type { NightlyOpts, NightlyResult } from './nightly.js';
 export type { Encounter, ScreenOpts, ScreenStats, SsaObject } from './types.js';
 export { deriveDay, deriveChanges, deriveFormations, loadDayCatalog, loadRecentJumps, writeDayEvents, previousUtcDay } from './events/index.js';
 export type { DeriveDayResult, ChangeObject } from './events/index.js';
+export { runJob, jobDeps } from './job.js';
+export { runCatchUp, findMissing, withJobLock } from './catchup.js';
+export { computeMissingDays, currentBatchTimeMs, markDone, markFailed } from './day-status.js';
+export { coverageEnabled, coverageDir } from './config.js';
+export { coverageJobPart, runCoverageDay } from './coverage/run.js';

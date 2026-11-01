@@ -26,6 +26,7 @@ import type {
   Stage,
   SweepStage,
   ObserverRef,
+  PassedOverExpr,
   Universe,
 } from './types.js';
 import {
@@ -60,6 +61,11 @@ export interface AnalyticDataSource {
   visuallyVisible(i: number, obs: ResolvedObserver, tMs: number): boolean | null;
   distToKm(i: number, targetNoradId: number, tMs: number): number | null;
   descendsFrom(i: number, ancestorNoradId: number): boolean;
+  /**
+   * Ground-pass membership (see PassedOverExpr). Optional: only the backend serves it (the browser's programNeedsServer routes a program
+   * that uses it to the server). null = not prepared / no data for this object.
+   */
+  passedOver?(i: number, spec: PassedOverExpr, tMs: number): boolean | null;
 }
 
 export interface ExecuteOptions {
@@ -761,6 +767,7 @@ class Runner {
         case 'visuallyVisible': return this.source.visuallyVisible(i, this.resolveObserver(e.observer), tMs);
         case 'distToKm': return this.source.distToKm(i, e.target, tMs);
         case 'descendsFrom': return this.source.descendsFrom(i, e.ancestor);
+        case 'passedOver': return this.source.passedOver ? this.source.passedOver(i, e, tMs) : null;
       }
     }
     if ('field' in e) return this.getVal(rel, pos, e.field, tMs, true);

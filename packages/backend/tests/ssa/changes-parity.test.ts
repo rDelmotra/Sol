@@ -91,7 +91,8 @@ for (const day of DAYS) {
       const dropped = new Set(['satcat', 'live']);
       let nCompared = 0;
       for (const kind of kinds) {
-        const a = dump.filter((r) => r.kind === kind), b = mineAll.filter((r) => r.kind === kind);
+        const a: typeof dump = dump.filter((r) => r.kind === kind);
+        const b = mineAll.filter((r) => r.kind === kind);
         assert.equal(b.length, a.length, `${kind}: ${b.length} vs ${a.length}`);
         const key = (r: { subjects: number[] }) => r.subjects.join('-');
         const bm = new Map(b.map((r) => [key(r), r]));

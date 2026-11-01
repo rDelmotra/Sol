@@ -28,6 +28,7 @@ import {
   FUTURE_CAP_DAYS,
   type Universe,
 } from '@orbitwatch/analytic';
+import { SSA_PASS_REGION_IDS, SSA_PASS_MAX_WINDOW_DAYS, SSA_PASS_CIRCLE_MAX_KM, SSA_PASS_CIRCLE_MIN_KM } from '@orbitwatch/contracts';
 import { getAnalyticRegistry } from '../analytic/index.js';
 import type { RegistrySnapshot } from '../analytic/types.js';
 
@@ -146,6 +147,7 @@ const FN_DOCS: Record<string, string> = {
   visuallyVisible: `{fn:'visuallyVisible', observer} → true if naked-eye visible now (elev>10°, range≤2000 km, observer dark, object sunlit)`,
   distToKm: `{fn:'distToKm', target: <noradId>} → distance to another object, km`,
   descendsFrom: `{fn:'descendsFrom', ancestor: <noradId>} → true if the object separated from this ancestor (GCAT separation tree)`,
+  passedOver: `{fn:'passedOver', region: <id>|{latDeg,lonDeg,radiusKm}, from:'<ISO>', to:'<ISO>'} → true if the object passed over the region at any time in [from, to] (its sub-satellite point was inside it; PAST windows only, at most ${SSA_PASS_MAX_WINDOW_DAYS} days)`,
 };
 
 function renderFnCatalog(): string {
@@ -157,7 +159,9 @@ function renderFnCatalog(): string {
 ${lines.join('\n')}
 
 observer is 'user' (the app user's stored location) or {latDeg, lonDeg, altKm?}.
-Prefer 'user' unless the question names a place with known coordinates.`;
+Prefer 'user' unless the question names a place with known coordinates.
+
+passedOver regions: a named region id — ${SSA_PASS_REGION_IDS.map((r) => `"${r}"`).join(', ')} (only "india" has a careful outline; the others are rough polygons: say so in "interpretation") — or a circle {latDeg, lonDeg, radiusKm} (radiusKm ${SSA_PASS_CIRCLE_MIN_KM}..${SSA_PASS_CIRCLE_MAX_KM}, centre not within 5° of a pole). Any other place or country (Paris, Germany, the Pacific): use a circle around its coordinates with a radius that fits the question ("around Paris, 500 km" = radiusKm 500; a city with no radius given = 100 km, and say so). from/to are ISO-8601 instants computed from the current-time line of the question, to ≤ now.`;
 }
 
 // ── §4 Grammar cheat-sheet (hand-written) ─────────────────────────────────────
@@ -257,8 +261,9 @@ const HARD_RULES = `HARD RULES:
 11. "closest to <object>" / "distance from <object>" → derive {"fn":"distToKm","target":<noradId>}
    (distToKm is a FUNCTION expression, never an "op"; rangeKm is observer-to-object only).
 12. Named geographic regions ("over the Pacific/Europe/Asia/America") → refuse NOT_DERIVABLE.
-   There are no region polygons; do NOT invent lat/lon bounding boxes for named regions
-   (dateline wrap makes them silently wrong). Offer a latitude band or an observer-based
+   There are no region polygons for the CURRENT sky; do NOT invent lat/lon bounding boxes for named regions
+   (dateline wrap makes them silently wrong). EXCEPTION: questions about PASSES over a region in a PAST window
+   are answered by passedOver (rule 18), which has its own region table. Offer a latitude band or an observer-based
    question as the alternative in the reason. BUT explicit numeric coordinates ARE directly
    filterable: "over longitude 0" / "south of the equator" / "above 45°N" → filter on
    lonDeg / latDeg (e.g. abs(lonDeg) < 1 for "over longitude 0"). Only NAMED places refuse.
@@ -276,7 +281,8 @@ const HARD_RULES = `HARD RULES:
    the interpretation. Do NOT dress these up for other questions: a trend, a rate over
    months, a fuel estimate, "most unstable orbits" (element variance over a window) or the
    decay-rate-as-history trick all stay NEEDS_HISTORY; the ONLY live decay fast-path is the
-   CURRENT decay rate (rule 3). Never use meanMotionDdot as an altitude derivative. Encounter
+   CURRENT decay rate (rule 3). Never use meanMotionDdot as an altitude derivative. Ground passes
+   over a region in the past (rule 18) are NOT NEEDS_HISTORY either. Encounter
    fields count predicted close approaches (miss <= 5 km); they say nothing about collision
    risk beyond maxEncounterPc, and a high count is not a prediction that anything will collide.
 14. "this year" phrasing OVERRIDES rule 13 — it is answerable from launchYear, not history:
@@ -293,7 +299,8 @@ const HARD_RULES = `HARD RULES:
 15. NOT expressible in v1 → refuse NOT_DERIVABLE: all-pairs proximity ("which satellites
    are close to each other" — distToKm needs ONE fixed target). Pass prediction over a
    place ("which satellites pass over <city> in the next hour") IS expressible now — see
-   the "sweep" stage and its worked examples below; do NOT refuse it.
+   the "sweep" stage and its worked examples below; do NOT refuse it. Passes in the PAST over a
+   region use passedOver (rule 18).
 16. "what else went up on the same launch as <object>" → filter launchTag equality with that
    launch's COSPAR-style tag (e.g. NOAA-18 → "2005-018"), output {"shape":"ids"} — never an
    unbounded table. Only use a tag you are confident of; otherwise refuse NOT_DERIVABLE and
@@ -303,7 +310,24 @@ const HARD_RULES = `HARD RULES:
    observer argument for that place; never substitute coordinates you recall yourself for a
    place named on that line. If the line notes a name "also matches" another place, briefly
    name the alternative in "interpretation" (the coordinates given ARE the resolved pick —
-   already the higher-population match, nothing more to decide).`;
+   already the higher-population match, nothing more to decide).
+
+18. "Who/which satellites passed over <region> in the last <N days/week/month>" / "over <place> yesterday" →
+   filter {"fn":"passedOver","region":...,"from":"<ISO>","to":"<ISO>"} (output "ids", or a table with sort+limit when
+   the question asks for a count or a ranking). These are NOT NEEDS_HISTORY and NOT NOT_DERIVABLE. Rules:
+   - "passed over" = the object's sub-satellite point was inside the region at some instant of the window, at any height
+     (low orbit or geostationary alike). It is not "visible from" and not "within radar range": say so in "interpretation".
+   - The window is at most ${SSA_PASS_MAX_WINDOW_DAYS} days and lies in the past (to ≤ now). "Last N days" = [now − N d, now];
+     "yesterday" = the previous UTC day [00:00, 24:00); "last week" = [now − 7 d, now]. Longer than ${SSA_PASS_MAX_WINDOW_DAYS} days →
+     refuse NEEDS_HISTORY and offer the ${SSA_PASS_MAX_WINDOW_DAYS}-day window. The FUTURE ("will pass over ... tomorrow") is a sweep, not passedOver.
+   - Region: a named id from the passedOver list, else a circle around the place (use "(resolved places: ...)" coordinates
+     verbatim when given). A country or sea that is not a named id → refuse NOT_DERIVABLE and offer a circle, unless a point
+     and radius were given or can be taken from the question.
+   - Combine with other filters through "and" (constellation: {"op":"in","field":"program","values":["starlink"]}).
+   - The answer is exact at the star-map's 10-second resolution; a visit shorter than that is found only by a finer check
+     (resolution 1 s). In "interpretation" state the region, the window and that guarantee, and for a named region other than
+     "india" that its outline is approximate. Days for which no coverage exists are listed by the server beside the answer.`;
+
 
 // ── §6 Few-shot examples (hand-picked constants) ──────────────────────────────
 
@@ -631,6 +655,57 @@ const FEW_SHOTS: FewShot[] = [
         code: 'NEEDS_HISTORY',
         reason:
           "A year-long trend needs the detected-event history aggregated over time; only recent events (manoeuvre count over the last 30 days, last manoeuvre time) are queryable. I can count Starlinks that manoeuvred in the last 30 days (manoeuvreCount30d) instead.",
+      },
+    },
+  },
+  {
+    question: 'Which satellites passed over India in the last 30 days?',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          "'Passed over India' = the object's sub-satellite point (latitude/longitude directly beneath it) was inside India's outline at some instant between 2026-10-02T12:00Z and now (30 days), at any altitude, so low-orbit, medium-orbit and geostationary objects all count. This is not visibility from the ground. The answer is exact at the star-map's 10-second resolution; a shorter visit is only found by a finer check (1 s). India is a careful outline.",
+        pipeline: [
+          { op: 'filter', where: { fn: 'passedOver', region: 'india', from: '2026-10-02T12:00:00.000Z', to: '2026-11-01T12:00:00.000Z' } },
+        ],
+        output: { shape: 'ids' },
+      },
+    },
+  },
+  {
+    question: 'Satellites that passed over Japan last week',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          "'Passed over Japan' = the sub-satellite point was inside Japan's outline at some instant in the last 7 days (2026-10-25T12:00Z to now), at any altitude. The Japan outline is approximate (a rough polygon, not a border survey). Exact at the 10-second resolution of the stored coverage; a shorter visit is only found by a finer check (1 s).",
+        pipeline: [
+          { op: 'filter', where: { fn: 'passedOver', region: 'japan', from: '2026-10-25T12:00:00.000Z', to: '2026-11-01T12:00:00.000Z' } },
+        ],
+        output: { shape: 'ids' },
+      },
+    },
+  },
+  {
+    question: 'Starlinks over a 500 km circle around Paris yesterday',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          "Starlink = program 'starlink'. A circle of 500 km radius around Paris (48.8566, 2.3522). 'Passed over' = the sub-satellite point was inside the circle at some instant of yesterday (UTC, 2026-10-31T00:00Z to 2026-11-01T00:00Z). Exact at the 10-second resolution of the stored coverage; a shorter visit is only found by a finer check (1 s).",
+        pipeline: [
+          {
+            op: 'filter',
+            where: {
+              op: 'and',
+              args: [
+                { op: 'in', field: 'program', values: ['starlink'] },
+                { fn: 'passedOver', region: { latDeg: 48.8566, lonDeg: 2.3522, radiusKm: 500 }, from: '2026-10-31T00:00:00.000Z', to: '2026-11-01T00:00:00.000Z' },
+              ],
+            },
+          },
+        ],
+        output: { shape: 'ids' },
       },
     },
   },

@@ -117,7 +117,21 @@ export type FnExpr =
   | { fn: 'observerDark'; observer: ObserverRef }
   | { fn: 'visuallyVisible'; observer: ObserverRef }
   | { fn: 'distToKm'; target: number }
-  | { fn: 'descendsFrom'; ancestor: number };
+  | { fn: 'descendsFrom'; ancestor: number }
+  | PassedOverExpr;
+
+/**
+ * Ground-pass membership over a past window: true if the object's sub-satellite point was inside the region at any time in [from, to].
+ * Served only by the backend (the nightly star-map coverage files). `region` is a named region id (SSA_PASS_REGION_IDS) or a circle;
+ * `from` / `to` are ISO-8601 UTC instants, at most SSA_PASS_MAX_WINDOW_DAYS apart. The window is a literal of the expression, not the
+ * program's time binding: "last 30 days" is the two ISO instants computed from the current-time line.
+ */
+export interface PassedOverExpr {
+  fn: 'passedOver';
+  region: string | { latDeg: number; lonDeg: number; radiusKm: number };
+  from: string;
+  to: string;
+}
 
 export type Expr =
   | { field: string }
