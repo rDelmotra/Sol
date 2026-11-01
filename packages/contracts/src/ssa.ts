@@ -22,6 +22,13 @@ export interface EncounterObject {
   noradId: number;
   name: string | null;
   objectType: string | null;
+  /**
+   * Time (ISO) of this object's latest observed orbit change (an `elements.jump` event: the new element set differs from the
+   * previous one propagated forward by more than ~16 km and 1 km in semi-major axis) in the 7 days before the screening run;
+   * null when none was seen. This is an observation. It is not `EncounterSummary.manoeuvrable`, which is a capability
+   * guess from the object's family (Starlink class and the like) and says nothing about what the object did recently.
+   */
+  lastManoeuvreAt: string | null;
 }
 
 export interface EncounterSummary {
@@ -40,7 +47,10 @@ export interface EncounterSummary {
   /** Upper-bound Pc carried alongside for audit. */
   pcMax: number | null;
   hardBodyRadiusKm: number | null;
-  /** True when a manoeuvring object (e.g. Starlink class) is involved; its forecast churns most. */
+  /**
+   * Family-based capability: true when a constellation that manoeuvres routinely (Starlink class and the like) is involved, so the
+   * forecast churns most. Static per object family; for what an object actually did see `EncounterObject.lastManoeuvreAt`.
+   */
   manoeuvrable: boolean;
   label: string | null;
   /** Batch time of the first run that reported this encounter, ISO. */

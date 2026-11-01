@@ -79,3 +79,37 @@ export function formatVisualSeparation(km: number): string {
 export function formatObjectLabel(o: { noradId: number; name: string | null }): string {
   return o.name ? `${o.name} (${o.noradId})` : String(o.noradId);
 }
+
+/**
+ * "manoeuvred 2 d ago" for the time (ISO) of an object's latest observed orbit change, relative to `nowMs`. Plain, neutral wording.
+ * Null when there is none, the time is unparseable, or `nowMs` is earlier than the change (browsing the sim clock backwards).
+ */
+export function formatManoeuvredAgo(iso: string | null | undefined, nowMs: number): string | null {
+  if (!iso) return null;
+  const ms = Date.parse(iso);
+  const dt = nowMs - ms;
+  if (!Number.isFinite(dt) || dt < 0) return null;
+  const h = Math.floor(dt / 3_600_000);
+  if (h >= 24) return `manoeuvred ${Math.floor(h / 24)} d ago`;
+  if (h >= 1) return `manoeuvred ${h} h ago`;
+  return 'manoeuvred < 1 h ago';
+}
+
+/**
+ * The quiet tag under an encounter row, seen from the focused object `noradId`. The row already names the other object, so a
+ * change by the other object reads "manoeuvred 2 d ago"; one by the focused object itself says so; both say which is which.
+ * Null when neither has a recent orbit change on record.
+ */
+export function formatEncounterManoeuvre(
+  e: { a: { noradId: number; lastManoeuvreAt?: string | null }; b: { noradId: number; lastManoeuvreAt?: string | null } },
+  noradId: number,
+  nowMs: number,
+): string | null {
+  const self = e.a.noradId === noradId ? e.a : e.b;
+  const other = self === e.a ? e.b : e.a;
+  const s = formatManoeuvredAgo(self.lastManoeuvreAt, nowMs);
+  const o = formatManoeuvredAgo(other.lastManoeuvreAt, nowMs);
+  if (s && o) return `this object ${s} · other ${o}`;
+  if (s) return `this object ${s}`;
+  return o;
+}

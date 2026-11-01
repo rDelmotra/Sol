@@ -89,3 +89,27 @@ test('omm_updates: insert is idempotent and the catalog loader takes the latest 
     await db.drop();
   }
 });
+
+test('writer: manoeuvre_a / manoeuvre_b are stored on new rows and refreshed on matched ones', { skip }, async () => {
+  const db = await createTestDb();
+  try {
+    const tca = T0 + 20 * 3_600_000, m1 = T0 - 2 * 86_400_000;
+    await writeRun(db.pool, { batchTimeMs: T0, elementCutoffMs: null, objects: 2, durationS: 1 }, [
+      enc(1, 2, tca, { manoeuvreAMs: m1, manoeuvreBMs: null }),
+      enc(3, 4, tca), // not looked up: stored as NULL
+      enc(5, 6, tca, { manoeuvreAMs: null, manoeuvreBMs: m1 + 1000 }),
+    ]);
+    const q = async () => (await db.pool.query(`SELECT norad_a, extract(epoch FROM manoeuvre_a) * 1000 AS ma, extract(epoch FROM manoeuvre_b) * 1000 AS mb FROM conjunction ORDER BY norad_a`)).rows.map((r) => [r.norad_a, r.ma === null ? null : Number(r.ma), r.mb === null ? null : Number(r.mb)]);
+    assert.deepEqual(await q(), [[1, m1, null], [3, null, null], [5, null, m1 + 1000]]);
+    // the next run re-predicts (1,2) after object 2 also changed orbit, and (5,6) with no recent change on record any more
+    const T1 = T0 + 24 * 3_600_000, m2 = T0 + 3_600_000;
+    const w = await writeRun(db.pool, { batchTimeMs: T1, elementCutoffMs: null, objects: 2, durationS: 1 }, [
+      enc(1, 2, tca + 1000, { manoeuvreAMs: m1, manoeuvreBMs: m2 }),
+      enc(5, 6, tca + 1000, { manoeuvreAMs: null, manoeuvreBMs: null }),
+    ]);
+    assert.equal(w.updated, 2);
+    assert.deepEqual(await q(), [[1, m1, m2], [3, null, null], [5, null, null]]);
+  } finally {
+    await db.drop();
+  }
+});

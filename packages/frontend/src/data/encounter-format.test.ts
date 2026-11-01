@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   formatCountdown,
+  formatEncounterManoeuvre,
+  formatManoeuvredAgo,
   formatMiss,
   formatObjectLabel,
   formatPc,
@@ -94,5 +96,35 @@ describe('labels', () => {
   it('object label', () => {
     assert.equal(formatObjectLabel({ noradId: 25544, name: 'ISS (ZARYA)' }), 'ISS (ZARYA) (25544)');
     assert.equal(formatObjectLabel({ noradId: 99999, name: null }), '99999');
+  });
+});
+
+describe('formatManoeuvredAgo', () => {
+  const ago = (s: number) => new Date(T0 - s * 1000).toISOString();
+  it('counts days, hours, then says under an hour', () => {
+    assert.equal(formatManoeuvredAgo(ago(2 * 86_400 + 3600), T0), 'manoeuvred 2 d ago');
+    assert.equal(formatManoeuvredAgo(ago(86_400), T0), 'manoeuvred 1 d ago');
+    assert.equal(formatManoeuvredAgo(ago(5 * 3600 + 59 * 60), T0), 'manoeuvred 5 h ago');
+    assert.equal(formatManoeuvredAgo(ago(90), T0), 'manoeuvred < 1 h ago');
+  });
+  it('is null when there is no change on record, the time is bad, or the clock is before it', () => {
+    assert.equal(formatManoeuvredAgo(null, T0), null);
+    assert.equal(formatManoeuvredAgo(undefined, T0), null);
+    assert.equal(formatManoeuvredAgo('soon', T0), null);
+    assert.equal(formatManoeuvredAgo(new Date(T0 + 1000).toISOString(), T0), null);
+  });
+});
+
+describe('formatEncounterManoeuvre', () => {
+  const t2d = new Date(T0 - 2 * 86_400_000).toISOString();
+  const t1d = new Date(T0 - 86_400_000).toISOString();
+  const enc = (a: string | null, b: string | null) => ({ a: { noradId: 10, lastManoeuvreAt: a }, b: { noradId: 20, lastManoeuvreAt: b } });
+  it('names the other object implicitly and the focused one explicitly', () => {
+    assert.equal(formatEncounterManoeuvre(enc(null, t2d), 10, T0), 'manoeuvred 2 d ago');
+    assert.equal(formatEncounterManoeuvre(enc(null, t2d), 20, T0), 'this object manoeuvred 2 d ago');
+    assert.equal(formatEncounterManoeuvre(enc(t1d, t2d), 10, T0), 'this object manoeuvred 1 d ago · other manoeuvred 2 d ago');
+  });
+  it('is null without a change on record', () => {
+    assert.equal(formatEncounterManoeuvre(enc(null, null), 10, T0), null);
   });
 });

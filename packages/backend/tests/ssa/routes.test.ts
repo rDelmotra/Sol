@@ -112,7 +112,8 @@ describe('ssa routes: database-backed', { skip: !DATABASE_URL && 'DATABASE_URL n
         objects INT, encounters INT, duration_s REAL, code_version TEXT, created_at TIMESTAMPTZ DEFAULT now());
       CREATE TABLE conjunction (id BIGSERIAL PRIMARY KEY, norad_a INT, norad_b INT, tca TIMESTAMPTZ, miss_km FLOAT8,
         vrel_kms FLOAT8, ric_km FLOAT8[3], volume TEXT, pc FLOAT8, pc_max FLOAT8, hbr_km FLOAT8,
-        manoeuvrable BOOLEAN, label TEXT, first_run BIGINT, last_run BIGINT, n_updates INT);
+        manoeuvrable BOOLEAN, label TEXT, first_run BIGINT, last_run BIGINT, n_updates INT,
+        manoeuvre_a TIMESTAMPTZ, manoeuvre_b TIMESTAMPTZ);
       CREATE TABLE conjunction_update (conjunction_id BIGINT, run_id BIGINT, tca TIMESTAMPTZ, miss_km FLOAT8,
         pc FLOAT8, pc_max FLOAT8, ric_km FLOAT8[3], PRIMARY KEY (conjunction_id, run_id));
       CREATE TABLE ssa_event (id BIGSERIAL PRIMARY KEY, day DATE, kind TEXT, subjects INT[], t_start TIMESTAMPTZ,
@@ -140,6 +141,8 @@ describe('ssa routes: database-backed', { skip: !DATABASE_URL && 'DATABASE_URL n
     };
     await ins('iss', 25544, 48274, h(2), 1.2, 1e-5, false, r1, r2, 2);
     await ins('deb', 44713, 44714, h(10), 0.3, 1e-3, true, r2, r2, 1);
+    // the Starlink-class object 44713 changed orbit 2 days before the run; the debris did not
+    await pool.query(`UPDATE conjunction SET manoeuvre_a = $2 WHERE id = $1`, [ids.deb, h(-50)]);
     await ins('far', 100, 300, h(30), 5, null, false, r2, r2, 1);
     await ins('stale', 25544, 300, h(5), 0.5, 1e-2, false, r1, r1, 1); // not in the latest run
     await ins('wide', 25544, 600, h(8), 42, 1e-9, false, r2, r2, 1); // a wide box pass: outside the 5 km default
@@ -190,7 +193,7 @@ describe('ssa routes: database-backed', { skip: !DATABASE_URL && 'DATABASE_URL n
     assert.equal(body.count, 3);
     assert.deepEqual(body.encounters.map((e) => e.id), [ids.iss, ids.deb, ids.far]);
     const iss = body.encounters[0]!;
-    assert.deepEqual(iss.a, { noradId: 25544, name: 'ISS (ZARYA)', objectType: null });
+    assert.deepEqual(iss.a, { noradId: 25544, name: 'ISS (ZARYA)', objectType: null, lastManoeuvreAt: null });
     assert.equal(iss.b.name, 'STARLINK-2305');
     assert.deepEqual(iss.ricKm, [0.1, -0.9, 0.4]);
     assert.equal(iss.missKm, 1.2);
@@ -204,6 +207,10 @@ describe('ssa routes: database-backed', { skip: !DATABASE_URL && 'DATABASE_URL n
     assert.ok(iss.firstSeen && iss.firstSeen < body.run.batchTime);
     assert.equal(body.encounters[1]!.b.objectType, 'DEBRIS');
     assert.equal(body.encounters[1]!.manoeuvrable, true);
+    // observed orbit change (lastManoeuvreAt) is separate from the family-based capability flag (manoeuvrable)
+    assert.equal(body.encounters[1]!.a.lastManoeuvreAt, new Date(now - 50 * 3_600_000).toISOString());
+    assert.equal(body.encounters[1]!.b.lastManoeuvreAt, null);
+    assert.deepEqual(body.encounters.map((e) => e.a.lastManoeuvreAt !== null || e.b.lastManoeuvreAt !== null), [false, true, false]);
     assert.equal(body.encounters[2]!.b.objectType, 'ROCKET BODY');
     assert.equal(body.encounters[2]!.a.name, null);
     assert.equal(body.encounters[2]!.pc, null);

@@ -91,7 +91,7 @@ export async function screenEncounters(catalog: SsaObject[], batchTimeMs: number
 
   const stats = (x: Partial<ScreenStats> = {}): ScreenStats => ({
     objectsIn: catalog.length, objectsScreened: N, noEarlierSet: sel.noEarlierSet, fenced, unusable, garbage, identicalGroups: groups.length,
-    objectsWithoutPartner: 0, candidateWindows: 0, formationPairs: 0, runs: 0, minima: 0, acceptedMinima: 0, evalFailed: 0, duplicatesDropped: 0,
+    objectsWithoutPartner: 0, candidateWindows: 0, formationPairs: 0, formationList: [], runs: 0, minima: 0, acceptedMinima: 0, evalFailed: 0, duplicatesDropped: 0,
     sgp4Calls: loadCalls, elementCutoffMs, hours, batchTimeMs: t0, durationS: secs(T0), maxRssMB: Math.round(process.resourceUsage().maxRSS / 1024), ...x,
   });
   if (N < 2) return { encounters: [], stats: stats() };
@@ -170,7 +170,13 @@ export async function screenEncounters(catalog: SsaObject[], batchTimeMs: number
     for (let p = 0; p < fp.length; p += 400 * 2) ftasks.push({ type: 'formFrac', pairs: fp.subarray(p, Math.min(fp.length, p + 400 * 2)), t0Ms: t0, t1Ms: t1, stepMs: 60_000, km: FORM_KM, stride: formStride });
     const fouts = await pool.map<Float64Array>(ftasks);
     const formation = new Set<number>();
-    for (const f of fouts) for (let k = 0; k < f.length; k += 4) if (f[k + 2]! > FORM_FRAC) formation.add(f[k]! * N + f[k + 1]!);
+    const formationList: ScreenStats['formationList'] = [];
+    for (const f of fouts) for (let k = 0; k < f.length; k += 4) if (f[k + 2]! > FORM_FRAC) {
+      formation.add(f[k]! * N + f[k + 1]!);
+      const na = objs[f[k]!]!.noradId, nb = objs[f[k + 1]!]!.noradId;
+      formationList.push([Math.min(na, nb), Math.max(na, nb), f[k + 2]!, f[k + 3]!]);
+    }
+    formationList.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
     sgp4Total += await pool.calls();
 
     // ---- 5. candidate windows -> runs -> refinement ----
@@ -224,7 +230,8 @@ export async function screenEncounters(catalog: SsaObject[], batchTimeMs: number
       if (l && l.noradA === e.noradA && l.noradB === e.noradB && Math.abs(l.tcaMs - e.tcaMs) < 10_000) { dup++; continue; }
       encounters.push(e);
     }
-    return { encounters, stats: stats({ objectsWithoutPartner: removed, candidateWindows: nWindows, formationPairs: formation.size, runs: nRuns, minima, acceptedMinima: accepted, evalFailed: evalFail, duplicatesDropped: dup, sgp4Calls: sgp4Total }) };
+    if (opts.recentJumps) for (const e of encounters) { e.manoeuvreAMs = opts.recentJumps.get(e.noradA) ?? null; e.manoeuvreBMs = opts.recentJumps.get(e.noradB) ?? null; }
+    return { encounters, stats: stats({ objectsWithoutPartner: removed, candidateWindows: nWindows, formationPairs: formation.size, formationList, runs: nRuns, minima, acceptedMinima: accepted, evalFailed: evalFail, duplicatesDropped: dup, sgp4Calls: sgp4Total }) };
   } finally {
     await pool.close();
   }

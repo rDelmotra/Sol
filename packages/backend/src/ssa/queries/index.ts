@@ -48,9 +48,9 @@ function objectTypeFromName(name: string | null): string | null {
   return null;
 }
 
-function toObject(noradId: number, name: string | null): EncounterObject {
+function toObject(noradId: number, name: string | null, lastManoeuvreAt: Date | string | null | undefined): EncounterObject {
   const n = name && name.length > 0 ? name : null;
-  return { noradId, name: n, objectType: objectTypeFromName(n) };
+  return { noradId, name: n, objectType: objectTypeFromName(n), lastManoeuvreAt: iso(lastManoeuvreAt) };
 }
 
 function ric(v: unknown): [number, number, number] | null {
@@ -79,7 +79,7 @@ export async function getLatestRun(db: Queryable): Promise<SsaRunInfo | null> {
 
 const CONJ_SELECT = `
   SELECT c.id, c.norad_a, c.norad_b, c.tca, c.miss_km, c.vrel_kms, c.ric_km, c.volume,
-         c.pc, c.pc_max, c.hbr_km, c.manoeuvrable, c.label, c.n_updates,
+         c.pc, c.pc_max, c.hbr_km, c.manoeuvrable, c.label, c.n_updates, c.manoeuvre_a, c.manoeuvre_b,
          da.object_name AS name_a, db.object_name AS name_b, fr.batch_time AS first_seen
     FROM conjunction c
     LEFT JOIN object_dim da ON da.norad_id = c.norad_a
@@ -89,8 +89,8 @@ const CONJ_SELECT = `
 function toSummary(r: any): EncounterSummary {
   return {
     id: Number(r.id),
-    a: toObject(Number(r.norad_a), r.name_a),
-    b: toObject(Number(r.norad_b), r.name_b),
+    a: toObject(Number(r.norad_a), r.name_a, r.manoeuvre_a),
+    b: toObject(Number(r.norad_b), r.name_b, r.manoeuvre_b),
     tca: iso(r.tca)!,
     missKm: Number(r.miss_km),
     relSpeedKms: Number(r.vrel_kms),

@@ -7,6 +7,7 @@ import { GlassPane } from '../primitives/GlassPane';
 import { PaneBody } from '../primitives/PaneBody';
 import { PaneHeader } from '../primitives/PaneHeader';
 import type { PaneSlotProps } from '../primitives/PaneStack';
+import { ManoeuvreTag } from './ManoeuvreTag';
 
 const MONO = 'var(--font-hud-mono)';
 const MAX_LIST_H = 232;
@@ -20,6 +21,12 @@ export function otherObject(e: EncounterSummary, noradId: number) {
 function Countdown({ tca }: { tca: string }) {
   const simTimeMs = useStore((s) => s.simTimeMs);
   return <span>{formatCountdown(Date.parse(tca), simTimeMs)}</span>;
+}
+
+/** Live clock leaf, like Countdown: the "ago" follows the sim clock without re-rendering the list. */
+function LiveManoeuvreTag({ e, noradId }: { e: EncounterSummary; noradId: number }) {
+  const simTimeMs = useStore((s) => s.simTimeMs);
+  return <ManoeuvreTag e={e} noradId={noradId} nowMs={simTimeMs} />;
 }
 
 function EncounterRow({ e, noradId, selected }: { e: EncounterSummary; noradId: number; selected: boolean }) {
@@ -66,6 +73,7 @@ function EncounterRow({ e, noradId, selected }: { e: EncounterSummary; noradId: 
           {e.manoeuvrable && <span style={{ marginLeft: 6, color: 'var(--hud-text-faint)' }}>manoeuvrable</span>}
         </span>
       </div>
+      <LiveManoeuvreTag e={e} noradId={noradId} />
     </button>
   );
 }

@@ -16,8 +16,8 @@ export function runFixture(id = 1): SsaRunInfo {
 export function encounterFixture(id: number, aNorad: number, bNorad: number, tca: string, over: Partial<EncounterSummary> = {}): EncounterSummary {
   return {
     id,
-    a: { noradId: aNorad, name: `OBJ-${aNorad}`, objectType: 'PAYLOAD' },
-    b: { noradId: bNorad, name: `OBJ-${bNorad}`, objectType: 'DEBRIS' },
+    a: { noradId: aNorad, name: `OBJ-${aNorad}`, objectType: 'PAYLOAD', lastManoeuvreAt: null },
+    b: { noradId: bNorad, name: `OBJ-${bNorad}`, objectType: 'DEBRIS', lastManoeuvreAt: null },
     tca,
     missKm: 0.412,
     relSpeedKms: 11.2,

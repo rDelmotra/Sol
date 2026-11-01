@@ -51,6 +51,9 @@ export interface Encounter {
   /** combined error ellipse in the encounter plane: 1-sigma major / minor, km (with floor) */
   sigmaMajKm: number;
   sigmaMinKm: number;
+  /** time (UTC ms) of the latest observed orbit change (elements.jump) of object a / b in the 7 days before the batch; null = none, absent = not looked up */
+  manoeuvreAMs?: number | null;
+  manoeuvreBMs?: number | null;
 }
 
 export interface ScreenStats {
@@ -66,6 +69,8 @@ export interface ScreenStats {
   objectsWithoutPartner: number;
   candidateWindows: number;
   formationPairs: number;
+  /** the formation pairs themselves: [noradA, noradB, share of the window within 50 km, closest distance km] (empty when none) */
+  formationList: Array<[number, number, number, number]>;
   runs: number;
   minima: number;
   acceptedMinima: number;
@@ -88,4 +93,6 @@ export interface ScreenOpts {
   workers?: number;
   /** path of a full uncertainty model.json (per-object scales); default: SSA_UNCERTAINTY_MODEL, else the embedded class-level model */
   modelPath?: string;
+  /** NORAD id -> time (UTC ms) of the object's latest elements.jump before the batch (the spike's jumpA / jumpB flags); copied onto the encounters */
+  recentJumps?: ReadonlyMap<number, number>;
 }

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { migrations } from '../../src/history/db/migrations/index.js';
 import { createTestDb, DB_URL } from './db-helper.js';
 
-test('migration list: 0002_ssa and 0003_omm_updates are appended after 0001_init, no tier column anywhere', () => {
-  assert.deepEqual(migrations.map((m) => m.name).slice(0, 3), ['0001_init', '0002_ssa', '0003_omm_updates']);
+test('migration list: 0002_ssa, 0003_omm_updates and 0004_encounter_manoeuvre are appended after 0001_init, no tier column anywhere', () => {
+  assert.deepEqual(migrations.map((m) => m.name).slice(0, 4), ['0001_init', '0002_ssa', '0003_omm_updates', '0004_encounter_manoeuvre']);
   for (const m of migrations) assert.ok(!/\btier\b/i.test(m.sql), `${m.name} mentions a tier column`);
 });
 
@@ -21,7 +21,7 @@ test('migrations apply on a clean schema; applying them again is a no-op', { ski
     // columns of conjunction: no tier
     const cols = (await db.pool.query<{ column_name: string }>(`SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = 'conjunction'`, [db.schema])).rows.map((r) => r.column_name);
     assert.ok(!cols.includes('tier'));
-    assert.deepEqual(['norad_a', 'norad_b', 'tca', 'miss_km', 'vrel_kms', 'ric_km', 'volume', 'pc', 'pc_max', 'hbr_km', 'manoeuvrable', 'label', 'first_run', 'last_run', 'n_updates'].filter((c) => !cols.includes(c)), []);
+    assert.deepEqual(['norad_a', 'norad_b', 'tca', 'miss_km', 'vrel_kms', 'ric_km', 'volume', 'pc', 'pc_max', 'hbr_km', 'manoeuvrable', 'label', 'manoeuvre_a', 'manoeuvre_b', 'first_run', 'last_run', 'n_updates'].filter((c) => !cols.includes(c)), []);
     // second application changes nothing
     for (const m of migrations) await db.pool.query(m.sql);
     assert.deepEqual(await tables(), t1);

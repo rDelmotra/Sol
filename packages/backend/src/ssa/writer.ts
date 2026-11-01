@@ -32,8 +32,10 @@ function chunks<T>(a: T[], n: number): T[][] {
   return out;
 }
 
-const UNNEST_TYPES = `$1::float8[], $2::float8[], $3::float8[], $4::float8[], $5::float8[], $6::float8[], $7::text[], $8::float8[], $9::float8[], $10::float8[], $11::boolean[], $12::text[]`;
-const NAMES = `tca, miss, vrel, r, i, c, volume, pc, pcmax, hbr, man, label`;
+const UNNEST_TYPES = `$1::float8[], $2::float8[], $3::float8[], $4::float8[], $5::float8[], $6::float8[], $7::text[], $8::float8[], $9::float8[], $10::float8[], $11::boolean[], $12::text[], $13::float8[], $14::float8[]`;
+const NAMES = `tca, miss, vrel, r, i, c, volume, pc, pcmax, hbr, man, label, mana, manb`;
+/** parameters after the arrays: the run id, the conjunction ids (and for new rows the two NORAD ids) */
+const RUN = '$15', IDS = '$16';
 
 function arrays(es: Encounter[]): unknown[] {
   return [
@@ -41,6 +43,7 @@ function arrays(es: Encounter[]): unknown[] {
     es.map((e) => e.ricKm[0]), es.map((e) => e.ricKm[1]), es.map((e) => e.ricKm[2]),
     es.map((e) => e.volume), es.map((e) => e.pc), es.map((e) => e.pcMax), es.map((e) => e.hbrKm),
     es.map((e) => e.manoeuvrable), es.map((e) => e.label),
+    es.map((e) => e.manoeuvreAMs ?? null), es.map((e) => e.manoeuvreBMs ?? null),
   ];
 }
 
@@ -89,9 +92,10 @@ async function writeInTransaction(c: PoolClient, run: RunInfo, encounters: Encou
     const ids = freshIds.slice(k, k + part.length);
     k += part.length;
     await c.query(
-      `INSERT INTO conjunction (id, norad_a, norad_b, tca, miss_km, vrel_kms, ric_km, volume, pc, pc_max, hbr_km, manoeuvrable, label, first_run, last_run, n_updates)
-       SELECT u.id, u.a, u.b, to_timestamp(u.tca / 1000.0::float8), u.miss, u.vrel, ARRAY[u.r, u.i, u.c]::float8[], u.volume, u.pc, u.pcmax, u.hbr, u.man, u.label, $13::bigint, $13::bigint, 1
-       FROM unnest(${UNNEST_TYPES}, $14::bigint[], $15::int[], $16::int[]) AS u(${NAMES}, id, a, b)`,
+      `INSERT INTO conjunction (id, norad_a, norad_b, tca, miss_km, vrel_kms, ric_km, volume, pc, pc_max, hbr_km, manoeuvrable, label, manoeuvre_a, manoeuvre_b, first_run, last_run, n_updates)
+       SELECT u.id, u.a, u.b, to_timestamp(u.tca / 1000.0::float8), u.miss, u.vrel, ARRAY[u.r, u.i, u.c]::float8[], u.volume, u.pc, u.pcmax, u.hbr, u.man, u.label,
+              to_timestamp(u.mana / 1000.0::float8), to_timestamp(u.manb / 1000.0::float8), ${RUN}::bigint, ${RUN}::bigint, 1
+       FROM unnest(${UNNEST_TYPES}, ${IDS}::bigint[], $17::int[], $18::int[]) AS u(${NAMES}, id, a, b)`,
       [...arrays(part), runId, ids, part.map((e) => e.noradA), part.map((e) => e.noradB)],
     );
   }
@@ -101,8 +105,9 @@ async function writeInTransaction(c: PoolClient, run: RunInfo, encounters: Encou
     await c.query(
       `UPDATE conjunction c SET tca = to_timestamp(u.tca / 1000.0::float8), miss_km = u.miss, vrel_kms = u.vrel, ric_km = ARRAY[u.r, u.i, u.c]::float8[],
          volume = u.volume, pc = u.pc, pc_max = u.pcmax, hbr_km = u.hbr, manoeuvrable = u.man, label = u.label,
-         last_run = $13::bigint, n_updates = c.n_updates + 1
-       FROM unnest(${UNNEST_TYPES}, $14::bigint[]) AS u(${NAMES}, id) WHERE c.id = u.id`,
+         manoeuvre_a = to_timestamp(u.mana / 1000.0::float8), manoeuvre_b = to_timestamp(u.manb / 1000.0::float8),
+         last_run = ${RUN}::bigint, n_updates = c.n_updates + 1
+       FROM unnest(${UNNEST_TYPES}, ${IDS}::bigint[]) AS u(${NAMES}, id) WHERE c.id = u.id`,
       [...arrays(es), runId, part.map((x) => x.id)],
     );
   }
@@ -112,8 +117,8 @@ async function writeInTransaction(c: PoolClient, run: RunInfo, encounters: Encou
     const es = part.map((x) => x.e);
     await c.query(
       `INSERT INTO conjunction_update (conjunction_id, run_id, tca, miss_km, pc, pc_max, ric_km)
-       SELECT u.id, $13::bigint, to_timestamp(u.tca / 1000.0::float8), u.miss, u.pc, u.pcmax, ARRAY[u.r, u.i, u.c]::float8[]
-       FROM unnest(${UNNEST_TYPES}, $14::bigint[]) AS u(${NAMES}, id)`,
+       SELECT u.id, ${RUN}::bigint, to_timestamp(u.tca / 1000.0::float8), u.miss, u.pc, u.pcmax, ARRAY[u.r, u.i, u.c]::float8[]
+       FROM unnest(${UNNEST_TYPES}, ${IDS}::bigint[]) AS u(${NAMES}, id)`,
       [...arrays(es), runId, part.map((x) => x.id)],
     );
   }
