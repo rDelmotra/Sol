@@ -34,7 +34,10 @@ import { logger } from '../utils/logger.js';
 // ============================================================
 
 const MAX_LIMIT = 1000;
-const DEFAULT_LIMIT = 100;
+const DEFAULT_LIMIT = 25;
+/** Encounters default to close ones: a LEO object collects dozens of wide (40-50 km) box passes per 36 h run.
+ *  Override with ?maxMissKm= (up to the screening volumes) and ?limit=. */
+const DEFAULT_MAX_MISS_KM = 5;
 const OBJECT_EVENT_DAYS = 7;
 const OBJECT_EVENT_LIMIT = 50;
 const MAX_NORAD = 2_147_483_647;
@@ -111,7 +114,7 @@ function parseConjunctionQuery(q: Request['query']): Parsed<ConjunctionFilter> {
       from: from.value,
       to: to.value,
       minPc: minPc.value,
-      maxMissKm: maxMissKm.value,
+      maxMissKm: maxMissKm.value ?? DEFAULT_MAX_MISS_KM,
       sort: (sortRaw ?? 'tca') as ConjunctionSort,
       limit: limit.value ?? DEFAULT_LIMIT,
     },
@@ -226,7 +229,13 @@ export function createSsaRouter(deps: SsaRouterDeps): Router {
   router.get('/objects/:norad', (req, res, next) => {
     const norad = parseInteger('norad', req.params.norad, 1, MAX_NORAD);
     if (!norad.ok) { res.status(400).json({ error: norad.error }); return; }
+    const maxMissKm = parseNumber('maxMissKm', req.query.maxMissKm, 0, Number.MAX_VALUE);
+    if (!maxMissKm.ok) { res.status(400).json({ error: maxMissKm.error }); return; }
+    const limit = parseInteger('limit', req.query.limit, 1, MAX_LIMIT);
+    if (!limit.ok) { res.status(400).json({ error: limit.error }); return; }
     res.locals.norad = norad.value;
+    res.locals.maxMissKm = maxMissKm.value ?? DEFAULT_MAX_MISS_KM;
+    res.locals.limit = limit.value ?? DEFAULT_LIMIT;
     next();
   }, guarded('/objects/:norad', async (db, req, res) => {
     const noradId = res.locals.norad as number;
@@ -235,7 +244,9 @@ export function createSsaRouter(deps: SsaRouterDeps): Router {
     const since = new Date(Date.now() - OBJECT_EVENT_DAYS * 86_400_000);
     const [encounters, events] = await Promise.all([
       run
-        ? listCurrentEncounters(db, run.id, { norad: noradId, sort: 'tca', limit: MAX_LIMIT })
+        ? listCurrentEncounters(db, run.id, {
+            norad: noradId, sort: 'tca', maxMissKm: res.locals.maxMissKm as number, limit: res.locals.limit as number,
+          })
         : Promise.resolve([]),
       listEvents(db, { norad: noradId, since, limit: OBJECT_EVENT_LIMIT }),
     ]);

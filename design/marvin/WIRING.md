@@ -48,6 +48,7 @@ in `STARMAP.md`; integration map below is from reading the code (file:line refs 
   (with update history), `SsaEvent`, `SsaRunInfo`. No tier field.
 - `GET /api/ssa/run`: latest run (time, element cutoff, counts).
 - `GET /api/ssa/conjunctions?norad=&from=&to=&minPc=&maxMissKm=&sort=tca|pc|miss&limit=`: newest run.
+  Defaults (here and on `/objects/:norad`): `maxMissKm=5`, `limit=25`, sorted by TCA; wide box passes on request.
 - `GET /api/ssa/conjunctions/:id`: one event with its update history.
 - `GET /api/ssa/objects/:norad`: that object's conjunctions and recent events.
 - `GET /api/ssa/events?kind=&since=&norad=`: event feed (appeared, disappeared, jump, formation).

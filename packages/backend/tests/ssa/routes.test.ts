@@ -142,6 +142,7 @@ describe('ssa routes: database-backed', { skip: !DATABASE_URL && 'DATABASE_URL n
     await ins('deb', 44713, 44714, h(10), 0.3, 1e-3, true, r2, r2, 1);
     await ins('far', 100, 300, h(30), 5, null, false, r2, r2, 1);
     await ins('stale', 25544, 300, h(5), 0.5, 1e-2, false, r1, r1, 1); // not in the latest run
+    await ins('wide', 25544, 600, h(8), 42, 1e-9, false, r2, r2, 1); // a wide box pass: outside the 5 km default
     await pool.query(
       `INSERT INTO conjunction_update (conjunction_id, run_id, tca, miss_km, pc, pc_max, ric_km) VALUES
         ($1,$2,$3,1.5,2e-5,6e-5,ARRAY[0.2,-1.0,0.5]),($1,$4,$5,1.2,1e-5,3e-5,ARRAY[0.1,-0.9,0.4])`,
@@ -257,6 +258,19 @@ describe('ssa routes: database-backed', { skip: !DATABASE_URL && 'DATABASE_URL n
     assert.match(o.events[0]!.day, /^\d{4}-\d{2}-\d{2}$/);
     const empty = (await (await fetch(`${base}/objects/777`)).json()) as ObjectEncounters;
     assert.deepEqual([empty.encounters, empty.events], [[], []]);
+  });
+
+  it('defaults to close encounters (miss <= 5 km); ?maxMissKm= widens it', async () => {
+    const o = (await (await fetch(`${base}/objects/25544`)).json()) as ObjectEncounters;
+    assert.ok(!o.encounters.some((e) => e.id === ids.wide));
+    const wide = (await (await fetch(`${base}/objects/25544?maxMissKm=50`)).json()) as ObjectEncounters;
+    assert.deepEqual(wide.encounters.map((e) => e.id), [ids.iss, ids.wide]);
+    const all = (await (await fetch(`${base}/conjunctions`)).json()) as { encounters: { id: number }[] };
+    assert.ok(!all.encounters.some((e) => e.id === ids.wide));
+    const allWide = (await (await fetch(`${base}/conjunctions?maxMissKm=50`)).json()) as { encounters: { id: number }[] };
+    assert.ok(allWide.encounters.some((e) => e.id === ids.wide));
+    const bad = await fetch(`${base}/objects/25544?limit=0`);
+    assert.equal(bad.status, 400);
   });
 
   it('GET /events filters by kind, since, norad and limit', async () => {
