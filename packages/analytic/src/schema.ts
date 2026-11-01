@@ -59,6 +59,14 @@ export interface FieldSpec {
   coverage?: number;
   /** Computed on demand (derived registry / dotted join path), not stored. */
   derived?: true;
+  /** One-line meaning, rendered into the compiler prompt after the field's type
+   *  info. Only fields whose semantics the type/unit alone can't convey need it. */
+  description?: string;
+  /** null means "none" (no encounter / no event), not "unknown": the field is
+   *  populated for every object the source knows about, absent objects simply
+   *  have nothing to report. Coverage for these is not a data-quality signal —
+   *  the prompt omits it and the hollow-answer detector ignores it. */
+  sparse?: true;
 }
 
 // ── Enum domains ──────────────────────────────────────────────────────────────
@@ -161,6 +169,50 @@ export const FIELD_REGISTRY: Record<string, FieldSpec> = {
   solarFlux10cm: { kind: 'number', plane: 'static', unit: 'sfu' },
   geomagneticAp: { kind: 'number', plane: 'static' },
   geomagneticKp: { kind: 'number', plane: 'static' },
+
+  // Encounters & manoeuvres (SSA Layer 1 — backend/src/analytic/providers/ssa.ts).
+  // Per-object aggregates of the latest conjunction-screening run (encounter =
+  // predicted close approach with miss distance <= 5 km, next ~36 h) and of the
+  // detected change events (orbit changes, newly seen objects, close formations).
+  // Server-only, and only populated when the history database is configured.
+  // Plane 'catalog' because the data follows the object's current/recent
+  // elements; decayed objects under universe 'all' simply have nothing here.
+  encounterCount36h: {
+    kind: 'number', plane: 'catalog',
+    description: 'number of predicted close approaches (miss <= 5 km) involving the object in the current ~36 h screening run; 0 when none',
+  },
+  closestEncounterKm: {
+    kind: 'number', plane: 'catalog', unit: 'km', sparse: true,
+    description: 'smallest predicted miss distance among its current close approaches (<= 5 km); null when it has none',
+  },
+  maxEncounterPc: {
+    kind: 'number', plane: 'catalog', sparse: true,
+    description: 'highest collision probability among its current close approaches; null when it has none or no probability was computed',
+  },
+  nextEncounterAt: {
+    kind: 'date', plane: 'catalog', sparse: true,
+    description: 'time of its earliest upcoming close approach (miss <= 5 km) at or after the bound time; null when none',
+  },
+  lastManoeuvreAt: {
+    kind: 'date', plane: 'catalog', sparse: true,
+    description: 'epoch of the new orbit after its most recent detected manoeuvre / orbit change; null when none detected',
+  },
+  manoeuvreCount30d: {
+    kind: 'number', plane: 'catalog',
+    description: 'number of detected manoeuvres / orbit changes in the 30 days before the bound time; 0 when none',
+  },
+  lastManoeuvreDeltaAKm: {
+    kind: 'number', plane: 'catalog', unit: 'km', sparse: true,
+    description: 'semi-major-axis change of its most recent detected manoeuvre; positive = orbit raised, negative = lowered; null when none',
+  },
+  appearedAt: {
+    kind: 'date', plane: 'catalog', sparse: true,
+    description: 'when the object first appeared in the catalog (new launch, return, or newly cataloged); null if it was not newly seen in the detection window',
+  },
+  inFormation: {
+    kind: 'bool', plane: 'catalog',
+    description: 'true if the object was detected flying in close formation with another object in the last 2 days',
+  },
 };
 
 // ── Function specs (spec §5) ──────────────────────────────────────────────────

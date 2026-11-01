@@ -152,11 +152,61 @@ describe("buildCompilerSystemPrompt — few-shots (P3 S6 Part D)", () => {
     assert.ok(!exampleBlock.includes('"refuse"'));
   });
 
-  it('keeps exactly one NEEDS_HISTORY refusal few-shot (the replacement "raised their orbit" example)', () => {
-    assert.ok(prompt.includes('Which satellites raised their orbit last week?'));
+  it('keeps exactly one NEEDS_HISTORY refusal few-shot, now a genuine long-trend question', () => {
+    assert.ok(prompt.includes('Has the number of Starlink manoeuvres been trending up over the past year?'));
     const examplesSection = prompt.slice(prompt.indexOf('EXAMPLES ('));
     const matches = examplesSection.match(/NEEDS_HISTORY/g) ?? [];
     assert.equal(matches.length, 1, 'expected exactly one NEEDS_HISTORY few-shot refusal');
+  });
+});
+
+describe('buildCompilerSystemPrompt — encounter and manoeuvre fields (SSA Layer 1)', () => {
+  const prompt = buildCompilerSystemPrompt(FIXTURE);
+  const SSA = [
+    'encounterCount36h', 'closestEncounterKm', 'maxEncounterPc', 'nextEncounterAt',
+    'lastManoeuvreAt', 'manoeuvreCount30d', 'lastManoeuvreDeltaAKm', 'appearedAt', 'inFormation',
+  ];
+
+  it('documents every field with its meaning and null semantics', () => {
+    for (const f of SSA) {
+      const line = prompt.split('\n').find((l) => l.startsWith(`- ${f} (`));
+      assert.ok(line, `${f} missing`);
+      assert.ok(line!.includes(' — '), `${f} has no description`);
+    }
+    assert.ok(/- closestEncounterKm \([^)]*null = none/.test(prompt));
+    assert.ok(/- lastManoeuvreDeltaAKm \([^)]*unit km/.test(prompt));
+    assert.ok(prompt.includes('positive = orbit raised'));
+  });
+
+  it('sparse fields never get a low-coverage annotation (null means none, not unknown)', () => {
+    const snap = makeSnapshot({ overrides: { closestEncounterKm: { live: 0.02, all: 0.02 }, lastManoeuvreAt: { live: 0.01, all: 0.01 } } });
+    const p = buildCompilerSystemPrompt(snap);
+    assert.ok(!/- closestEncounterKm \([^)]*coverage/.test(p));
+    assert.ok(!/- lastManoeuvreAt \([^)]*coverage/.test(p));
+  });
+
+  it('with history off (measured 0 on both universes) the fields render UNSERVED, so questions hinging on them refuse honestly', () => {
+    const overrides = Object.fromEntries(SSA.map((f) => [f, { live: 0, all: 0 }]));
+    const p = buildCompilerSystemPrompt(makeSnapshot({ overrides }));
+    for (const f of SSA) assert.ok(new RegExp(`- ${f} \\([^)]*UNSERVED`).test(p), f);
+  });
+
+  it('no longer refuses manoeuvres / new objects / upcoming close approaches as NEEDS_HISTORY, but still refuses trends', () => {
+    assert.ok(prompt.includes('These are NOT NEEDS_HISTORY'));
+    assert.ok(!prompt.includes('maneuvered, second derivative'));
+    assert.ok(prompt.includes('a trend, a rate over'));
+    for (const q of [
+      'Which Starlinks have a close approach under 1 km in the next day?',
+      'Which satellites raised their orbit last week?',
+      'Which objects have more than 3 encounters?',
+      'Which objects are new in the last 7 days?',
+      'Which satellites are flying in formation?',
+    ]) {
+      const idx = prompt.indexOf(`Q: ${q}`);
+      assert.ok(idx >= 0, q);
+      const block = prompt.slice(idx, prompt.indexOf('\n\nExample', idx) > 0 ? prompt.indexOf('\n\nExample', idx) : undefined);
+      assert.ok(block.includes('"program"') && !block.includes('"refuse"'), `${q} must compile, not refuse`);
+    }
   });
 });
 

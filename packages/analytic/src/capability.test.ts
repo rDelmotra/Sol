@@ -178,6 +178,34 @@ describe('capability — programNeedsServer', () => {
     }
   });
 
+  it('true for an encounter / manoeuvre field ref — only the backend SSA provider serves them', () => {
+    const SSA_FIELDS = [
+      'encounterCount36h', 'closestEncounterKm', 'maxEncounterPc', 'nextEncounterAt',
+      'lastManoeuvreAt', 'manoeuvreCount30d', 'lastManoeuvreDeltaAKm', 'appearedAt', 'inFormation',
+    ];
+    for (const f of SSA_FIELDS) {
+      assert.ok(f in FIELD_REGISTRY, `${f} missing from FIELD_REGISTRY`);
+      assert.equal(CLIENT_SERVED_FIELDS.has(f), false, `${f} must not be client-served`);
+      const program = baseProgram({
+        pipeline: [{ op: 'filter', where: { op: '>', args: [{ field: f }, { lit: 0 }] } }],
+      });
+      assert.equal(programNeedsServer(program), true, f);
+    }
+    const combined = baseProgram({
+      pipeline: [{
+        op: 'filter',
+        where: {
+          op: 'and',
+          args: [
+            { op: '>', args: [{ field: 'encounterCount36h' }, { lit: 0 }] },
+            { op: '>=', args: [{ field: 'lastManoeuvreAt' }, { lit: '2026-10-25T00:00:00.000Z' }] },
+          ],
+        },
+      }],
+    });
+    assert.equal(programNeedsServer(combined), true);
+  });
+
   it('true for a client-unserved fn ref (descendsFrom)', () => {
     const program = baseProgram({
       pipeline: [{ op: 'filter', where: { fn: 'descendsFrom', ancestor: 13552 } }],

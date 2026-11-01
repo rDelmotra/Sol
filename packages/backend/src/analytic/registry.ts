@@ -128,6 +128,11 @@ export class DataSourceRegistry {
           fields.push({ field, servedBy, coverage: 1 });
           continue;
         }
+        const hint = chain.map((p) => p.coverageHint?.(field) ?? null).find((h) => h !== null);
+        if (hint !== undefined) {
+          fields.push({ field, servedBy, coverage: hint });
+          continue;
+        }
         const isStringKind = FIELD_REGISTRY[field]?.kind === 'string';
         const valueCounts: Map<string, number> | null = isStringKind ? new Map() : null;
 

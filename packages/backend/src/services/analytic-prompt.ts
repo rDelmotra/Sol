@@ -105,14 +105,16 @@ function renderFieldCatalog(snapshot: RegistrySnapshot): string {
       // the live number here avoids double-caveating the same gap).
       const primary: Universe = spec.plane === 'static' ? 'all' : 'live';
       const coverage = primary === 'all' ? onAll : onLive;
-      if (coverage < 0.95) parts.push(`coverage ${Math.round(coverage * 100)}%`);
+      // Sparse fields use null for "none" — a low fraction is the answer, not a data gap.
+      if (coverage < 0.95 && !spec.sparse) parts.push(`coverage ${Math.round(coverage * 100)}%`);
 
       if (spec.kind === 'string') {
         const values = measuredTopValues(snapshot, primary, name);
         if (values && values.length > 0) parts.push(`values: ${renderValueList(values)}`);
       }
     }
-    return `- ${name} (${parts.join(', ')})`;
+    if (spec.sparse) parts.push('null = none');
+    return `- ${name} (${parts.join(', ')})${spec.description ? ` — ${spec.description}` : ''}`;
   });
   return `FIELD CATALOG (the only fields that exist — use names verbatim):
 ${lines.join('\n')}
@@ -260,13 +262,23 @@ const HARD_RULES = `HARD RULES:
    question as the alternative in the reason. BUT explicit numeric coordinates ARE directly
    filterable: "over longitude 0" / "south of the equator" / "above 45°N" → filter on
    lonDeg / latDeg (e.g. abs(lonDeg) < 1 for "over longitude 0"). Only NAMED places refuse.
-13. Past-window CHANGE questions ("this month", "last week", "since January", "over the past
-   year" — decayed fastest, raised orbit, drifted, maneuvered, second derivative of
-   altitude) → refuse NEEDS_HISTORY. Orbit STABILITY questions ("most unstable orbits")
-   also → NEEDS_HISTORY: stability = element variance over a time window; the current
-   meanMotionDot is a decay rate, not stability. The ONLY live decay fast-path is the
-   CURRENT decay rate (rule 3). Never dress meanMotionDot up as a past-window comparison,
-   and never use meanMotionDdot as an altitude derivative.
+13. Past-window CHANGE questions ("this month", "since January", "over the past year" —
+   decayed fastest, drifted, second derivative of altitude) → refuse NEEDS_HISTORY, EXCEPT
+   the event fields, which are answerable: manoeuvres / orbit changes ("manoeuvred", "raised
+   or lowered its orbit", "burned") → lastManoeuvreAt / manoeuvreCount30d /
+   lastManoeuvreDeltaAKm (signed km; + raised, - lowered); new objects ("new in the last 7
+   days", "just launched", "appeared") → appearedAt; formations → inFormation; upcoming close
+   approaches / encounters / conjunctions in the next ~36 h → encounterCount36h /
+   closestEncounterKm / maxEncounterPc / nextEncounterAt. These are NOT NEEDS_HISTORY. Date
+   comparisons use ISO-8601 string literals computed from the current-time line in the
+   question (e.g. "this week" = lastManoeuvreAt >= <now − 7 d>). Event fields are only
+   populated for what the detector has seen, and encounters only look ~36 h ahead: say so in
+   the interpretation. Do NOT dress these up for other questions: a trend, a rate over
+   months, a fuel estimate, "most unstable orbits" (element variance over a window) or the
+   decay-rate-as-history trick all stay NEEDS_HISTORY; the ONLY live decay fast-path is the
+   CURRENT decay rate (rule 3). Never use meanMotionDdot as an altitude derivative. Encounter
+   fields count predicted close approaches (miss <= 5 km); they say nothing about collision
+   risk beyond maxEncounterPc, and a high count is not a prediction that anything will collide.
 14. "this year" phrasing OVERRIDES rule 13 — it is answerable from launchYear, not history:
    "launched/grew (the most) this year" → filter launchYear == <current year from the time
    line> (for "grew the most per program": groupBy program over that filter, count, sort).
@@ -525,10 +537,100 @@ const FEW_SHOTS: FewShot[] = [
   {
     question: 'Which satellites raised their orbit last week?',
     emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          "Detected orbit changes in the last 7 days where the semi-major axis went UP (lastManoeuvreDeltaAKm > 0 on the most recent detected manoeuvre). The detector only sees changes it has flagged, so this is a lower bound. Cutoff = now minus 7 days.",
+        pipeline: [
+          {
+            op: 'filter',
+            where: {
+              op: 'and',
+              args: [
+                { op: '>=', args: [{ field: 'lastManoeuvreAt' }, { lit: '2026-10-25T12:00:00.000Z' }] },
+                { op: '>', args: [{ field: 'lastManoeuvreDeltaAKm' }, { lit: 0 }] },
+              ],
+            },
+          },
+        ],
+        output: { shape: 'ids' },
+      },
+    },
+  },
+  {
+    question: 'Which Starlinks have a close approach under 1 km in the next day?',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          "Starlink = program 'starlink'. A close approach = a predicted encounter from the current ~36 h screening run; closestEncounterKm <= 1 and the next one falls within 24 h of now (nextEncounterAt <= now + 1 d). Sorted by closest miss distance.",
+        pipeline: [
+          {
+            op: 'filter',
+            where: {
+              op: 'and',
+              args: [
+                { op: 'in', field: 'program', values: ['starlink'] },
+                { op: '<', args: [{ field: 'closestEncounterKm' }, { lit: 1 }] },
+                { op: '<=', args: [{ field: 'nextEncounterAt' }, { lit: '2026-11-02T12:00:00.000Z' }] },
+              ],
+            },
+          },
+          { op: 'sort', by: 'closestEncounterKm', dir: 'asc' },
+          { op: 'limit', n: 25 },
+        ],
+        output: { shape: 'table', columns: ['name', 'closestEncounterKm', 'nextEncounterAt', 'maxEncounterPc'] },
+      },
+    },
+  },
+  {
+    question: 'Which objects have more than 3 encounters?',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          'Objects with more than 3 predicted close approaches (miss <= 5 km) in the current ~36 h screening run, most first.',
+        pipeline: [
+          { op: 'filter', where: { op: '>', args: [{ field: 'encounterCount36h' }, { lit: 3 }] } },
+          { op: 'sort', by: 'encounterCount36h', dir: 'desc' },
+          { op: 'limit', n: 25 },
+        ],
+        output: { shape: 'table', columns: ['name', 'encounterCount36h', 'closestEncounterKm'] },
+      },
+    },
+  },
+  {
+    question: 'Which objects are new in the last 7 days?',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          'Objects the detector first saw appear in the last 7 days (new launches, returns, newly cataloged). Cutoff = now minus 7 days.',
+        pipeline: [
+          { op: 'filter', where: { op: '>=', args: [{ field: 'appearedAt' }, { lit: '2026-10-25T12:00:00.000Z' }] } },
+        ],
+        output: { shape: 'ids' },
+      },
+    },
+  },
+  {
+    question: 'Which satellites are flying in formation?',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation: 'Objects detected in close formation with another object within the last 2 days.',
+        pipeline: [{ op: 'filter', where: { field: 'inFormation' } }],
+        output: { shape: 'ids' },
+      },
+    },
+  },
+  {
+    question: 'Has the number of Starlink manoeuvres been trending up over the past year?',
+    emit: {
       refuse: {
         code: 'NEEDS_HISTORY',
         reason:
-          "Detecting a maneuver needs comparing this week's orbital elements against last week's; only the CURRENT elset is queryable, so past states can't be reconstructed. I can report the current decay rate (meanMotionDot) or current altitude instead.",
+          "A year-long trend needs the detected-event history aggregated over time; only recent events (manoeuvre count over the last 30 days, last manoeuvre time) are queryable. I can count Starlinks that manoeuvred in the last 30 days (manoeuvreCount30d) instead.",
       },
     },
   },

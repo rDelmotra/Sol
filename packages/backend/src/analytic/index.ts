@@ -4,8 +4,8 @@
 // + p3/S2_catalog_provider_universe_all.md Part C + p3/S3_sgp4_provider_astro.md.
 //
 // Real chain composition: `live` = catalog spine + [catalog, enrichment, sgp4,
-// spaceWeather]; `all` = all-spine spine + [catalog, all-spine, enrichment,
-// spaceWeather] (no sgp4 — V-PLANE already refuses live-plane refs under
+// spaceWeather, ssa]; `all` = all-spine spine + [catalog, all-spine, enrichment,
+// spaceWeather, ssa] (no sgp4 — V-PLANE already refuses live-plane refs under
 // universe 'all' at validate time, so the registry never sees them). The
 // /api/query/ask route (routes/query.ts) calls buildSource() per request.
 // ============================================================
@@ -19,6 +19,8 @@ import { createCatalogProvider, createAllSpineProvider } from './providers/catal
 import { createEnrichmentProvider } from './providers/enrichment.js';
 import { createSgp4Provider } from './providers/sgp4.js';
 import { createSpaceWeatherProvider } from './providers/space-weather.js';
+import { createSsaProvider } from './providers/ssa.js';
+import { getPool, isHistoryEnabled, isHistoryReady } from '../history/db/pool.js';
 
 let singleton: DataSourceRegistry | null = null;
 
@@ -50,19 +52,30 @@ export function getAnalyticRegistry(): DataSourceRegistry {
     // independent background NOAA refreshes.
     const spaceWeather = createSpaceWeatherProvider();
 
+    // Encounter / manoeuvre fields from the history DB (null everywhere when history is
+    // off). One shared instance: it holds the per-object aggregate maps and reloads
+    // them in the background when a new SSA run or event lands (providers/ssa.ts).
+    const ssa = createSsaProvider({
+      getDb: () => (isHistoryReady() ? getPool() : null),
+      isEnabled: isHistoryEnabled,
+    });
+
     registry.registerSpine('live', catalog);
     registry.register('live', catalog);
     registry.register('live', enrichment);
     registry.register('live', sgp4);
     registry.register('live', spaceWeather);
+    registry.register('live', ssa);
 
     registry.registerSpine('all', allSpine);
     registry.register('all', catalog);
     registry.register('all', allSpine);
     registry.register('all', enrichment);
     registry.register('all', spaceWeather);
+    registry.register('all', ssa);
 
     singleton = registry;
+    void ssa.refresh(); // warm in the background; a no-op until history is ready
   }
   return singleton;
 }

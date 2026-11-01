@@ -8,14 +8,16 @@
 // acknowledged as an expected low basis.
 // ============================================================
 
-import type { CoverageEntry } from '@orbitwatch/analytic';
+import { FIELD_REGISTRY, type CoverageEntry } from '@orbitwatch/analytic';
 
 export const LOW_BASIS_THRESHOLD = 0.05;
 
-/** Coverage entries whose present/total ratio is below the low-basis threshold. */
+/** Coverage entries whose present/total ratio is below the low-basis threshold.
+ *  Sparse fields (null = "none", e.g. closestEncounterKm) are exempt: a low
+ *  fraction is the answer there, not a data gap. */
 export function computeLowBasisFields(coverage: CoverageEntry[]): string[] {
   return coverage
-    .filter((c) => c.total > 0 && c.present / c.total < LOW_BASIS_THRESHOLD)
+    .filter((c) => c.total > 0 && c.present / c.total < LOW_BASIS_THRESHOLD && !FIELD_REGISTRY[c.field]?.sparse)
     .map((c) => c.field);
 }
 

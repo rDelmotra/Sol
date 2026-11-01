@@ -22,6 +22,13 @@ export interface FieldProvider {
   readonly fns?: readonly FnName[];
   /** Value at tMs for the object. Unknown object / absent value → null. FAST for misses. */
   getField(noradId: number, field: string, tMs: number): FieldValue;
+  /**
+   * Optional boot-coverage override. A provider whose fields use null for "none"
+   * (so a measured present/total fraction is meaningless) or whose data lives behind
+   * I/O answers the coverage itself (1 = served, 0 = unserved) and the registry skips
+   * the per-object measurement loop for that field. Return null to defer to measurement.
+   */
+  coverageHint?(field: string): number | null;
 
   // Optional physics surface — present iff declared in `fns`.
   elevationDeg?(noradId: number, obs: ResolvedObserver, tMs: number): number | null;
