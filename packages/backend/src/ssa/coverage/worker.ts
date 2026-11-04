@@ -13,7 +13,7 @@ import { FENCED, STAR_FINE, STAR_RUN_CAP, ID_SHIFT, HOUR_MS } from './consts.js'
 import { passesIn, anyPassIn, regionFlags } from './scan.js';
 import type { Region } from './region.js';
 
-export interface BuildTask { kind: 'build'; omms: unknown[]; norad: number[]; base: number; startMs: number; endMs: number; stepMs: number }
+export interface BuildTask { kind: 'build'; omms: unknown[]; norad: number[]; base: number; startMs: number; endMs: number; stepMs: number; /** false: skip the hour.o4 pairs (default true) */ hourly?: boolean }
 export interface BuildOut {
   /** key * ID_SHIFT + global object index, unsorted, for [day o3, day o4, hour o4] */
   pairs: Float64Array[];
@@ -51,10 +51,13 @@ function build(t: BuildTask): BuildOut {
     if (starRuns > STAR_RUN_CAP) { skips.push([i, `over-row-cap:${starRuns}`]); return; }
     // (cell4, hour) pairs; +-1 s margin so a run ending exactly on an hour boundary touches both periods
     const hours: number[] = [], cells4: number[] = [];
+    const wantHours = t.hourly !== false;
     for (const r of runs) {
-      const h0 = Math.max(0, Math.floor((r.tIn - 1000 - t.startMs) / HOUR_MS));
-      const h1 = Math.min(23, Math.floor((r.tOut + 1000 - t.startMs) / HOUR_MS));
-      for (let h = h0; h <= h1; h++) hours.push(r.cell * 24 + h);
+      if (wantHours) {
+        const h0 = Math.max(0, Math.floor((r.tIn - 1000 - t.startMs) / HOUR_MS));
+        const h1 = Math.min(23, Math.floor((r.tOut + 1000 - t.startMs) / HOUR_MS));
+        for (let h = h0; h <= h1; h++) hours.push(r.cell * 24 + h);
+      }
       cells4.push(r.cell);
     }
     const idx = t.base + i;

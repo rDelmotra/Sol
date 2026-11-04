@@ -24,6 +24,10 @@ export interface BuildOpts {
   stepMs?: number;
   /** cap the catalog (tests, benchmarks) */
   limit?: number;
+  /** false: build the daily layers only (no hour.o4). Default true. The history backfill builds no hourly layers. */
+  hourly?: boolean;
+  /** an already started pool (init sent) to reuse across days; it is NOT closed here. Default: a pool of `workers` for this day. */
+  pool?: WorkerPool;
 }
 export interface BuiltDay { manifest: Manifest; files: Map<string, Uint8Array> }
 
@@ -32,19 +36,20 @@ export async function buildDay(day: string, startMs: number, catalog: OmmObject[
   const cat = opts.limit ? catalog.slice(0, opts.limit) : catalog;
   if (cat.length >= ID_SHIFT) throw new Error(`coverage build: ${cat.length} objects do not fit the ${ID_SHIFT}-object index`);
   const stepMs = opts.stepMs ?? BUILD_STEP_MS;
-  const nWorkers = Math.max(1, opts.workers ?? 4);
+  const nWorkers = Math.max(1, opts.pool?.size ?? opts.workers ?? 4);
+  const hourly = opts.hourly !== false;
   const tasks: BuildTask[] = [];
   for (let b = 0; b < cat.length; b += CHUNK) {
     const sl = cat.slice(b, b + CHUNK);
-    tasks.push({ kind: 'build', omms: sl.map((o) => o.omm), norad: sl.map((o) => o.noradId), base: b, startMs, endMs: startMs + DAY_MS, stepMs });
+    tasks.push({ kind: 'build', omms: sl.map((o) => o.omm), norad: sl.map((o) => o.noradId), base: b, startMs, endMs: startMs + DAY_MS, stepMs, hourly });
   }
-  const pool = new WorkerPool(nWorkers, 'coverage/worker');
+  const pool = opts.pool ?? new WorkerPool(nWorkers, 'coverage/worker');
   const parts: Float64Array[][] = LAYERS.map(() => []);
   const skipReasons: Record<string, number> = {};
   const unindexed: number[] = [];
   let propCalls = 0;
   try {
-    await pool.start({ kind: 'init' });
+    if (!opts.pool) await pool.start({ kind: 'init' });
     await pool.map<BuildOut>(tasks).then((outs) => {
       outs.forEach((r, ti) => {
         propCalls += r.propCalls;
@@ -57,7 +62,7 @@ export async function buildDay(day: string, startMs: number, catalog: OmmObject[
       });
     });
   } finally {
-    await pool.close();
+    if (!opts.pool) await pool.close();
   }
   const tSgp = Date.now() - T0;
 
@@ -67,6 +72,7 @@ export async function buildDay(day: string, startMs: number, catalog: OmmObject[
   const nkRange = new Map<number, [number, number]>(); // order -> [lo, hi], from the daily layer's cells
   for (let c = 0; c < LAYERS.length; c++) {
     const layer = LAYERS[c]!;
+    if (!hourly && layer.gran === 'hour') continue;
     const ts = Date.now();
     let n = 0; for (const p of parts[c]!) n += p.length;
     const flat = new Float64Array(n); let off = 0;

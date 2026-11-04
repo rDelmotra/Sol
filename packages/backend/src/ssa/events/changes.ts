@@ -29,6 +29,9 @@ export interface ChangeStats {
 export interface DeriveChangesOpts {
   /** NORAD id -> 'YYYY-MM-DD' of the first day the object was in a catalog (for the `returned` class) */
   firstSeen?: (noradId: number) => string | undefined;
+  /** orbit-change thresholds (defaults: JUMP_DPOS_KM / JUMP_DA_KM). The history backfill sets them per era. */
+  jumpDposKm?: number;
+  jumpDaKm?: number;
 }
 
 export function deriveChanges(prev: ChangeObject[], cur: ChangeObject[], dayStartMs: number, opts: DeriveChangesOpts = {}): { rows: EventRow[]; stats: ChangeStats } {
@@ -73,10 +76,11 @@ export function deriveChanges(prev: ChangeObject[], cur: ChangeObject[], dayStar
 
   // orbit change: the new element set differs from the old one propagated to its epoch by more than the thresholds
   const jm = jumpMetrics(prev, cur);
+  const jumpDpos = opts.jumpDposKm ?? JUMP_DPOS_KM, jumpDa = opts.jumpDaKm ?? JUMP_DA_KM;
   let nJump = 0;
   const jumpDir: Record<string, number> = {};
   for (const m of jm.metrics) {
-    if (!(m.dposKm > JUMP_DPOS_KM && Math.abs(m.daKm) > JUMP_DA_KM && Math.abs(m.residKm) > JUMP_DA_KM)) continue;
+    if (!(m.dposKm > jumpDpos && Math.abs(m.daKm) > jumpDa && Math.abs(m.residKm) > jumpDa)) continue;
     nJump++;
     const dir = m.daKm > 0 ? 'raise' : 'lower';
     jumpDir[dir] = (jumpDir[dir] ?? 0) + 1;
