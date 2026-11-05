@@ -15,6 +15,13 @@
 //   BSTAR == 0, near Earth                      -> SGP if the predicted drag drift 2 pi a |ndot/2| (km/day^2) is at least
 //                                                  minDriftKmD2 (0 = always; 1973-1979: 3 km/day^2, below that MEAN_MOTION_DOT is
 //                                                  mostly noise and SGP4 is closer on the median)
+//
+// Source metadata first (McDowell's archive, convert-mcdowell.py: XTLE_ELTYPE from XTLE line 3): a set labelled 'SGP' is propagated with
+// SGP in any era. The label 'SGP4' is the format's DEFAULT and is on every set of the archive (measured: 558,265 of 558,265 sets
+// 1957-1985 in the 12 downloaded folders, including the 1958-1972 B* = 0 sets made for SGP: on them SGP4 gives e.g. 1965 median /
+// p95 194 / 2367 km vs 69 / 455 km with the era rule, HISTORY_BACKFILL.md section 9), so 'SGP4' is NOT taken as a statement about
+// the model: those sets, and sets without the field (the mirror), follow the era rule above. SGP uses MEAN_MOTION_DDOT when non-zero
+// (convert-mcdowell.py writes 0 by default: McDowell's NDOT2 did not help).
 // ============================================================
 import type { ChangeObject } from '../events/types.js';
 import type { PropagatorKind } from '../encounter.js';
@@ -38,6 +45,7 @@ export function dragDriftKmD2(omm: Record<string, unknown>): number {
 
 /** The model for one set under an era's policy; undefined = SGP4 (the default, so SGP4 objects carry no field). */
 export function propagatorFor(omm: Record<string, unknown>, policy: SgpPolicy | undefined): PropagatorKind | undefined {
+  if (omm.XTLE_ELTYPE === 'SGP' && Number(omm.MEAN_MOTION) > 0) return 'sgp';
   if (!policy || Number(omm.BSTAR ?? 0) !== 0) return undefined;
   const n = Number(omm.MEAN_MOTION);
   if (!(n > 0)) return undefined;
