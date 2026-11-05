@@ -191,6 +191,11 @@ before 1980 -> well under 1 h on 10 x 25 workers, the single-thread change detec
 
 
 ## 9. McDowell's historical element archive for 1957-1972, outlier filter for 1959-1979 (rebuild 1959-01-11 .. 1980-01-30)
+
+> **Stopped (2026-11-05).** planet4589.org's robots.txt has `Disallow: /space/elements/`, so automated download of this archive is not
+> permitted. The fetcher now checks robots.txt and refuses unless `--owner-permission` is passed. Ask Jonathan McDowell for a bulk copy or
+> permission first (draft email below). The 1,147-object development sample was fetched before this was checked; it is not used further.
+
 Source: https://planet4589.org/space/elements/ (format XTLE: https://planet4589.org/space/xtle.html; about: https://planet4589.org/space/ele.html).
 One plain-text file per object, folders of 100 catalogue numbers. Historical only (not for predictions). US-government sets in it came from public
 sources / GSFC OIG without redistribution restrictions (ele.html). Scripts: `scripts/history/fetch-mcdowell.py` (download, stdlib),

@@ -41,6 +41,21 @@ import urllib.error
 import urllib.request
 
 BASE = 'https://planet4589.org/space/elements/'
+
+
+def robots_disallows(url, cafile=None):
+    """True when the site's robots.txt disallows `url` for every user agent (or cannot be read: fail closed)."""
+    import urllib.robotparser
+    from urllib.parse import urlsplit
+    u = urlsplit(url)
+    rp = urllib.robotparser.RobotFileParser()
+    try:
+        ctx = ssl.create_default_context(cafile=cafile) if cafile else ssl.create_default_context()
+        with urllib.request.urlopen(f'{u.scheme}://{u.netloc}/robots.txt', timeout=30, context=ctx) as r:
+            rp.parse(r.read().decode('utf-8', 'replace').splitlines())
+    except Exception:
+        return True
+    return not rp.can_fetch('*', url)
 USER_AGENT = 'orbitwatch-history-fetch/1.0 (research)'
 MIN_INTERVAL_S = 1.0
 FOLDER_RE = re.compile(r'^(?:[ACFRT])?\d{5,9}$')
@@ -207,7 +222,12 @@ def main():
     p.add_argument('--gzip', action='store_true', help='store files gzip-compressed (<name>.gz)')
     p.add_argument('--refresh-listings', action='store_true', help='re-fetch folder listings even if cached')
     p.add_argument('--list-only', action='store_true', help='fetch the listings only; print file counts, bytes and the time estimate')
+    p.add_argument('--owner-permission', action='store_true',
+                   help="the site's robots.txt disallows automated access to /space/elements/; pass this ONLY after the site owner has granted permission")
     a = p.parse_args()
+    if robots_disallows(BASE, a.cafile) and not a.owner_permission:
+        sys.exit("robots.txt on planet4589.org disallows automated access to /space/elements/. Ask the site owner for a bulk copy or permission "
+                 "(draft email: design/marvin/HISTORY_BACKFILL.md); rerun with --owner-permission only once granted.")
     if a.interval < MIN_INTERVAL_S:
         log(f'--interval {a.interval} raised to {MIN_INTERVAL_S} s')
     os.makedirs(a.out, exist_ok=True)
