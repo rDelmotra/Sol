@@ -16,6 +16,8 @@ export interface ChangeObject {
   launchDate?: string | null;
   /** OMM mean elements as satellite.js json2satrec reads them */
   omm: Record<string, unknown>;
+  /** propagation model of `omm`; absent = SGP4 (production never sets it; the history backfill sets 'sgp' for pre-1980 sets without B*) */
+  propagator?: 'sgp4' | 'sgp';
 }
 
 export const CHANGE_KINDS = ['object.appeared', 'object.disappeared', 'elements.jump', 'close.formation'] as const;

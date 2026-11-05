@@ -12,8 +12,13 @@ import { makeProp, buildRunsBy, cellAt, newStats, windowInCap, type Prop, type R
 import { FENCED, STAR_FINE, STAR_RUN_CAP, ID_SHIFT, HOUR_MS } from './consts.js';
 import { passesIn, anyPassIn, regionFlags } from './scan.js';
 import type { Region } from './region.js';
+import type { PropagatorKind } from '../encounter.js';
 
-export interface BuildTask { kind: 'build'; omms: unknown[]; norad: number[]; base: number; startMs: number; endMs: number; stepMs: number; /** false: skip the hour.o4 pairs (default true) */ hourly?: boolean }
+export interface BuildTask {
+  kind: 'build'; omms: unknown[]; norad: number[]; base: number; startMs: number; endMs: number; stepMs: number; /** false: skip the hour.o4 pairs (default true) */ hourly?: boolean;
+  /** propagation model per object (same order as omms); absent or a missing entry = SGP4. Only the history backfill sets it. */
+  props?: Array<PropagatorKind | null>;
+}
 export interface BuildOut {
   /** key * ID_SHIFT + global object index, unsorted, for [day o3, day o4, hour o4] */
   pairs: Float64Array[];
@@ -21,10 +26,10 @@ export interface BuildOut {
   skips: Array<[number, string]>;
   propCalls: number;
 }
-export interface RefineTask { kind: 'refine'; region: Region; mode: 'passes' | 'any'; items: Array<{ omm: unknown; windows: number[] }> }
+export interface RefineTask { kind: 'refine'; region: Region; mode: 'passes' | 'any'; items: Array<{ omm: unknown; windows: number[]; /** absent = SGP4 */ propagator?: PropagatorKind }> }
 /** passes: per item [start, end, ...]; any: per item [t] or [] */
 export interface RefineOut { intervals: Float64Array[]; propCalls: number }
-export interface BruteTask { kind: 'brute'; region: Region; omms: unknown[]; norad: number[]; startMs: number; endMs: number; stepMs: number }
+export interface BruteTask { kind: 'brute'; region: Region; omms: unknown[]; norad: number[]; startMs: number; endMs: number; stepMs: number; props?: Array<PropagatorKind | null> }
 export type Task = BuildTask | RefineTask | BruteTask | { kind: 'init' };
 
 const sortUnique = (a: Float64Array): Float64Array => {
@@ -41,7 +46,7 @@ function build(t: BuildTask): BuildOut {
   const keyAt = (p: Prop, tm: number, s: RunStats) => cellAt(p, STAR_FINE, tm, s);
   t.omms.forEach((omm, i) => {
     if (FENCED.has(t.norad[i]!)) { skips.push([i, 'fenced']); return; }
-    const p = makeProp(omm);
+    const p = makeProp(omm, t.props?.[i] ?? undefined);
     if (!p) { skips.push([i, 'bad-elements']); return; }
     if (!windowInCap(p, t.startMs, t.endMs)) { skips.push([i, 'outside-60d-epoch-cap']); return; }
     const runs = buildRunsBy(p, keyAt, t.startMs, t.endMs, t.stepMs, st);
@@ -74,7 +79,7 @@ function build(t: BuildTask): BuildOut {
 function refine(t: RefineTask): RefineOut {
   const st = newStats();
   const intervals = t.items.map((it) => {
-    const p = makeProp(it.omm);
+    const p = makeProp(it.omm, it.propagator);
     if (!p) return new Float64Array(0);
     if (t.mode === 'any') { const tm = anyPassIn(p, t.region, it.windows, st); return tm >= 0 ? Float64Array.of(tm) : new Float64Array(0); }
     return Float64Array.from(passesIn(p, t.region, it.windows, st));
@@ -88,7 +93,7 @@ function brute(t: BruteTask): RefineOut {
   const flags = regionFlags(t.region, st);
   const intervals = t.omms.map((omm, i) => {
     if (FENCED.has(t.norad[i]!)) return new Float64Array(0);
-    const p = makeProp(omm);
+    const p = makeProp(omm, t.props?.[i] ?? undefined);
     if (!p || !windowInCap(p, t.startMs, t.endMs)) return new Float64Array(0);
     const out: number[] = [];
     let open = -1, last = -1;

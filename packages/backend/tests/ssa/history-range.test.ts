@@ -97,6 +97,8 @@ test('the production coverage reader accepts a history day directory (daily laye
   assert.equal(m.day, D1);
   assert.equal(m.dayStartMs, Date.parse(D1 + 'T00:00:00Z'));
   assert.ok(m.objects > 40 && m.norad.length === m.objects);
+  // a modern day: every set SGP4, no era accuracy -> the manifest has exactly the production keys
+  assert.ok(!('propagators' in m) && !('accuracy' in m));
   assert.equal(hasLayer(cov, D1, { gran: 'hour', order: 4 }), false);
   assert.equal(hasLayer(cov, D1, { gran: 'day', order: 4 }), true);
   const l3 = openLayer(cov, D1, { gran: 'day', order: 3 }), l4 = openLayer(cov, D1, { gran: 'day', order: 4 });

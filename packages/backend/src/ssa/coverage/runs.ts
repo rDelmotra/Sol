@@ -3,9 +3,8 @@
 // stepMs; when the box changes between two samples, BISECT the bracket down to <= 1 s (a third box at the midpoint recurses on both
 // halves, so a clipped corner gets its own run). Failures and out-of-range radii are "no cell" (-1): they end the run, never emitted.
 // ============================================================
-import * as satellite from 'satellite.js';
 import { cellKey } from '@orbitwatch/orbital-core';
-import type { Prop } from '../encounter.js';
+import { propagateAt, type Prop } from '../encounter.js';
 
 export { makeProp, type Prop } from '../encounter.js';
 export const NO_CELL = -1;
@@ -27,7 +26,7 @@ export function windowInCap(p: Prop, startMs: number, endMs: number): boolean {
 /** TEME position (km) at tMs, or null on failure. Counts one SGP4 call. */
 export function posAt(p: Prop, tMs: number, st: RunStats): { x: number; y: number; z: number } | null {
   st.propCalls++;
-  const pv = satellite.sgp4(p.satrec, (tMs - p.epochMs) / 60_000);
+  const pv = propagateAt(p, (tMs - p.epochMs) / 60_000);
   const pos = pv ? pv.position : null;
   if (!pos || typeof pos === 'boolean' || !Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) { st.noCell++; return null; }
   return pos;

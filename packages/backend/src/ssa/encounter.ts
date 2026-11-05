@@ -4,7 +4,7 @@
 // @orbitwatch/orbital-core (collision.ts).
 // ============================================================
 import * as satellite from 'satellite.js';
-import { ricBasis, toRic, covFromRic, addSym3, encounterGeometry, pcFoster, pcMax, principalAxes } from '@orbitwatch/orbital-core';
+import { ricBasis, toRic, covFromRic, addSym3, encounterGeometry, pcFoster, pcMax, principalAxes, sgpInit, sgpPropagate, sgpElementsFromOmm, type SgpRecord } from '@orbitwatch/orbital-core';
 import type { Encounter, SsaObject, Vec3 } from './types.js';
 import { defaultModel, sigmaRic, type UncertaintyModel } from './uncertainty.js';
 
@@ -14,19 +14,41 @@ const JD_UNIX_EPOCH = 2440587.5;
 
 // ---------------- element sets ----------------
 export type SatRec = ReturnType<typeof satellite.json2satrec>;
-export interface Prop { satrec: SatRec; epochMs: number }
+/**
+ * Which model propagates an element set. 'sgp4' (satellite.js) is the default and the only one production uses. 'sgp' is the
+ * original SGP of Spacetrack Report #3 (orbital-core sgp.ts) for the history backfill's pre-1980 sets without B*, whose drag lives
+ * in MEAN_MOTION_DOT (see src/ssa/history/propagator-policy.ts).
+ */
+export type PropagatorKind = 'sgp4' | 'sgp';
+/** satrec is always built (epoch, validity); `sgp` is set only for kind 'sgp' and then replaces satellite.sgp4 in propagateAt. */
+export interface Prop { satrec: SatRec; epochMs: number; sgp?: SgpRecord }
 
-/** Build a propagator; null if the elements are unusable. */
-export function makeProp(omm: unknown): Prop | null {
+/** Build a propagator; null if the elements are unusable. `kind` defaults to SGP4. */
+export function makeProp(omm: unknown, kind?: PropagatorKind): Prop | null {
   try {
     const satrec = satellite.json2satrec(omm as Parameters<typeof satellite.json2satrec>[0]);
     if (satrec.error) return null;
     const epochMs = (satrec.jdsatepoch - JD_UNIX_EPOCH) * MS_PER_DAY;
     if (!Number.isFinite(epochMs)) return null;
+    if (kind === 'sgp') {
+      const sgp = sgpInit(sgpElementsFromOmm(omm as Record<string, unknown>));
+      return sgp ? { satrec, epochMs, sgp } : null;
+    }
     return { satrec, epochMs };
   } catch {
     return null;
   }
+}
+
+interface Xyz { x: number; y: number; z: number }
+/** satellite.sgp4's result shape (position / velocity), which callers already read */
+export type PosVel = { position: Xyz; velocity: Xyz } | null;
+/** Position / velocity (TEME km, km/s) at `tsinceMin` minutes from the epoch, by the Prop's model: exactly satellite.sgp4 unless the Prop is SGP. */
+export function propagateAt(p: Prop, tsinceMin: number): PosVel {
+  if (!p.sgp) return satellite.sgp4(p.satrec, tsinceMin);
+  const s = sgpPropagate(p.sgp, tsinceMin);
+  if (!s) return null;
+  return { position: { x: s.position[0], y: s.position[1], z: s.position[2] }, velocity: { x: s.velocity[0], y: s.velocity[1], z: s.velocity[2] } };
 }
 
 export const epochMsOf = (omm: Record<string, unknown>): number => {

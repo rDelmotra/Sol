@@ -108,10 +108,11 @@ test('change detection on file catalogs: appeared, disappeared, jump, formation;
   }
 });
 
-test('era table: lookup by year, validation, placeholders end in the production values', () => {
+test('era table: lookup by year, validation, ends in the production values', () => {
   assert.equal(eraFor('1959-02-01').fromYear, 1959);
-  assert.equal(eraFor('1969-12-31').fromYear, 1959);
+  assert.equal(eraFor('1969-12-31').fromYear, 1969);
   assert.equal(eraFor('1970-01-01').fromYear, 1970);
+  assert.equal(eraFor('1999-01-01').fromYear, 1980);
   assert.equal(eraFor('2026-10-12').windowDays, 30);
   assert.equal(eraFor('1900-01-01').fromYear, 1959);
   assert.throws(() => validateEraTable([{ fromYear: 2000, windowDays: 30, jumpDposKm: 1, jumpDaKm: 1 }, { fromYear: 1990, windowDays: 30, jumpDposKm: 1, jumpDaKm: 1 }]));

@@ -6,8 +6,10 @@
 import type { Pool } from 'pg';
 import { CATALOG_WINDOW_DAYS } from '../events/types.js';
 import { DAY_MS } from './consts.js';
+import type { PropagatorKind } from '../encounter.js';
 
-export interface OmmObject { noradId: number; omm: Record<string, unknown> }
+/** `propagator` is set only by the history backfill (pre-1980 sets without B*: 'sgp'); absent = SGP4. */
+export interface OmmObject { noradId: number; omm: Record<string, unknown>; propagator?: PropagatorKind }
 
 export const dayStartMs = (day: string): number => Date.parse(day + 'T00:00:00Z');
 export const isoDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);

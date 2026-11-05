@@ -8,12 +8,17 @@
 //
 //   tsx build-range.ts --elsets DIR --objects FILE --out DIR --from 2020-01-01 --to 2020-12-31 --workers 24 --parts coverage,changes [--shard 0/8]
 //   tsx build-range.ts --check-chain --elsets DIR [--years 1965,1985,2005,2025] [--sample 400] [--window-days 14] [--max-gap-days 5] [--json FILE]
+//                      [--propagator era|sgp4] [--era-file FILE]
+//   tsx build-range.ts --print-era > era.json          the built-in era table as an --era-file (windows, jump thresholds, SGP policy, accuracy)
 //
 // Options
 //   --workers N         coverage worker threads of THIS process (default: cores); the change detection runs in 1 more worker thread
 //   --shard k/n         process the days with (day index) % n == k, so n processes can split a range (round robin; every process
 //                       reads the same element-set files, the output files are disjoint)
-//   --era-file FILE     JSON array replacing the ERA_TABLE of src/ssa/history/era.ts (fromYear, windowDays, jumpDposKm, jumpDaKm)
+//   --era-file FILE     JSON array replacing the ERA_TABLE of src/ssa/history/era.ts (fromYear, windowDays, jumpDposKm, jumpDaKm, sgp, accuracy).
+//                       A row without `sgp` propagates every set with SGP4: an era file written before the SGP policy existed switches
+//                       the pre-1980 fix OFF (a warning is printed). Regenerate it with --print-era.
+//   --propagator M      chain check only: 'era' (default, the era table's model per set) or 'sgp4' (every set SGP4, the old baseline)
 //   --window-days N     force one staleness window for every day (overrides the era table)
 //   --min-objects N     a day with fewer objects in its catalog builds no coverage (default 1)
 //   --skip-formation    no close.formation pass
@@ -33,6 +38,7 @@ import { FileCatalog, dayMs, firstSeenOf, isoDayOf, toOmmObjects } from '../../s
 import { loadObjects, readElsetDay, type Elset } from '../../src/ssa/history/elset-files.js';
 import { eventLine } from '../../src/ssa/history/derive-files.js';
 import { chainPairs, summarizeChain } from '../../src/ssa/history/chain.js';
+import { assignPropagators, propagatorFor } from '../../src/ssa/history/propagator-policy.js';
 import type { ChangesOut, ChangesTask } from '../../src/ssa/history/changes-worker.js';
 import type { ChangeObject } from '../../src/ssa/events/types.js';
 
@@ -76,13 +82,29 @@ export function shardOf(days: string[], k: number, n: number): string[] {
 
 const rssMB = (): number => Math.round(process.resourceUsage().maxRSS / 1024);
 
+/** --era-file or the built-in table. Warns when a pre-1980 row has no SGP policy (an era file from before the SGP fix). */
+function loadEra(a: Args): readonly EraSettings[] {
+  const f = opt(a, 'era-file');
+  if (!f) return ERA_TABLE;
+  const t = validateEraTable(JSON.parse(readFileSync(f, 'utf8')) as EraSettings[]);
+  const bare = t.filter((r) => r.fromYear < 1980 && !r.sgp).map((r) => r.fromYear);
+  if (bare.length) console.warn(`WARNING: era file ${f}: rows ${bare.join(',')} (before 1980) have no 'sgp' policy -> those years propagate B* = 0 sets with SGP4 (drag-free). Regenerate with --print-era unless that is intended.`);
+  return t;
+}
+
 // ------------------------------------------------------------------ chain check
 function runChainCheck(a: Args): void {
   const dir = str(a, 'elsets');
   const years = (opt(a, 'years') ?? '1962,1970,1980,1990,2000,2010,2020,2025').split(',').map(Number);
   const sample = num(a, 'sample', 400), windowDays = num(a, 'window-days', 14), maxGap = num(a, 'max-gap-days', 5);
   const start = opt(a, 'start') ?? '06-01';
+  const era = loadEra(a);
+  // --propagator sgp4: every set with SGP4 (the pre-SGP baseline); default: the era table's model per set (propagator-policy.ts)
+  const forced = opt(a, 'propagator');
+  if (forced !== undefined && forced !== 'sgp4' && forced !== 'era') throw new Error(`--propagator must be sgp4 or era`);
+  const kindOf = forced === 'sgp4' ? undefined : (s: Elset) => propagatorFor(s.omm, eraFor(isoDayOf(s.epochMs), era).sgp);
   const report: Record<string, unknown>[] = [];
+  console.log(`propagation: ${forced === 'sgp4' ? 'SGP4 for every set' : 'era table model (SGP for B* = 0 sets where the era says so, else SGP4)'}`);
   console.log('year  sets read  objects   pairs  failed  gap(med d)  dpos median km   p95 km   p99 km');
   for (const y of years) {
     const sets: Elset[] = [];
@@ -93,11 +115,12 @@ function runChainCheck(a: Args): void {
     const ids = [...new Set(sets.map((s) => s.noradId))];
     const keep = new Set(ids.filter((id) => ((id * 2654435761) >>> 0) % ids.length < sample));
     const chosen = sets.filter((s) => keep.has(s.noradId));
-    const { pairs, failed } = chainPairs(chosen, maxGap);
+    const { pairs, failed } = chainPairs(chosen, maxGap, kindOf);
+    const nSgp = kindOf ? chosen.filter((x) => kindOf(x) === 'sgp').length : 0;
     const s = summarizeChain(pairs, failed);
     const short = summarizeChain(pairs.filter((p) => p.gapDays <= 1), 0);
-    console.log(`${y}  ${String(sets.length).padStart(9)} ${String(keep.size).padStart(8)} ${String(s.pairs).padStart(7)} ${String(s.failed).padStart(7)}  ${s.medianGapDays.toFixed(2).padStart(9)}  ${s.medianKm.toFixed(3).padStart(14)} ${s.p95Km.toFixed(2).padStart(8)} ${s.p99Km.toFixed(2).padStart(8)}   (gap <= 1 d: ${short.pairs} pairs, median ${short.medianKm.toFixed(3)} km, p95 ${short.p95Km.toFixed(2)} km)`);
-    report.push({ year: y, sets: sets.length, objects: keep.size, ...s, gapLe1d: short });
+    console.log(`${y}  ${String(sets.length).padStart(9)} ${String(keep.size).padStart(8)} ${String(s.pairs).padStart(7)} ${String(s.failed).padStart(7)}  ${s.medianGapDays.toFixed(2).padStart(9)}  ${s.medianKm.toFixed(3).padStart(14)} ${s.p95Km.toFixed(2).padStart(8)} ${s.p99Km.toFixed(2).padStart(8)}   (gap <= 1 d: ${short.pairs} pairs, median ${short.medianKm.toFixed(3)} km, p95 ${short.p95Km.toFixed(2)} km)${nSgp ? `  [${nSgp}/${chosen.length} sets SGP]` : ''}`);
+    report.push({ year: y, sets: sets.length, objects: keep.size, ...s, gapLe1d: short, sgpSets: nSgp, propagation: forced === 'sgp4' ? 'sgp4' : 'era' });
   }
   const j = opt(a, 'json');
   if (j) writeFileSync(j, JSON.stringify(report, null, 1));
@@ -108,6 +131,7 @@ interface DayStats { [k: string]: unknown }
 
 async function main(): Promise<void> {
   const a = parseArgs(process.argv.slice(2));
+  if (a['print-era']) { process.stdout.write(JSON.stringify(ERA_TABLE, null, 1) + '\n'); return; }
   if (a['check-chain']) { runChainCheck(a); return; }
   const elsets = str(a, 'elsets'), objectsFile = str(a, 'objects'), out = str(a, 'out');
   const from = str(a, 'from'), to = str(a, 'to');
@@ -119,7 +143,7 @@ async function main(): Promise<void> {
   const minObjects = num(a, 'min-objects', 1);
   const forcedWindow = opt(a, 'window-days') ? num(a, 'window-days', 30) : undefined;
   const stepMs = num(a, 'step-s', 10) * 1000;
-  const era: readonly EraSettings[] = opt(a, 'era-file') ? validateEraTable(JSON.parse(readFileSync(str(a, 'era-file'), 'utf8')) as EraSettings[]) : ERA_TABLE;
+  const era = loadEra(a);
   const settingsOf = (day: string): EraSettings => (forcedWindow ? { ...eraFor(day, era), windowDays: forcedWindow } : eraFor(day, era));
 
   const allDays = daysBetween(from, to);
@@ -153,8 +177,9 @@ async function main(): Promise<void> {
       const t = Date.now();
       try {
         const prevDay = isoDayOf(dayMs(day) - DAY_MS);
-        const prev: ChangeObject[] | null = need('changes') ? cat.asOf(prevDay, settingsOf(prevDay).windowDays) : null;
-        const cur = cat.asOf(day, s.windowDays);
+        // the propagation model of each set follows the era of the day whose catalog it is in (SGP4 unless the era has an sgp policy)
+        const prev: ChangeObject[] | null = need('changes') ? assignPropagators(cat.asOf(prevDay, settingsOf(prevDay).windowDays), settingsOf(prevDay).sgp) : null;
+        const cur = assignPropagators(cat.asOf(day, s.windowDays), s.sgp);
         const jobs: Promise<void>[] = [];
 
         if (need('coverage')) {
@@ -164,11 +189,12 @@ async function main(): Promise<void> {
               writeAtomic(markerPath(out, 'coverage', day), JSON.stringify({ status: 'skipped', reason: `no-catalog (${cur.length} objects)`, objects: cur.length }));
               return;
             }
-            const built = await buildDay(day, dayMs(day), toOmmObjects(cur), { pool: covPool!, hourly: false, stepMs });
+            const built = await buildDay(day, dayMs(day), toOmmObjects(cur), { pool: covPool!, hourly: false, stepMs, ...(s.accuracy ? { accuracy: s.accuracy } : {}) });
             writeDay(join(out, 'coverage'), built.manifest, built.files);
             const m = built.manifest;
             const st: DayStats = {
               status: 'done', objects: m.objects, unindexed: m.unindexed.length, skipped: m.skipped, windowDays: s.windowDays, wallS: +((Date.now() - T) / 1000).toFixed(1),
+              ...(m.propagators ? { sgpObjects: m.propagators.sgp.length } : {}),
               bytes: Object.fromEntries(Object.entries(m.layers).map(([k, v]) => [k, v.bytes])),
             };
             writeAtomic(markerPath(out, 'coverage', day), JSON.stringify(st));
@@ -181,12 +207,17 @@ async function main(): Promise<void> {
             const prevIds = new Set(prev!.map((o) => o.noradId));
             const firstSeen: Array<[number, string]> = [];
             for (const o of cur) if (!prevIds.has(o.noradId)) { const f = firstSeenOf(objects, o.noradId); if (f) firstSeen.push([o.noradId, f]); }
-            const task: ChangesTask = { kind: 'changes', day, prev: prev!, cur, firstSeen, jumpDposKm: s.jumpDposKm, jumpDaKm: s.jumpDaKm, ...(a['skip-formation'] ? { skipFormation: true } : {}) };
+            const task: ChangesTask = {
+              kind: 'changes', day, prev: prev!, cur, firstSeen, jumpDposKm: s.jumpDposKm, jumpDaKm: s.jumpDaKm, ...(a['skip-formation'] ? { skipFormation: true } : {}),
+              ...(s.accuracy ? { accuracy: s.accuracy } : {}),
+            };
             const r = (await chPool!.map<ChangesOut>([task]))[0]!;
             const text = r.rows.map((row) => JSON.stringify(eventLine(day, row))).join('\n');
             writeAtomic(join(out, 'events', day.slice(0, 4), `${day}.jsonl.gz`), gzipSync(text ? text + '\n' : ''));
             const st: DayStats = {
               status: 'done', kinds: r.kinds, perKind: r.perKind, prevObjects: prev!.length, curObjects: cur.length, windowDays: s.windowDays,
+              jumpDposKm: s.jumpDposKm, jumpDaKm: s.jumpDaKm, ...(s.accuracy ? { accuracy: s.accuracy } : {}),
+              ...(cur.some((o) => o.propagator === 'sgp') ? { sgpObjects: cur.filter((o) => o.propagator === 'sgp').length } : {}),
               ...(r.formationError ? { formationError: r.formationError } : {}), wallS: +((Date.now() - T) / 1000).toFixed(2), changeWallS: r.wallS,
             };
             writeAtomic(markerPath(out, 'changes', day), JSON.stringify(st));

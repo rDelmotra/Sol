@@ -13,7 +13,7 @@ import { WorkerPool } from '../pool.js';
 import { writeLayer } from './codec.js';
 import { LAYERS, layerName, ID_SHIFT, DAY_MS, BUILD_STEP_MS, GRAN_ID } from './consts.js';
 import type { OmmObject } from './catalog.js';
-import type { LayerInfo, Manifest } from './store.js';
+import type { LayerInfo, Manifest, PositionAccuracy } from './store.js';
 import type { BuildTask, BuildOut } from './worker.js';
 import { CODEC_VERSION } from './codec.js';
 
@@ -28,6 +28,8 @@ export interface BuildOpts {
   hourly?: boolean;
   /** an already started pool (init sent) to reuse across days; it is NOT closed here. Default: a pool of `workers` for this day. */
   pool?: WorkerPool;
+  /** position accuracy of the day's element sets (history backfill, era table); written to the manifest as `accuracy` */
+  accuracy?: PositionAccuracy;
 }
 export interface BuiltDay { manifest: Manifest; files: Map<string, Uint8Array> }
 
@@ -41,7 +43,9 @@ export async function buildDay(day: string, startMs: number, catalog: OmmObject[
   const tasks: BuildTask[] = [];
   for (let b = 0; b < cat.length; b += CHUNK) {
     const sl = cat.slice(b, b + CHUNK);
-    tasks.push({ kind: 'build', omms: sl.map((o) => o.omm), norad: sl.map((o) => o.noradId), base: b, startMs, endMs: startMs + DAY_MS, stepMs, hourly });
+    const t: BuildTask = { kind: 'build', omms: sl.map((o) => o.omm), norad: sl.map((o) => o.noradId), base: b, startMs, endMs: startMs + DAY_MS, stepMs, hourly };
+    if (sl.some((o) => o.propagator && o.propagator !== 'sgp4')) t.props = sl.map((o) => o.propagator ?? null);
+    tasks.push(t);
   }
   const pool = opts.pool ?? new WorkerPool(nWorkers, 'coverage/worker');
   const parts: Float64Array[][] = LAYERS.map(() => []);
@@ -103,9 +107,12 @@ export async function buildDay(day: string, startMs: number, catalog: OmmObject[
     layers[layerName(layer)] = { file: name, bytes: file.length, lists: stats.nCells, pairs: stats.nPairs, nkLo, nkHi };
   }
   const wall = (Date.now() - T0) / 1000;
+  const sgpIds = cat.filter((o) => o.propagator === 'sgp').map((o) => o.noradId);
   const manifest: Manifest = {
     version: CODEC_VERSION, day, dayStartMs: startMs, builtAt: new Date().toISOString(), objects: cat.length,
     norad: cat.map((o) => o.noradId), unindexed: unindexed.sort((a, b) => a - b), skipped: skipReasons, layers,
+    ...(sgpIds.length ? { propagators: { sgp: sgpIds } } : {}),
+    ...(opts.accuracy ? { accuracy: opts.accuracy } : {}),
     build: {
       stepS: stepMs / 1000, workers: nWorkers, propCalls, wallS: +wall.toFixed(1), sgp4S: +(tSgp / 1000).toFixed(1), sortS: +(tSort / 1000).toFixed(1),
       encodeS: +(tEnc / 1000).toFixed(1), peakRssMB: Math.round(process.resourceUsage().maxRSS / 1024),

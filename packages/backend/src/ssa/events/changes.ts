@@ -32,6 +32,8 @@ export interface DeriveChangesOpts {
   /** orbit-change thresholds (defaults: JUMP_DPOS_KM / JUMP_DA_KM). The history backfill sets them per era. */
   jumpDposKm?: number;
   jumpDaKm?: number;
+  /** history backfill: the era's typical position error (km); elements.jump payloads then carry `acc: [median, p95]` */
+  accuracy?: { medianKm: number; p95Km: number };
 }
 
 export function deriveChanges(prev: ChangeObject[], cur: ChangeObject[], dayStartMs: number, opts: DeriveChangesOpts = {}): { rows: EventRow[]; stats: ChangeStats } {
@@ -58,7 +60,7 @@ export function deriveChanges(prev: ChangeObject[], cur: ChangeObject[], dayStar
     if (cm.has(o.noradId)) continue;
     const ep = epochMsOf(o.omm);
     const ageDays = (t0 - ep) / DAY_MS;
-    const p = makeProp(o.omm);
+    const p = makeProp(o.omm, o.propagator);
     let altKm: number | null = null;
     const pos = p ? posAt(p, t0) : null;
     if (pos) altKm = geodeticLatAltFromEr({ x: pos[0] / ER_KM, y: pos[1] / ER_KM, z: pos[2] / ER_KM }).altKm;
@@ -85,7 +87,8 @@ export function deriveChanges(prev: ChangeObject[], cur: ChangeObject[], dayStar
     const dir = m.daKm > 0 ? 'raise' : 'lower';
     jumpDir[dir] = (jumpDir[dir] ?? 0) + 1;
     rows.push({ kind: 'elements.jump', subjects: [m.norad], tStart: m.prevEpochMs, tEnd: m.newEpochMs, payload: {
-      dpos: +m.dposKm.toFixed(2), da: +m.daKm.toFixed(3), resid: +m.residKm.toFixed(3), dinc: +m.dIncDeg.toFixed(4), along: +m.dAlong.toFixed(2), gap: +m.gapDays.toFixed(2), dir, reg: m.regime, name: m.name } });
+      dpos: +m.dposKm.toFixed(2), da: +m.daKm.toFixed(3), resid: +m.residKm.toFixed(3), dinc: +m.dIncDeg.toFixed(4), along: +m.dAlong.toFixed(2), gap: +m.gapDays.toFixed(2), dir, reg: m.regime, name: m.name,
+      ...(opts.accuracy ? { acc: [opts.accuracy.medianKm, opts.accuracy.p95Km] } : {}) } });
   }
   return { rows, stats: { appeared: nApp, disappeared: nDis, jumps: nJump, changedElsets: jm.metrics.length, jumpFailed: jm.failed, appClass, disClass, jumpDir } };
 }

@@ -1,23 +1,22 @@
 // Small SGP4 helpers for the change detection (ported from scripts/starmap/events.ts: posAt, posVelAt, semiMajorKm, jumpMetric).
-import * as satellite from 'satellite.js';
-import { makeProp, type Prop } from '../encounter.js';
+import { makeProp, propagateAt, type Prop, type PropagatorKind } from '../encounter.js';
 import type { ChangeObject } from './types.js';
 
 export { makeProp };
-export type { Prop };
+export type { Prop, PropagatorKind };
 
 const MU = 398600.4418;
 const DAY_MS = 86_400_000;
 
 export function posAt(p: Prop, tMs: number): [number, number, number] | null {
-  const pv = satellite.sgp4(p.satrec, (tMs - p.epochMs) / 60_000);
+  const pv = propagateAt(p, (tMs - p.epochMs) / 60_000);
   const r = pv ? pv.position : null;
   if (!r || typeof r === 'boolean' || !Number.isFinite(r.x)) return null;
   return [r.x, r.y, r.z];
 }
 
 export function posVelAt(p: Prop, tMs: number): { r: [number, number, number]; v: [number, number, number] } | null {
-  const pv = satellite.sgp4(p.satrec, (tMs - p.epochMs) / 60_000);
+  const pv = propagateAt(p, (tMs - p.epochMs) / 60_000);
   if (!pv || typeof pv.position === 'boolean' || typeof pv.velocity === 'boolean' || !Number.isFinite(pv.position.x)) return null;
   return { r: [pv.position.x, pv.position.y, pv.position.z], v: [pv.velocity.x, pv.velocity.y, pv.velocity.z] };
 }
@@ -46,7 +45,7 @@ export interface JumpMetric {
 }
 
 export function jumpMetric(o0: ChangeObject, o1: ChangeObject): JumpMetric | null {
-  const p0 = makeProp(o0.omm), p1 = makeProp(o1.omm);
+  const p0 = makeProp(o0.omm, o0.propagator), p1 = makeProp(o1.omm, o1.propagator);
   if (!p0 || !p1) return null;
   const a = posAt(p0, p1.epochMs), b = posVelAt(p1, p1.epochMs);
   if (!a || !b) return null;

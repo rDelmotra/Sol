@@ -24,7 +24,7 @@ export function deriveFormations(cur: ChangeObject[], dayStartMs: number): { row
   const props: Prop[] = [];
   let fenced = 0, failed = 0;
   for (const o of cur) {
-    const p = makeProp(o.omm);
+    const p = makeProp(o.omm, o.propagator);
     if (!p) { failed++; continue; }
     let bad = false;
     for (const tm of [t0, (t0 + t1) / 2, t1]) {

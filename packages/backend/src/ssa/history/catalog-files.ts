@@ -46,7 +46,7 @@ export function toChangeObjects(map: ReadonlyMap<number, Entry>, objects: Readon
   return out;
 }
 
-export const toOmmObjects = (objs: readonly ChangeObject[]): OmmObject[] => objs.map((o) => ({ noradId: o.noradId, omm: o.omm }));
+export const toOmmObjects = (objs: readonly ChangeObject[]): OmmObject[] => objs.map((o) => (o.propagator ? { noradId: o.noradId, omm: o.omm, propagator: o.propagator } : { noradId: o.noradId, omm: o.omm }));
 
 /** First UTC day an object was in any catalog, from the objects file (the `returned` class of object.appeared). */
 export const firstSeenOf = (objects: ReadonlyMap<number, ObjectMeta>, id: number): string | undefined => objects.get(id)?.firstEpoch?.slice(0, 10) || undefined;

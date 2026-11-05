@@ -12,6 +12,8 @@ export interface DeriveFilesOpts {
   skipFormation?: boolean;
   jumpDposKm?: number;
   jumpDaKm?: number;
+  /** era position accuracy: elements.jump payloads quote it as `acc` */
+  accuracy?: { medianKm: number; p95Km: number };
   firstSeen?: (noradId: number) => string | undefined;
 }
 export interface DeriveFilesResult {
@@ -30,6 +32,7 @@ export function deriveDayFromCatalogs(prev: ChangeObject[], cur: ChangeObject[],
     ...(opts.firstSeen ? { firstSeen: opts.firstSeen } : {}),
     ...(opts.jumpDposKm !== undefined ? { jumpDposKm: opts.jumpDposKm } : {}),
     ...(opts.jumpDaKm !== undefined ? { jumpDaKm: opts.jumpDaKm } : {}),
+    ...(opts.accuracy ? { accuracy: opts.accuracy } : {}),
   });
   const out: EventRow[] = [...rows];
   const kinds: ChangeKind[] = CHANGE_KINDS.filter((k) => k !== 'close.formation');

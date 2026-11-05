@@ -14,6 +14,8 @@ export interface ChangesTask {
   skipFormation?: boolean;
   jumpDposKm?: number;
   jumpDaKm?: number;
+  /** era position accuracy, quoted in elements.jump payloads (history backfill) */
+  accuracy?: { medianKm: number; p95Km: number };
 }
 export type ChangesOut = DeriveFilesResult & { wallS: number };
 
@@ -25,6 +27,7 @@ parentPort!.on('message', (m: { id: number; msg: ChangesTask | { kind: 'init' } 
   const r = deriveDayFromCatalogs(t.prev, t.cur, t.day, {
     firstSeen: (id) => fs.get(id), ...(t.skipFormation ? { skipFormation: true } : {}),
     ...(t.jumpDposKm !== undefined ? { jumpDposKm: t.jumpDposKm } : {}), ...(t.jumpDaKm !== undefined ? { jumpDaKm: t.jumpDaKm } : {}),
+    ...(t.accuracy ? { accuracy: t.accuracy } : {}),
   });
   parentPort!.postMessage({ id: m.id, out: { ...r, wallS: +((Date.now() - T) / 1000).toFixed(2) } satisfies ChangesOut });
 });

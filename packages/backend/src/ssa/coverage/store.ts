@@ -30,7 +30,14 @@ export interface Manifest {
   skipped: Record<string, number>;
   layers: Record<string, LayerInfo>;
   build: Record<string, number>;
+  /** history backfill only: NORAD ids whose sets were propagated with SGP instead of SGP4 (a refine of the day must use the same model) */
+  propagators?: { sgp: number[] };
+  /** history backfill only: how far the day's propagated positions are from the truth, typically (era table, from the chain check) */
+  accuracy?: PositionAccuracy;
 }
+
+/** Typical position error of an era's element sets: median / 95th percentile of the chain check (a set propagated to the next set's epoch, next set <= 5 d later), km. */
+export interface PositionAccuracy { medianKm: number; p95Km: number; basis: string }
 
 export const dayDir = (dir: string, day: string): string => join(dir, day);
 export const manifestPath = (dir: string, day: string): string => join(dir, day, 'manifest.json');
