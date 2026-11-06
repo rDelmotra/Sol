@@ -71,7 +71,8 @@ export function createApp(deps: AppDeps = {}): Express {
   // Rate limiting on API routes — prevents abuse of the large TLE payload.
   app.use('/api', rateLimit({
     windowMs: 15 * 60 * 1000,  // 15 minutes
-    max: 100,                   // 100 requests per window per IP
+    // 100 requests per window per IP; API_RATE_LIMIT_MAX overrides (e.g. a local research run scrubbing replay days)
+    max: Number(process.env.API_RATE_LIMIT_MAX) > 0 ? Number(process.env.API_RATE_LIMIT_MAX) : 100,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests. Try again later.' },
