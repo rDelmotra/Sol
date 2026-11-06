@@ -19,7 +19,7 @@ What it fetches
     default selection walks (default S only: the A/C/F/R/T objects have no NORAD number, so the converter cannot key them;
     their folders are listed in the index page and are fetched only when asked for).
 
-Politeness: ONE request at a time, at least --interval seconds between the start of consecutive requests (never below 1 s), a plain
+Politeness: ONE request at a time, at least --interval seconds between the start of consecutive requests (default 1.5 s; any value allowed), a plain
 generic User-Agent, retries with exponential back-off (and Retry-After when the server sends one), resumable: a folder listing is
 cached on disk (.listing.json, reused unless --refresh-listings) and a file already on disk with the listing's size is skipped.
 Folder listings are requested as JSON (the server's directory browser answers `Accept: application/json` with name + size); an HTML
@@ -57,7 +57,7 @@ def robots_disallows(url, cafile=None):
         return True
     return not rp.can_fetch('*', url)
 USER_AGENT = 'orbitwatch-history-fetch/1.0 (research)'
-MIN_INTERVAL_S = 1.0
+MIN_INTERVAL_S = 0.0
 FOLDER_RE = re.compile(r'^(?:[ACFRT])?\d{5,9}$')
 FILE_RE = re.compile(r'^[SACFRT]?\d{5,9}$')
 
@@ -215,7 +215,7 @@ def main():
     p.add_argument('--objects', help="convert.py's objects.jsonl.gz: also fetch objects above the cut whose firstEpoch is <= the cut year")
     p.add_argument('--folders', help='comma list of folders (e.g. 00000,00400,A00000): exactly these, nothing else')
     p.add_argument('--prefixes', default='S', help='catalogues walked by the default selection: S (numeric folders); A,C,F,R,T only by --folders')
-    p.add_argument('--interval', type=float, default=1.5, help=f'seconds between requests (minimum {MIN_INTERVAL_S}, lower values are raised)')
+    p.add_argument('--interval', type=float, default=1.5, help='seconds between requests (default 1.5)')
     p.add_argument('--retries', type=int, default=6)
     p.add_argument('--timeout', type=float, default=120)
     p.add_argument('--cafile', help='CA bundle (default: the system store / SSL_CERT_FILE)')
@@ -228,8 +228,6 @@ def main():
     if robots_disallows(BASE, a.cafile) and not a.owner_permission:
         sys.exit("robots.txt on planet4589.org disallows automated access to /space/elements/. Ask the site owner for a bulk copy or permission "
                  "(draft email: design/marvin/HISTORY_BACKFILL.md); rerun with --owner-permission only once granted.")
-    if a.interval < MIN_INTERVAL_S:
-        log(f'--interval {a.interval} raised to {MIN_INTERVAL_S} s')
     os.makedirs(a.out, exist_ok=True)
     f = Fetcher(a.interval, a.retries, a.timeout, a.cafile)
 

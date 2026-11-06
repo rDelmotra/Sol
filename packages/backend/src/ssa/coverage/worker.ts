@@ -10,7 +10,7 @@
 import { parentPort } from 'node:worker_threads';
 import { makeProp, buildRunsBy, cellAt, newStats, windowInCap, type Prop, type RunStats } from './runs.js';
 import { FENCED, STAR_FINE, STAR_RUN_CAP, ID_SHIFT, HOUR_MS } from './consts.js';
-import { passesIn, anyPassIn, regionFlags } from './scan.js';
+import { passesIn, anyPassIn, regionFlags, NO_TIME } from './scan.js';
 import type { Region } from './region.js';
 import type { PropagatorKind } from '../encounter.js';
 
@@ -81,7 +81,7 @@ function refine(t: RefineTask): RefineOut {
   const intervals = t.items.map((it) => {
     const p = makeProp(it.omm, it.propagator);
     if (!p) return new Float64Array(0);
-    if (t.mode === 'any') { const tm = anyPassIn(p, t.region, it.windows, st); return tm >= 0 ? Float64Array.of(tm) : new Float64Array(0); }
+    if (t.mode === 'any') { const tm = anyPassIn(p, t.region, it.windows, st); return tm !== NO_TIME ? Float64Array.of(tm) : new Float64Array(0); }
     return Float64Array.from(passesIn(p, t.region, it.windows, st));
   });
   return { intervals, propCalls: st.propCalls };
@@ -96,12 +96,12 @@ function brute(t: BruteTask): RefineOut {
     const p = makeProp(omm, t.props?.[i] ?? undefined);
     if (!p || !windowInCap(p, t.startMs, t.endMs)) return new Float64Array(0);
     const out: number[] = [];
-    let open = -1, last = -1;
+    let open = NaN, last = NaN; // NaN, not -1: instants before 1970 are negative
     for (let tm = t.startMs; tm < t.endMs; tm += t.stepMs) {
-      if (flags(p, tm).inside) { if (open < 0) open = tm; last = tm; }
-      else if (open >= 0) { out.push(open, last); open = -1; }
+      if (flags(p, tm).inside) { if (Number.isNaN(open)) open = tm; last = tm; }
+      else if (!Number.isNaN(open)) { out.push(open, last); open = NaN; }
     }
-    if (open >= 0) out.push(open, last);
+    if (!Number.isNaN(open)) out.push(open, last);
     return Float64Array.from(out);
   });
   return { intervals, propCalls: st.propCalls };

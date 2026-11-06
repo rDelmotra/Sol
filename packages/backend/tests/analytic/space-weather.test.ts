@@ -281,7 +281,7 @@ describe('space-weather provider registered into the real registry', () => {
       output: { shape: 'table' as const, columns: ['noradId', 'regime', 'ap'] },
     };
 
-    const validation = validateProgram(program);
+    const validation = validateProgram(program, { nowMs: Date.parse('2026-09-07T00:00:00Z') });
     assert.equal(validation.ok, true);
 
     const outcome = execute(program, { live: source });

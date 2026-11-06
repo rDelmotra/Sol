@@ -31,9 +31,10 @@ export function StatusLines({ open }: { open: boolean }) {
   const viewMode = useStore((s) => s.viewMode);
   const simRate = useStore((s) => s.simRate);
   const objectCount = useStore((s) => s.objectCount);
+  const replaying = useStore((s) => s.replayDay !== null);
   return (
     <>
-      <div style={{ marginTop: open ? 6 : 0 }}>MODE {viewMode.toUpperCase()} · {simRate}×</div>
+      <div style={{ marginTop: open ? 6 : 0 }}>MODE {replaying ? 'REPLAY' : viewMode.toUpperCase()} · {simRate}×</div>
       <div>TRACKING {groupInt(objectCount)} OBJ</div>
       {open && <CatalogCueLine />}
     </>

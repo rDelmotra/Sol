@@ -34,6 +34,9 @@ export const SSA_FIELDS = [
   'lastManoeuvreDeltaAKm',
   'appearedAt',
   'inFormation',
+  'breakupAt',
+  'breakupPieces',
+  'breakupParent',
 ] as const;
 
 /** An encounter is a predicted close approach at or under this miss distance. */
@@ -47,6 +50,13 @@ const JUMP_LOAD_DAYS = MANOEUVRE_WINDOW_DAYS + 5;
 export const KIND_JUMP = 'elements.jump';
 export const KIND_APPEARED = 'object.appeared';
 export const KIND_FORMATION = 'close.formation';
+export const KIND_BREAKUP = 'object.breakup';
+/**
+ * The live kinds are loaded for this many days back only. With the history backfill imported (1959 on, tens of millions of rows) the
+ * latest jump / appearance of an object would otherwise be an aggregate over its whole life, and the load a scan of the whole table.
+ * (Breakups are few and are loaded without a horizon.)
+ */
+export const LIVE_EVENT_DAYS = 400;
 
 const CHECK_INTERVAL_MS = 60_000;
 const MAX_AGE_MS = 6 * 3_600_000;
@@ -82,6 +92,15 @@ interface EventAgg {
   formationMs: number | null;
 }
 
+interface BreakupAgg {
+  /** start of the (latest) fragmentation the object belongs to */
+  atMs: number;
+  /** pieces catalogued, for the object that broke up */
+  pieces: number | null;
+  /** the broken-up object, for a piece */
+  parent: number | null;
+}
+
 export interface SsaProvider extends FieldProvider {
   /** Force a check + reload-if-changed now; resolves true when data was reloaded. Never rejects. */
   refresh(): Promise<boolean>;
@@ -111,8 +130,15 @@ const EVENT_SQL = `
            FILTER (WHERE COALESCE(e.t_end, e.t_start, e.day::timestamptz) >= $2::timestamptz) AS recent_times
     FROM ssa_event e
    CROSS JOIN LATERAL unnest(e.subjects) AS s(norad)
-   WHERE e.kind = ANY($1::text[])
+   WHERE e.kind = ANY($1::text[]) AND e.day >= $3::date
    GROUP BY s.norad, e.kind`;
+
+// object.breakup: few rows (one per fragmentation); the role of the subject (parent or piece) is read from the payload in JS.
+const BREAKUP_SQL = `
+  SELECT COALESCE(b.t_start, b.day::timestamptz) AS at, b.subjects AS subjects, b.payload->>'parentNorad' AS parent, b.payload->>'pieces' AS pieces
+    FROM ssa_event b
+   WHERE b.kind = '${KIND_BREAKUP}'
+   ORDER BY COALESCE(b.t_start, b.day::timestamptz), b.id`;
 
 const SIGNATURE_SQL = `
   SELECT (SELECT max(id) FROM ssa_run) AS run_id,
@@ -153,6 +179,7 @@ export function createSsaProvider(deps: SsaProviderDeps): SsaProvider {
 
   let encounters = new Map<number, EncounterAgg>();
   let events = new Map<number, EventAgg>();
+  let breakups = new Map<number, BreakupAgg>();
   let hasRun = false;
   let loaded = false;
   let signature: string | null = null;
@@ -178,7 +205,8 @@ export function createSsaProvider(deps: SsaProviderDeps): SsaProvider {
 
     const ev = new Map<number, EventAgg>();
     const since = new Date(now - JUMP_LOAD_DAYS * DAY_MS).toISOString();
-    const { rows: evRows } = await db.query(EVENT_SQL, [[KIND_JUMP, KIND_APPEARED, KIND_FORMATION], since]);
+    const horizon = new Date(now - LIVE_EVENT_DAYS * DAY_MS).toISOString().slice(0, 10);
+    const { rows: evRows } = await db.query(EVENT_SQL, [[KIND_JUMP, KIND_APPEARED, KIND_FORMATION], since, horizon]);
     for (const r of evRows) {
       const norad = num(r.norad);
       if (norad === null) continue;
@@ -199,15 +227,30 @@ export function createSsaProvider(deps: SsaProviderDeps): SsaProvider {
       }
     }
 
+    // Breakups: ascending by time, so the latest fragmentation of an object wins.
+    const bk = new Map<number, BreakupAgg>();
+    const { rows: bkRows } = await db.query(BREAKUP_SQL);
+    for (const r of bkRows) {
+      const at = timeMs(r.at);
+      if (at === null || !Array.isArray(r.subjects)) continue;
+      const parent = num(r.parent), pieces = num(r.pieces);
+      for (const sub of r.subjects) {
+        const id = num(sub);
+        if (id === null) continue;
+        bk.set(id, id === parent ? { atMs: at, pieces, parent: null } : { atMs: at, pieces: null, parent });
+      }
+    }
+
     // Swap in one step so readers never see a half-built state.
     encounters = enc;
     events = ev;
+    breakups = bk;
     hasRun = runId !== null;
     loaded = true;
     signature = sig;
     loadedAtMs = now;
     loadMs = Date.now() - t0;
-    logger.info(`SSA provider: ${enc.size} objects with encounters, ${ev.size} with events (run=${runId ?? 'none'}, ${loadMs} ms)`);
+    logger.info(`SSA provider: ${enc.size} objects with encounters, ${ev.size} with events, ${bk.size} in breakups (run=${runId ?? 'none'}, ${loadMs} ms)`);
   }
 
   async function check(): Promise<boolean> {
@@ -272,6 +315,12 @@ export function createSsaProvider(deps: SsaProviderDeps): SsaProvider {
         const t = events.get(noradId)?.appearedMs;
         return t === null || t === undefined ? null : new Date(t).toISOString();
       }
+      case 'breakupAt': {
+        const b = breakups.get(noradId);
+        return b ? new Date(b.atMs).toISOString() : null;
+      }
+      case 'breakupPieces': return breakups.get(noradId)?.pieces ?? null;
+      case 'breakupParent': return breakups.get(noradId)?.parent ?? null;
       case 'inFormation': {
         const t = events.get(noradId)?.formationMs;
         return t !== null && t !== undefined && t >= tMs - FORMATION_WINDOW_DAYS * DAY_MS && t <= tMs + DAY_MS;

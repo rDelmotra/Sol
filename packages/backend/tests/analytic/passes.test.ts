@@ -201,3 +201,52 @@ describe('POST /api/query/ask with passedOver (synthetic coverage set, real pass
     } finally { await fx.cleanup(); }
   });
 });
+
+describe('passedOver over history windows (mocked compiler / fake pass query)', () => {
+  const dec98 = (over: Record<string, unknown> = {}) => ({ fn: 'passedOver', region: 'india', from: '1998-12-01T00:00:00.000Z', to: '1999-01-01T00:00:00.000Z', ...over });
+
+  it('a December 1998 window validates (31 days, in the past) and reaches the pass query unclipped, on both universes', async () => {
+    for (const universe of ['live', 'all']) {
+      const calls: Array<{ region: string; from: number; to: number }> = [];
+      const registry = registryWith(createPassesProvider({ getDb: () => fakeDb, passedOverSet: fakeSet([100, 104], calls), nowMs: () => NOW }));
+      const p = prog(dec98(), { universe });
+      const notes = await registry.prepare(p, NOW);
+      assert.deepEqual(calls, [{ region: 'india', from: Date.parse('1998-12-01T00:00:00Z'), to: Date.parse('1999-01-01T00:00:00Z') }]);
+      assert.deepEqual(notes, [GUARANTEE], 'a post-1980 window needs no accuracy note');
+      const src = registry.buildSource(universe as 'live' | 'all')!;
+      const spec = collectProgramRefs(p).fnExprs[0]! as Parameters<NonNullable<typeof src.passedOver>>[1];
+      assert.deepEqual([0, 1, 2, 3, 4, 5].map((i) => src.passedOver!(i, spec, NOW)), [true, false, false, false, true, false]);
+    }
+  });
+
+  it('the 90-day limit stays for history windows', () => {
+    const v = validateProgram({ v: 1, universe: 'all', timeBinding: { mode: 'now' }, interpretation: 't', pipeline: [{ op: 'filter', where: dec98({ to: '1999-03-15T00:00:00.000Z' }) }], output: { shape: 'ids' } }, { nowMs: NOW });
+    assert.equal(v.ok, false);
+    assert.match(JSON.stringify(!v.ok && v.issues), /at most 90 days/);
+  });
+
+  it('a window before 1980 carries the era accuracy note; missing days are reported', async () => {
+    const registry = registryWith(createPassesProvider({ getDb: () => fakeDb, passedOverSet: fakeSet([100], [], { missingDays: ['1965-06-20'] }), nowMs: () => NOW }));
+    const notes = await registry.prepare(prog(dec98({ from: '1965-06-01T00:00:00.000Z', to: '1965-06-15T00:00:00.000Z' }), { universe: 'all' }), NOW);
+    assert.equal(notes.length, 3);
+    assert.match(notes[1]!, /1965-06-20/);
+    assert.match(notes[2]!, /starts in 1965.*typical position error 79 km, 95th percentile 808 km/);
+  });
+
+  it('ask route (mocked LLM): "who passed over India in December 1998" lists the ids of the fake pass query', async () => {
+    const provider = createPassesProvider({ getDb: () => fakeDb, passedOverSet: fakeSet([101, 103]), nowMs: () => NOW });
+    const registry = registryWith(provider);
+    const outcome: CompileOutcome = { ok: true, program: prog(dec98(), { universe: 'all', interpretation: 'December 1998, India' }), usage: { inputTokens: 1, outputTokens: 1 } } as unknown as CompileOutcome;
+    const compiler: AnalyticCompiler = { compile: async () => outcome };
+    const app = express(); app.use(express.json());
+    app.use('/api/query', createQueryRouter({ compiler, registry, nowMs: () => NOW }));
+    const server: Server = await new Promise((resolve) => { const s = app.listen(0, () => resolve(s)); });
+    try {
+      const port = (server.address() as { port: number }).port;
+      const r = await fetch(`http://127.0.0.1:${port}/api/query/ask`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: 'who passed over India in December 1998?' }) });
+      const j = await r.json() as { ok?: boolean; result?: { ids?: number[] }; ids?: number[] };
+      assert.equal(r.status, 200, JSON.stringify(j));
+      assert.deepEqual(j.result?.ids ?? j.ids, [101, 103]);
+    } finally { await new Promise((res) => server.close(res)); }
+  });
+});

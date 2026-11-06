@@ -30,6 +30,8 @@ export const CLIENT_UNSERVED_FIELDS: ReadonlySet<string> = new Set([
   // (history database); the browser has no source for them.
   'encounterCount36h', 'closestEncounterKm', 'maxEncounterPc', 'nextEncounterAt',
   'lastManoeuvreAt', 'manoeuvreCount30d', 'lastManoeuvreDeltaAKm', 'appearedAt', 'inFormation',
+  // Breakups (3) — backend SSA provider (object.breakup events of the history backfill).
+  'breakupAt', 'breakupPieces', 'breakupParent',
 ]);
 
 /** Fns the client serves. descendsFrom is NOT here (live-source returns false). */

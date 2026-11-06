@@ -132,7 +132,7 @@ test('Brouwer <-> Kozai: inverse of SGP4 initl un-Kozai (reference: satellite.js
   }
 });
 
-test('fetch-mcdowell helpers: listing (JSON and HTML), GCAT cut, interval never below 1 s (no network)', { skip: skipPy }, () => {
+test('fetch-mcdowell helpers: listing (JSON and HTML), GCAT cut, interval as given (no network)', { skip: skipPy }, () => {
   const gc = join(dir, 'satcat.tsv');
   writeFileSync(gc, '# Updated\n#JCAT\tSatcat\tPiece\tType\tName\tPLName\tLDate\n'
     + 'S00001\t1\t1957-001A\tR\tR/B\t-\t1957 Oct  4 1928\nS11684\t11684\t1979-104A\tP\tX\t-\t1979 Dec 28\nS11685\t11685\t1980-001A\tP\tY\t-\t1980 Jan  9\n'
@@ -151,7 +151,7 @@ print(json.dumps({'json': j, 'html': h, 'cut': m['gcat_cut'](sys.argv[2], 1979),
   assert.deepEqual(o.json, [{ name: 'S00005', size: 12 }]);
   assert.deepEqual(o.html, [{ name: 'S00008', size: null }, { name: 'S00009', size: null }]);
   assert.equal(o.cut, 11684); // smallest number launched after 1979, minus one (the late-catalogued 12000 does not move it)
-  assert.equal(o.interval, 1);
+  assert.equal(o.interval, 0.2);
   assert.ok(!o.ua.includes('@'));
   assert.equal(o.folder, '11600');
 });

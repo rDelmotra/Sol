@@ -12,6 +12,9 @@
 //   tsx build-range.ts --print-era > era.json          the built-in era table as an --era-file (windows, jump thresholds, SGP policy, accuracy)
 //
 // Options
+//   --parts a,b         coverage, changes and/or breakups (default coverage,changes). breakups = object.breakup events derived from ALL the
+//                       appeared events under --out at the end of the run (events/breakups.jsonl.gz, derive-breakups.ts); do not use it
+//                       with --shard (run derive-breakups.ts once after all shards are done)
 //   --workers N         coverage worker threads of THIS process (default: cores); the change detection runs in 1 more worker thread
 //   --shard k/n         process the days with (day index) % n == k, so n processes can split a range (round robin; every process
 //                       reads the same element-set files, the output files are disjoint)
@@ -37,12 +40,13 @@ import { ERA_TABLE, eraFor, validateEraTable, type EraSettings } from '../../src
 import { FileCatalog, dayMs, firstSeenOf, isoDayOf, toOmmObjects } from '../../src/ssa/history/catalog-files.js';
 import { loadObjects, readElsetDay, type Elset } from '../../src/ssa/history/elset-files.js';
 import { eventLine } from '../../src/ssa/history/derive-files.js';
+import { writeBreakups } from '../../src/ssa/history/breakup-files.js';
 import { chainPairs, summarizeChain } from '../../src/ssa/history/chain.js';
 import { assignPropagators, propagatorFor } from '../../src/ssa/history/propagator-policy.js';
 import type { ChangesOut, ChangesTask } from '../../src/ssa/history/changes-worker.js';
 import type { ChangeObject } from '../../src/ssa/events/types.js';
 
-type Part = 'coverage' | 'changes';
+type Part = 'coverage' | 'changes' | 'breakups';
 interface Args { [k: string]: string | boolean }
 
 function parseArgs(argv: string[]): Args {
@@ -129,6 +133,11 @@ function runChainCheck(a: Args): void {
 // ------------------------------------------------------------------ range build
 interface DayStats { [k: string]: unknown }
 
+async function runBreakups(out: string, objectsFile: string): Promise<void> {
+  const evs = writeBreakups(out, loadObjects(objectsFile));
+  console.log(`breakups: ${evs.length} clusters -> ${join(out, 'events', 'breakups.jsonl.gz')}`);
+}
+
 async function main(): Promise<void> {
   const a = parseArgs(process.argv.slice(2));
   if (a['print-era']) { process.stdout.write(JSON.stringify(ERA_TABLE, null, 1) + '\n'); return; }
@@ -136,7 +145,9 @@ async function main(): Promise<void> {
   const elsets = str(a, 'elsets'), objectsFile = str(a, 'objects'), out = str(a, 'out');
   const from = str(a, 'from'), to = str(a, 'to');
   const parts = (opt(a, 'parts') ?? 'coverage,changes').split(',').map((s) => s.trim()) as Part[];
-  for (const p of parts) if (p !== 'coverage' && p !== 'changes') throw new Error(`unknown part '${p}'`);
+  for (const p of parts) if (p !== 'coverage' && p !== 'changes' && p !== 'breakups') throw new Error(`unknown part '${p}'`);
+  const wantBreakups = parts.includes('breakups');
+  const dayParts = parts.filter((p) => p !== 'breakups');
   const workers = Math.max(1, num(a, 'workers', cpus().length));
   const [sk, sn] = (opt(a, 'shard') ?? '0/1').split('/').map(Number) as [number, number];
   const force = a.force === true;
@@ -148,9 +159,10 @@ async function main(): Promise<void> {
 
   const allDays = daysBetween(from, to);
   const days = shardOf(allDays, sk, sn);
-  const todo = days.filter((d) => parts.some((p) => force || !existsSync(markerPath(out, p, d))));
+  const todo = days.filter((d) => dayParts.some((p) => force || !existsSync(markerPath(out, p, d))));
   console.log(`range ${from}..${to}: ${allDays.length} days, shard ${sk}/${sn}: ${days.length} days, ${todo.length} to do (parts ${parts.join('+')}), ${workers} coverage workers`);
-  if (!todo.length) return;
+  if (wantBreakups && sn > 1) throw new Error('--parts breakups cannot run in a shard; run derive-breakups.ts after all shards');
+  if (!todo.length) { if (wantBreakups) await runBreakups(out, objectsFile); return; }
 
   const objects = loadObjects(objectsFile);
   console.log(`objects: ${objects.size}`);
@@ -237,6 +249,7 @@ async function main(): Promise<void> {
     await chPool?.close();
   }
   log(true);
+  if (wantBreakups && !failed) await runBreakups(out, objectsFile);
   console.log(`finished: ${done} days done, ${failed} failed, ${((Date.now() - T0) / 1000).toFixed(0)} s, peak RSS ${rssMB()} MB, element-set files read ${cat.filesRead} (${cat.rebuilds} rebuilds)`);
   if (failed) process.exitCode = 1;
 }

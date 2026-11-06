@@ -147,7 +147,7 @@ const FN_DOCS: Record<string, string> = {
   visuallyVisible: `{fn:'visuallyVisible', observer} → true if naked-eye visible now (elev>10°, range≤2000 km, observer dark, object sunlit)`,
   distToKm: `{fn:'distToKm', target: <noradId>} → distance to another object, km`,
   descendsFrom: `{fn:'descendsFrom', ancestor: <noradId>} → true if the object separated from this ancestor (GCAT separation tree)`,
-  passedOver: `{fn:'passedOver', region: <id>|{latDeg,lonDeg,radiusKm}, from:'<ISO>', to:'<ISO>'} → true if the object passed over the region at any time in [from, to] (its sub-satellite point was inside it; PAST windows only, at most ${SSA_PASS_MAX_WINDOW_DAYS} days)`,
+  passedOver: `{fn:'passedOver', region: <id>|{latDeg,lonDeg,radiusKm}, from:'<ISO>', to:'<ISO>'} → true if the object passed over the region at any time in [from, to] (its sub-satellite point was inside it; PAST windows only, any time in the history 1959-01-11 .. now, at most ${SSA_PASS_MAX_WINDOW_DAYS} days long)`,
 };
 
 function renderFnCatalog(): string {
@@ -161,7 +161,7 @@ ${lines.join('\n')}
 observer is 'user' (the app user's stored location) or {latDeg, lonDeg, altKm?}.
 Prefer 'user' unless the question names a place with known coordinates.
 
-passedOver regions: a named region id — ${SSA_PASS_REGION_IDS.map((r) => `"${r}"`).join(', ')} (only "india" has a careful outline; the others are rough polygons: say so in "interpretation") — or a circle {latDeg, lonDeg, radiusKm} (radiusKm ${SSA_PASS_CIRCLE_MIN_KM}..${SSA_PASS_CIRCLE_MAX_KM}, centre not within 5° of a pole). Any other place or country (Paris, Germany, the Pacific): use a circle around its coordinates with a radius that fits the question ("around Paris, 500 km" = radiusKm 500; a city with no radius given = 100 km, and say so). from/to are ISO-8601 instants computed from the current-time line of the question, to ≤ now.`;
+passedOver regions: a named region id — ${SSA_PASS_REGION_IDS.map((r) => `"${r}"`).join(', ')} (only "india" has a careful outline; the others are rough polygons: say so in "interpretation") — or a circle {latDeg, lonDeg, radiusKm} (radiusKm ${SSA_PASS_CIRCLE_MIN_KM}..${SSA_PASS_CIRCLE_MAX_KM}, centre not within 5° of a pole). Any other place or country (Paris, Germany, the Pacific): use a circle around its coordinates with a radius that fits the question ("around Paris, 500 km" = radiusKm 500; a city with no radius given = 100 km, and say so). from/to are ISO-8601 instants computed from the current-time line of the question (or the stated past date), to ≤ now.`;
 }
 
 // ── §4 Grammar cheat-sheet (hand-written) ─────────────────────────────────────
@@ -280,11 +280,19 @@ const HARD_RULES = `HARD RULES:
    populated for what the detector has seen, and encounters only look ~36 h ahead: say so in
    the interpretation. Do NOT dress these up for other questions: a trend, a rate over
    months, a fuel estimate, "most unstable orbits" (element variance over a window) or the
-   decay-rate-as-history trick all stay NEEDS_HISTORY; the ONLY live decay fast-path is the
+   decay-rate-as-history trick all stay NEEDS_HISTORY (EXCEPT the breakup fields, below); the ONLY live decay fast-path is the
    CURRENT decay rate (rule 3). Never use meanMotionDdot as an altitude derivative. Ground passes
    over a region in the past (rule 18) are NOT NEEDS_HISTORY either. Encounter
    fields count predicted close approaches (miss <= 5 km); they say nothing about collision
    risk beyond maxEncounterPc, and a high count is not a prediction that anything will collide.
+   Fragmentations (history 1959-2026-03, "what broke up in 2009", "debris from the Iridium-Cosmos collision") ARE answerable
+   from the breakup fields: breakupAt (start of the fragmentation: first day its debris was catalogued, for the object that broke up
+   and for each piece), breakupPieces (pieces catalogued, set ONLY on the object that broke up; select "what broke up" with
+   breakupPieces >= 10), breakupParent (NORAD id of the object that broke up, set ONLY on its pieces). A fragmentation is detected
+   as >= 10 newly catalogued debris pieces of one launch within 60 days of each other, so: the date is when the debris was
+   first catalogued, not the instant of the event (usually the same day to a few days later); a breakup whose pieces carry
+   another launch's designator, or fewer than 10 pieces, is missed; launch-time debris of a large launch can look like a breakup;
+   the piece count is as far as the data goes. Use universe "all" (the parents are mostly decayed). State this in "interpretation".
 14. "this year" phrasing OVERRIDES rule 13 — it is answerable from launchYear, not history:
    "launched/grew (the most) this year" → filter launchYear == <current year from the time
    line> (for "grew the most per program": groupBy program over that filter, count, sort).
@@ -320,6 +328,14 @@ const HARD_RULES = `HARD RULES:
    - The window is at most ${SSA_PASS_MAX_WINDOW_DAYS} days and lies in the past (to ≤ now). "Last N days" = [now − N d, now];
      "yesterday" = the previous UTC day [00:00, 24:00); "last week" = [now − 7 d, now]. Longer than ${SSA_PASS_MAX_WINDOW_DAYS} days →
      refuse NEEDS_HISTORY and offer the ${SSA_PASS_MAX_WINDOW_DAYS}-day window. The FUTURE ("will pass over ... tomorrow") is a sweep, not passedOver.
+   - HISTORY: passedOver also answers for windows in the past decades, from 1959-01-11 (the first full day of the catalog) to
+     2026-03-31, plus the recent nightly days; a month named in the question ("in December 1998", "February 2009") is the whole UTC
+     month [1st 00:00, next 1st 00:00) if it is ≤ ${SSA_PASS_MAX_WINDOW_DAYS} days (any month is); a longer period → the NEEDS_HISTORY
+     offer above. Days between 2026-04-01 and the start of the nightly lists have no data. Use universe "all" for such a window — most
+     of what flew then has decayed and is not in "live". The element sets are reconstructed per day: accuracy depends on the era (typical
+     position error: 1959-1964 hundreds of km to thousands, 1965-1972 tens to ~100 km, 1973-1979 ~10 km, 1980 on a few km),
+     and the sky was sparsely tracked before ~1980. State the era and that quality in "interpretation" for a window before 1980,
+     and say that the answer lists objects the catalog tracked then.
    - Region: a named id from the passedOver list, else a circle around the place (use "(resolved places: ...)" coordinates
      verbatim when given). A country or sea that is not a named id → refuse NOT_DERIVABLE and offer a circle, unless a point
      and radius were given or can be taken from the question.
@@ -706,6 +722,62 @@ const FEW_SHOTS: FewShot[] = [
           },
         ],
         output: { shape: 'ids' },
+      },
+    },
+  },
+  {
+    question: 'Who passed over India in December 1998?',
+    emit: {
+      program: {
+        v: 1, universe: 'all', timeBinding: { mode: 'now' },
+        interpretation:
+          "History question: December 1998 = the UTC month 1998-12-01T00:00Z to 1999-01-01T00:00Z (31 days). Universe 'all' because most of what flew in 1998 has decayed. 'Passed over India' = the object's sub-satellite point was inside India's outline at some instant of the month, at any altitude (not visibility from the ground). The objects are those the catalog tracked on those days (reconstructed from the archived element sets of the time; typical position error a few km, so an object skimming the border may be wrongly in or out). Exact at the star-map's 10-second resolution; a shorter visit is only found by a finer check (1 s). India is a careful outline.",
+        pipeline: [
+          { op: 'filter', where: { fn: 'passedOver', region: 'india', from: '1998-12-01T00:00:00.000Z', to: '1999-01-01T00:00:00.000Z' } },
+        ],
+        output: { shape: 'ids' },
+      },
+    },
+  },
+  {
+    question: 'What broke up in 2009?',
+    emit: {
+      program: {
+        v: 1, universe: 'all', timeBinding: { mode: 'now' },
+        interpretation:
+          "Objects that fragmented in 2009: a fragmentation is detected as at least 10 newly catalogued debris pieces of one launch within 60 days of each other (breakupPieces is set on the object that broke up, breakupAt is the day its debris was first catalogued, usually the day of the event or shortly after). Universe 'all' because the parents are mostly decayed. Breakups with fewer than 10 pieces, or with pieces filed under another launch, are missed; the piece count is as far as the data goes. Biggest first.",
+        pipeline: [
+          {
+            op: 'filter',
+            where: {
+              op: 'and',
+              args: [
+                { op: '>=', args: [{ field: 'breakupAt' }, { lit: '2009-01-01T00:00:00.000Z' }] },
+                { op: '<', args: [{ field: 'breakupAt' }, { lit: '2010-01-01T00:00:00.000Z' }] },
+                { op: '>=', args: [{ field: 'breakupPieces' }, { lit: 10 }] },
+              ],
+            },
+          },
+          { op: 'sort', by: 'breakupPieces', dir: 'desc' },
+          { op: 'limit', n: 25 },
+        ],
+        output: { shape: 'table', columns: ['name', 'breakupAt', 'breakupPieces'] },
+      },
+    },
+  },
+  {
+    question: 'Which objects launched in 1998 are still in orbit?',
+    emit: {
+      program: {
+        v: 1, universe: 'live', timeBinding: { mode: 'now' },
+        interpretation:
+          "Currently tracked objects (universe 'live' = still in orbit) whose launch year is 1998, by launch date.",
+        pipeline: [
+          { op: 'filter', where: { op: '==', args: [{ field: 'launchYear' }, { lit: 1998 }] } },
+          { op: 'sort', by: 'launchDate', dir: 'asc' },
+          { op: 'limit', n: 100 },
+        ],
+        output: { shape: 'table', columns: ['name', 'launchDate', 'objectType'] },
       },
     },
   },

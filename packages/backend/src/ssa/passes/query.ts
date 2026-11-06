@@ -15,8 +15,10 @@
 import { cpus } from 'node:os';
 import type { Pool } from 'pg';
 import { WorkerPool } from '../pool.js';
-import { coverageDir, coverageWorkers } from '../config.js';
-import { loadOmmCatalog, loadNames, isoDay } from '../coverage/catalog.js';
+import { coverageDir, coverageWorkers, historyPaths, historyPathsFrom, type HistoryPaths } from '../config.js';
+import { loadOmmCatalog, loadNames, isoDay, type OmmObject } from '../coverage/catalog.js';
+import { getHistoryStore } from '../history/store.js';
+import type { PropagatorKind } from '../encounter.js';
 import { DAY_MS } from '../coverage/consts.js';
 import type { Region } from '../coverage/region.js';
 import { readManifest, type Manifest } from '../coverage/store.js';
@@ -34,6 +36,11 @@ export const GUARANTEE = 'The star-map lists miss nothing at 10-second resolutio
 export interface PassesOpts {
   /** coverage directory (default SSA_COVERAGE_DIR) */
   dir?: string;
+  /**
+   * History root (default SSA_HISTORY_DIR; null = none): days without a coverage manifest in `dir` are looked up in <root>/coverage, and
+   * those days are refined with the element sets of <root>/elsets (and the manifest's SGP list) instead of omm_updates.
+   */
+  historyDir?: string | HistoryPaths | null;
   /** objects to return passes for, lowest NORAD id first (default 50; 0 = only the total) */
   limit?: number;
   /** only this object */
@@ -89,13 +96,13 @@ export function clearPassesCaches(): void { detailCache.clear(); resultCache.cle
 class Refiner {
   private pool: WorkerPool | null = null;
   constructor(private readonly workers: number) {}
-  async run(region: Region, mode: 'any' | 'passes', items: Array<{ norad: number; omm: unknown; windows: number[] }>): Promise<Map<number, Float64Array>> {
+  async run(region: Region, mode: 'any' | 'passes', items: Array<{ norad: number; omm: unknown; windows: number[]; propagator?: PropagatorKind }>): Promise<Map<number, Float64Array>> {
     const out = new Map<number, Float64Array>();
     if (!items.length) return out;
     if (!this.pool) { this.pool = new WorkerPool(this.workers, 'coverage/worker'); await this.pool.start({ kind: 'init' }); }
     const tasks: RefineTask[] = [];
     for (let b = 0; b < items.length; b += REFINE_CHUNK) {
-      tasks.push({ kind: 'refine', region, mode, items: items.slice(b, b + REFINE_CHUNK).map((x) => ({ omm: x.omm, windows: x.windows })) });
+      tasks.push({ kind: 'refine', region, mode, items: items.slice(b, b + REFINE_CHUNK).map((x) => ({ omm: x.omm, windows: x.windows, ...(x.propagator ? { propagator: x.propagator } : {}) })) });
     }
     const res = await this.pool.map<RefineOut>(tasks);
     res.forEach((r, ti) => r.intervals.forEach((iv, k) => out.set(items[ti * REFINE_CHUNK + k]!.norad, iv)));
@@ -104,16 +111,33 @@ class Refiner {
   async close(): Promise<void> { if (this.pool) { await this.pool.close(); this.pool = null; } }
 }
 
+/** The element sets a day is refined with: history days from the element-set files (the manifest's SGP list says which are SGP), else omm_updates. */
+async function loadDayOmms(pool: Pool, plan: DayPlan, ids: readonly number[]): Promise<Map<number, OmmObject>> {
+  if (!plan.history) return new Map((await loadOmmCatalog(pool, plan.day, ids)).map((x) => [x.noradId, x]));
+  const want = new Set(ids);
+  const sgp = new Set(plan.manifest?.propagators?.sgp ?? []);
+  const out = new Map<number, OmmObject>();
+  for (const o of getHistoryStore(plan.history).dayCatalog(plan.day)) {
+    if (!want.has(o.noradId)) continue;
+    out.set(o.noradId, { noradId: o.noradId, omm: o.omm, ...(sgp.has(o.noradId) ? { propagator: 'sgp' as PropagatorKind } : {}) });
+  }
+  return out;
+}
+
 interface DayPlan {
   day: string;
   dayStartMs: number;
   manifest: Manifest | null;
   /** brute-force day (no coverage, filled on the fly) */
   brute: boolean;
+  /** directory whose <day>/ holds this day's coverage files */
+  dir: string;
+  /** history root when the day comes from the history backfill (elements from its element-set files), else null */
+  history: HistoryPaths | null;
 }
 
 /** Candidate windows keyed by NORAD id for a day. */
-function candidatesByNorad(dir: string, plan: DayPlan, region: Region, fromMs: number, toMs: number, only: ReadonlySet<number> | undefined, bruteIds: number[] | undefined, st: { coverS: number }): { windows: Map<number, number[]>; layer: string } | null {
+function candidatesByNorad(plan: DayPlan, region: Region, fromMs: number, toMs: number, only: ReadonlySet<number> | undefined, bruteIds: number[] | undefined, st: { coverS: number }): { windows: Map<number, number[]>; layer: string } | null {
   const t0 = performance.now();
   try {
     if (plan.brute) {
@@ -124,6 +148,7 @@ function candidatesByNorad(dir: string, plan: DayPlan, region: Region, fromMs: n
       return { windows: out, layer: 'brute-force' };
     }
     const m = plan.manifest!;
+    const dir = plan.dir;
     const dl = chooseLayer(dir, m);
     if (!dl) return null;
     let onlyIdx: Set<number> | undefined;
@@ -136,19 +161,23 @@ function candidatesByNorad(dir: string, plan: DayPlan, region: Region, fromMs: n
 }
 
 interface Ctx {
-  pool: Pool; region: Region; fromMs: number; toMs: number; dir: string; refiner: Refiner;
+  pool: Pool; region: Region; fromMs: number; toMs: number; refiner: Refiner;
   plans: DayPlan[]; missing: string[]; filled: string[]; layers: Record<string, string>;
   st: PassesResult['stats'];
   log: (m: string) => void;
 }
 
-async function plan(pool: Pool, dir: string, fromMs: number, toMs: number, fill: boolean, nowMs: number): Promise<{ plans: DayPlan[]; missing: string[]; filled: string[] }> {
+async function plan(pool: Pool, dir: string, hist: HistoryPaths | null, fromMs: number, toMs: number, fill: boolean, nowMs: number): Promise<{ plans: DayPlan[]; missing: string[]; filled: string[] }> {
   const plans: DayPlan[] = [], missing: string[] = [], filled: string[] = [];
   const days = daysOf(fromMs, toMs);
   for (const day of days) {
     const dayStartMs = Date.parse(day + 'T00:00:00Z');
     const m = readManifest(dir, day);
-    if (m && chooseLayer(dir, m)) { plans.push({ day, dayStartMs, manifest: m, brute: false }); continue; }
+    if (m && chooseLayer(dir, m)) { plans.push({ day, dayStartMs, manifest: m, brute: false, dir, history: null }); continue; }
+    // not in the live coverage directory: the history backfill's, if there is one
+    const hc = hist?.coverage ?? null;
+    const hm = hc ? readManifest(hc, day) : null;
+    if (hm && hc && chooseLayer(hc, hm)) { plans.push({ day, dayStartMs, manifest: hm, brute: false, dir: hc, history: hist }); continue; }
     missing.push(day);
   }
   if (fill && missing.length > 0 && missing.length <= MAX_FILL_DAYS) {
@@ -158,7 +187,7 @@ async function plan(pool: Pool, dir: string, fromMs: number, toMs: number, fill:
       if (dayStartMs >= nowMs) continue;
       const has = await pool.query('SELECT 1 FROM omm_updates WHERE epoch < to_timestamp($1::float8 / 1000.0) LIMIT 1', [dayStartMs + DAY_MS]);
       if (!has.rowCount) continue;
-      plans.push({ day, dayStartMs, manifest: null, brute: true });
+      plans.push({ day, dayStartMs, manifest: null, brute: true, dir, history: null });
       filled.push(day); missing.splice(missing.indexOf(day), 1);
     }
     plans.sort((a, b) => a.day.localeCompare(b.day));
@@ -169,19 +198,19 @@ async function plan(pool: Pool, dir: string, fromMs: number, toMs: number, fill:
 /** Phase A: the objects with at least one pass, oldest day first, skipping objects already found. */
 async function findObjects(c: Ctx, only: ReadonlySet<number> | undefined): Promise<Set<number>> {
   const found = new Set<number>();
-  let prefetch: { day: string; p: Promise<Map<number, Record<string, unknown>>> } | null = null;
-  const loadFor = async (plan: DayPlan, wanted: number[]): Promise<Map<number, Record<string, unknown>>> => {
+  let prefetch: { day: string; p: Promise<Map<number, OmmObject>> } | null = null;
+  const loadFor = async (plan: DayPlan, wanted: number[]): Promise<Map<number, OmmObject>> => {
     const t0 = performance.now();
-    const rows = await loadOmmCatalog(c.pool, plan.day, wanted);
+    const rows = await loadDayOmms(c.pool, plan, wanted);
     c.st.loadS += (performance.now() - t0) / 1000;
-    return new Map(rows.map((r) => [r.noradId, r.omm]));
+    return rows;
   };
   const cands: Array<{ plan: DayPlan; windows: Map<number, number[]> } | null> = [];
   for (let k = 0; k < c.plans.length; k++) {
     const plan = c.plans[k]!;
     let bruteIds: number[] | undefined;
     if (plan.brute) bruteIds = (await loadOmmCatalog(c.pool, plan.day, only ? [...only] : undefined)).map((r) => r.noradId);
-    const r = candidatesByNorad(c.dir, plan, c.region, c.fromMs, c.toMs, only, bruteIds, c.st);
+    const r = candidatesByNorad(plan, c.region, c.fromMs, c.toMs, only, bruteIds, c.st);
     if (r) c.layers[plan.day] = r.layer;
     cands.push(r ? { plan, windows: r.windows } : null);
   }
@@ -196,8 +225,13 @@ async function findObjects(c: Ctx, only: ReadonlySet<number> | undefined): Promi
     prefetch = null;
     // overlap the next day's catalog read with this day's refine
     const nx = cands.slice(k + 1).find((x) => x);
-    if (nx) { const w = [...nx.windows.keys()].filter((nd) => !found.has(nd)); prefetch = { day: nx.plan.day, p: loadFor(nx.plan, w) }; }
-    const items = todo.filter((nd) => omms.has(nd)).map((nd) => ({ norad: nd, omm: omms.get(nd), windows: windows.get(nd)! }));
+    if (nx) {
+      const w = [...nx.windows.keys()].filter((nd) => !found.has(nd));
+      const p = loadFor(nx.plan, w);
+      p.catch(() => undefined); // a failure surfaces where the prefetch is awaited (next day), never as an unhandled rejection meanwhile
+      prefetch = { day: nx.plan.day, p };
+    }
+    const items = todo.filter((nd) => omms.has(nd)).map((nd) => ({ norad: nd, omm: omms.get(nd)!.omm, windows: windows.get(nd)!, ...(omms.get(nd)!.propagator ? { propagator: omms.get(nd)!.propagator! } : {}) }));
     c.st.refinedObjectDays += items.length;
     const t0 = performance.now();
     const res = await c.refiner.run(c.region, 'any', items);
@@ -226,12 +260,12 @@ async function passesOfObjects(c: Ctx, chosen: number[]): Promise<Map<number, nu
     }
     if (!need.length) continue;
     const bruteIds = plan.brute ? need : undefined;
-    const r = candidatesByNorad(c.dir, plan, c.region, c.fromMs, c.toMs, new Set(need), bruteIds, c.st);
+    const r = candidatesByNorad(plan, c.region, c.fromMs, c.toMs, new Set(need), bruteIds, c.st);
     if (!r) continue;
     c.layers[plan.day] ??= r.layer;
     const wantedIds = [...r.windows.keys()].filter((nd) => want.has(nd));
-    const omms = new Map((await loadOmmCatalog(c.pool, plan.day, wantedIds)).map((x) => [x.noradId, x.omm]));
-    const items = wantedIds.filter((nd) => omms.has(nd)).map((nd) => ({ norad: nd, omm: omms.get(nd), windows: r.windows.get(nd)! }));
+    const omms = await loadDayOmms(c.pool, plan, wantedIds);
+    const items = wantedIds.filter((nd) => omms.has(nd)).map((nd) => ({ norad: nd, omm: omms.get(nd)!.omm, windows: r.windows.get(nd)!, ...(omms.get(nd)!.propagator ? { propagator: omms.get(nd)!.propagator! } : {}) }));
     c.st.refinedObjectDays += items.length;
     const t0 = performance.now();
     const res = await c.refiner.run(c.region, 'passes', items);
@@ -266,9 +300,10 @@ async function setup(pool: Pool, region: Region, fromMs: number, toMs: number, o
   if (toMs > nowMs) { toMs = nowMs; clipped = true; }
   if (toMs <= fromMs) return { empty: true, clipped };
   const dir = o.dir ?? coverageDir();
-  const { plans, missing, filled } = await plan(pool, dir, fromMs, toMs, o.fill === true, nowMs);
+  const hist = o.historyDir === undefined ? historyPaths() : typeof o.historyDir === 'string' ? historyPathsFrom(o.historyDir) : o.historyDir;
+  const { plans, missing, filled } = await plan(pool, dir, hist, fromMs, toMs, o.fill === true, nowMs);
   const refiner = new Refiner(o.workers ?? coverageWorkers(cpus().length));
-  const c: Ctx = { pool, region, fromMs, toMs, dir, refiner, plans, missing, filled, layers: {}, st: { days: plans.length, candidateObjectDays: 0, refinedObjectDays: 0, wallS: 0, coverS: 0, loadS: 0, refineS: 0 }, log: o.onProgress ?? (() => undefined) };
+  const c: Ctx = { pool, region, fromMs, toMs, refiner, plans, missing, filled, layers: {}, st: { days: plans.length, candidateObjectDays: 0, refinedObjectDays: 0, wallS: 0, coverS: 0, loadS: 0, refineS: 0 }, log: o.onProgress ?? (() => undefined) };
   return { c, clipped, toMs };
 }
 

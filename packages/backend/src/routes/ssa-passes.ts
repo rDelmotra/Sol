@@ -10,6 +10,8 @@ import {
   GUARANTEE, PassesError, REGIONS, circleRegion, loadNames, namedRegion, passesOver,
   type PassesOpts, type PassesResultWithIds, type Region,
 } from '../ssa/passes/index.js';
+import { historyPaths } from '../ssa/config.js';
+import { getHistoryStore } from '../ssa/history/store.js';
 import { logger } from '../utils/logger.js';
 
 // ============================================================
@@ -21,6 +23,8 @@ import { logger } from '../utils/logger.js';
 //          their pass intervals. `missingDays` lists days of the window without coverage files (never silently skipped).
 //   GET /api/ssa/regions → the named regions (India careful, the rest approximate) and the circle limits.
 //
+// History: windows over days of SSA_HISTORY_DIR (1959 on) work like any other (coverage fallback, see ssa/passes/query.ts); names come from
+// the database, else from the history root's objects file.
 // Past windows are immutable: `public, max-age=3600` when `to` is before today (UTC), 60 s otherwise. 400 on bad input, 503 without
 // history, 429 when too many pass queries are already running. The first query over a long window computes (tens of seconds for a
 // whole-catalog region such as India); repeats are served from memory.
@@ -125,6 +129,14 @@ export function createSsaPassesRouter(deps: SsaPassesRouterDeps): Router {
     try {
       const r = await run(db, q.region, q.fromMs, q.toMs, { limit: q.limit, fill: q.fill, nowMs, ...(q.norad !== undefined ? { norad: q.norad } : {}), ...(deps.coverageDir ? { dir: deps.coverageDir } : {}) });
       const nm = await names(db, r.objects.map((o) => o.noradId)).catch(() => new Map<number, string>());
+      // history days: objects the live database does not know (decayed long ago) are named by the history root's objects file
+      const root = historyPaths();
+      if (root && r.objects.some((o) => !nm.get(o.noradId))) {
+        try {
+          const hist = getHistoryStore(root).objects();
+          for (const o of r.objects) if (!nm.get(o.noradId)) { const n = hist.get(o.noradId)?.name; if (n) nm.set(o.noradId, n); }
+        } catch (err) { logger.warn('passes: history object names unavailable:', (err as Error).message); }
+      }
       const iso = (t: number) => new Date(t).toISOString();
       const body: SsaPassesResponse = {
         region: regionInfo(q.region),

@@ -11,7 +11,12 @@ import type { TLEInput } from '../data/types';
 export type { TLEInput };
 
 export type Sgp4WorkerInMessage =
-    | { type: 'INIT'; tles: TLEInput[]; startIndex: number }
+    /**
+     * maxTsinceMin: propagation-window cap in minutes from each set's epoch
+     * (default MAX_TSINCE_MIN). History replay widens it: early-era catalogs keep
+     * element sets up to ~93 days old.
+     */
+    | { type: 'INIT'; tles: TLEInput[]; startIndex: number; maxTsinceMin?: number }
     | { type: 'PROPAGATE'; timestamp: number; seq: number };
 
 export type Sgp4WorkerOutMessage =

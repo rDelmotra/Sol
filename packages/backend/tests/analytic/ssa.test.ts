@@ -29,6 +29,7 @@ interface FakeState {
   evN: number;
   encounterRows: Record<string, unknown>[];
   eventRows: Record<string, unknown>[];
+  breakupRows?: Record<string, unknown>[];
   calls: { sig: number; enc: number; ev: number };
   failSignature?: boolean;
 }
@@ -43,6 +44,7 @@ function fakeDb(state: FakeState): SsaQueryable {
       }
       if (sql.includes('FROM conjunction c')) { state.calls.enc++; return { rows: state.encounterRows }; }
       if (sql.includes('FROM ssa_event e')) { state.calls.ev++; return { rows: state.eventRows }; }
+      if (sql.includes('FROM ssa_event b')) return { rows: state.breakupRows ?? [] };
       throw new Error(`unexpected sql: ${sql.slice(0, 60)}`);
     },
   };
@@ -456,6 +458,88 @@ describe('ssa provider: database-backed', { skip: !DB_URL && 'DATABASE_URL not s
     try {
       const { json } = await ask(url);
       assert.deepEqual(json.result.ids, [100, 300]);
+    } finally { await close(); }
+  });
+});
+
+
+describe('ssa provider: breakup fields (fake DB)', () => {
+  const t09 = Date.parse('2009-02-10T00:00:00Z');
+  const withBreakups = (): FakeState => ({
+    ...baseState(),
+    breakupRows: [
+      // ascending by time; subjects[0] is the parent
+      { at: new Date(t09), subjects: [22675, 33000, 33001], parent: '22675', pieces: '1200' },
+      { at: new Date(t09 + 40 * DAY), subjects: [24946, 33001], parent: '24946', pieces: '700' },
+    ],
+  });
+
+  it('serves breakupAt / breakupPieces / breakupParent: the parent has the piece count, a piece has its parent, the latest fragmentation wins, others read null', async () => {
+    const p = makeProvider(withBreakups());
+    await p.refresh();
+    assert.equal(p.getField(22675, 'breakupAt', NOW), '2009-02-10T00:00:00.000Z');
+    assert.equal(p.getField(22675, 'breakupPieces', NOW), 1200);
+    assert.equal(p.getField(22675, 'breakupParent', NOW), null);
+    assert.equal(p.getField(33000, 'breakupAt', NOW), '2009-02-10T00:00:00.000Z');
+    assert.equal(p.getField(33000, 'breakupParent', NOW), 22675);
+    assert.equal(p.getField(33000, 'breakupPieces', NOW), null);
+    // a piece listed in two fragmentations: the later one
+    assert.equal(p.getField(33001, 'breakupParent', NOW), 24946);
+    assert.equal(p.getField(33001, 'breakupAt', NOW), new Date(t09 + 40 * DAY).toISOString());
+    for (const f of ['breakupAt', 'breakupPieces', 'breakupParent']) assert.equal(p.getField(1, f, NOW), null, f);
+  });
+
+  it('the fields are registered, listed by the provider and served by the server only', () => {
+    for (const f of ['breakupAt', 'breakupPieces', 'breakupParent']) {
+      assert.ok((SSA_FIELDS as readonly string[]).includes(f));
+      assert.ok(f in FIELD_REGISTRY, `${f} in FIELD_REGISTRY`);
+    }
+    assert.equal(FIELD_REGISTRY.breakupAt!.kind, 'date'); assert.equal(FIELD_REGISTRY.breakupPieces!.kind, 'number'); assert.equal(FIELD_REGISTRY.breakupParent!.kind, 'id');
+  });
+
+  it('no breakups in the database: every field reads null (not an error)', async () => {
+    const p = makeProvider(baseState());
+    await p.refresh();
+    assert.equal(p.getField(22675, 'breakupAt', NOW), null);
+    assert.equal(p.getField(100, 'manoeuvreCount30d', NOW), 2, 'the other fields are unaffected');
+  });
+});
+
+describe('POST /api/query/ask: "what broke up in 2009" (fake DB, mocked compiler)', () => {
+  const BROKE_UP_2009: AnalyticProgram = program({
+    universe: 'all',
+    interpretation: 'objects that fragmented in 2009, biggest first',
+    pipeline: [
+      { op: 'filter', where: { op: 'and', args: [
+        { op: '>=', args: [{ field: 'breakupAt' }, { lit: '2009-01-01T00:00:00.000Z' }] },
+        { op: '<', args: [{ field: 'breakupAt' }, { lit: '2010-01-01T00:00:00.000Z' }] },
+        { op: '>=', args: [{ field: 'breakupPieces' }, { lit: 10 }] },
+      ] } },
+      { op: 'sort', by: 'breakupPieces', dir: 'desc' },
+      { op: 'limit', n: 25 },
+    ],
+    output: { shape: 'table', columns: ['noradId', 'breakupAt', 'breakupPieces'] },
+  } as Partial<AnalyticProgram>);
+
+  it('lists the parents of the 2009 fragmentations (not their pieces, not other years), biggest first', async () => {
+    const state = baseState();
+    state.breakupRows = [
+      { at: new Date('2007-01-11T00:00:00Z'), subjects: [25730, 31000], parent: '25730', pieces: '3000' },
+      { at: new Date('2009-02-10T00:00:00Z'), subjects: [22675, 33000, 33001], parent: '22675', pieces: '1200' },
+      { at: new Date('2009-02-10T00:00:00Z'), subjects: [24946, 34000], parent: '24946', pieces: '600' },
+      { at: new Date('2009-06-01T00:00:00Z'), subjects: [41000, 41001], parent: '41000', pieces: '9' },
+    ];
+    const ssa = makeProvider(state);
+    await ssa.refresh();
+    const registry = new DataSourceRegistry();
+    registry.registerSpine('all', { id: 'fixture:spine', spine: () => [22675, 24946, 25730, 33000, 33001, 34000, 41000, 100] });
+    registry.register('all', ssa);
+    const { url, close } = await startApp(registry, { ok: true, program: BROKE_UP_2009, interpretation: 'x', cached: false, tookMs: 1 });
+    try {
+      const { status, json } = await ask(url);
+      assert.equal(status, 200, JSON.stringify(json));
+      assert.equal(json.mode, 'result');
+      assert.deepEqual(json.result.rows.map((r: Record<string, unknown>) => [r.breakupAt, r.breakupPieces]), [['2009-02-10T00:00:00.000Z', 1200], ['2009-02-10T00:00:00.000Z', 600]]);
     } finally { await close(); }
   });
 });

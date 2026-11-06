@@ -3,6 +3,8 @@ import { useStore } from '../../../store/useStore';
 import { HUD_CORNER_INSET, TIME_CONSOLE_OPEN_W } from '../layout';
 import { ClockRow } from './ClockRow';
 import { DeltaLine, ScrubHint, StatusLines } from './ConsoleReadouts';
+import { ReplayBadge } from './ReplayBadge';
+import { ReplayNavigator } from './ReplayNavigator';
 import { TimeFieldChips } from './TimeFieldChips';
 import { TimeWheel } from './TimeWheel';
 import { useTimeStep } from './useTimeStep';
@@ -73,6 +75,8 @@ export function TimeConsole() {
 
         <DeltaLine open={open} />
         <StatusLines open={open} />
+        <ReplayBadge />
+        {open && <ReplayNavigator />}
         {open && <ScrubHint />}
       </div>
     </div>

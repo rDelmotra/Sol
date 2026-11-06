@@ -4,7 +4,9 @@ import { useStore } from '../../store/useStore';
 import { simClock } from '../../time/SimClock';
 import { fetchHistoryCoverage, fetchHistoryDay, utcDay } from '../../data/history-client';
 import type { TleCatalogResult } from '../../data/tle-client';
-import { computeCatalogTarget, targetKey, type CatalogTarget } from './timeline-target';
+import { getReplayClient, type ReplayClient } from '../../data/replay-client';
+import { buildReplayResult, fragmentIds, REPLAY_MAX_TSINCE_MIN } from '../../data/replay-catalog';
+import { computeCatalogTarget, prefetchNeighbour, targetKey, type CatalogTarget } from './timeline-target';
 import { easeInOutCubic } from '../easing';
 
 /**
@@ -24,7 +26,8 @@ export interface TimelineHost {
    */
   onCatalogSwapped(catalog: EnrichedTLEObject[]): void;
   satellitesSetHidden(hidden: boolean): void;
-  satellitesReseed(catalog: EnrichedTLEObject[], tles: TleCatalogResult['tles']): void;
+  /** `maxTsinceMin` widens the worker's propagation window (replay catalogs); omitted = live default. */
+  satellitesReseed(catalog: EnrichedTLEObject[], tles: TleCatalogResult['tles'], maxTsinceMin?: number): void;
   satellitesSnap(): void;
   refreshOrbitTrail(): void;
 }
@@ -44,6 +47,8 @@ export class TimelineController {
 
   private readonly apiUrl: string;
   private readonly host: TimelineHost;
+  /** History REPLAY archive client (/api/history/range, /catalog). */
+  private readonly replay: ReplayClient;
 
   /** The catalog currently loaded in the render plane (Engine-side single owner). */
   private catalogData: EnrichedTLEObject[] = [];
@@ -63,10 +68,13 @@ export class TimelineController {
   private pendingSelectionNorad: number | null = null;
   /** Throttle clock for glide-driven UI mirror pushes (decoupled from the 4 Hz block). */
   private lastGlideUiAt = 0;
+  /** Replay target whose day could not be served (archive gap / 404 / 503): shown as planetarium, not retried every tick. */
+  private missingKey: string | null = null;
 
-  constructor({ apiUrl, host }: { apiUrl: string; host: TimelineHost }) {
+  constructor({ apiUrl, host, replay }: { apiUrl: string; host: TimelineHost; replay?: ReplayClient }) {
     this.apiUrl = apiUrl;
     this.host = host;
+    this.replay = replay ?? getReplayClient(apiUrl);
   }
 
   /** The currently loaded catalog (index space for picking / tracking / trails). */
@@ -90,15 +98,21 @@ export class TimelineController {
     void fetchHistoryCoverage(this.apiUrl).then((cov) => {
       if (!this.host.isDisposed()) useStore.getState().setHistoryCoverage(cov);
     });
+    // Replay archive span (null on 503 → the date picker offers only the live range).
+    void this.replay.range().then((range) => {
+      if (!this.host.isDisposed()) useStore.getState().setReplayRange(range);
+    });
   }
 
   /** What the catalog SHOULD show for the current view-time. */
   private computeTarget(): CatalogTarget {
+    const store = useStore.getState();
     return computeCatalogTarget({
       simMs: simClock.now(),
       wallMs: Date.now(),
-      coverage: useStore.getState().historyCoverage,
+      coverage: store.historyCoverage,
       futureHorizonDays: FUTURE_HORIZON_DAYS,
+      replayRange: store.replayRange,
     });
   }
 
@@ -106,7 +120,7 @@ export class TimelineController {
   private loadedDayForSnap(): string | null {
     const lt = this.loadedTarget;
     if (lt.kind === 'hidden') return null;
-    if (lt.kind === 'day') return lt.day;
+    if (lt.kind === 'day' || lt.kind === 'replay') return lt.day;
     return utcDay(Date.now()); // live
   }
 
@@ -121,7 +135,9 @@ export class TimelineController {
     // caller (loop, onSimTimeJump, the pause on grab) funnels through here, so the
     // single guard covers them all.
     if (performance.now() - this.lastScrubAt < TimelineController.RESEED_DEBOUNCE_MS) return;
-    if (targetKey(this.computeTarget()) === targetKey(this.loadedTarget)) return;
+    // Replay: keep the next day (in playback direction) warm so the midnight swap is instant.
+    if (this.loadedTarget.kind === 'replay') this.prefetchAround(this.loadedTarget.day);
+    if (this.isSettled(this.computeTarget())) return;
     if (this.reconcileTimer) clearTimeout(this.reconcileTimer);
     this.reconcileTimer = setTimeout(() => {
       this.reconcileTimer = null;
@@ -132,25 +148,29 @@ export class TimelineController {
   private async runReseedToDesired(): Promise<void> {
     if (this.isReseeding || this.host.isHalted()) return;
     const target = this.computeTarget();
-    if (targetKey(target) === targetKey(this.loadedTarget)) return;
+    if (this.isSettled(target)) return;
 
     this.isReseeding = true;
     try {
       if (target.kind === 'live') await this.reseedToLive();
       else if (target.kind === 'hidden') this.applyHidden();
+      else if (target.kind === 'replay') await this.reseedToReplayDay(target.day);
       else await this.reseedToDay(target.day);
     } catch (err) {
       console.error('History catalog re-seed failed:', err);
     } finally {
       this.isReseeding = false;
       // Time may have moved during the await → re-check.
-      if (
-        !this.host.isDisposed() &&
-        targetKey(this.computeTarget()) !== targetKey(this.loadedTarget)
-      ) {
+      if (!this.host.isDisposed() && !this.isSettled(this.computeTarget())) {
         this.reconcileCatalogForTime();
       }
     }
+  }
+
+  /** Nothing to do for `target`: it is loaded, or it is the replay day known to be unavailable. */
+  private isSettled(target: CatalogTarget): boolean {
+    const key = targetKey(target);
+    return key === targetKey(this.loadedTarget) || key === this.missingKey;
   }
 
   private async reseedToDay(day: string): Promise<void> {
@@ -163,6 +183,68 @@ export class TimelineController {
     } finally {
       if (!this.host.isDisposed()) useStore.getState().setHistoryLoading(false);
     }
+  }
+
+  /**
+   * History REPLAY: install the archive catalog as of the end of `day`. Coming from
+   * another replay day the new objects are laid out in the previous slots
+   * (stableOrder) so survivors keep their index — the swap at midnight is
+   * continuous — and the selection is re-resolved by noradId as for every swap.
+   */
+  private async reseedToReplayDay(day: string): Promise<void> {
+    const instant = this.replay.hasInMemory(day);
+    if (!instant) useStore.getState().setHistoryLoading(true);
+    try {
+      const body = await this.replay.catalog(day);
+      if (this.host.isDisposed()) return;
+      // Time may have moved on while fetching (scrub) → only install if still wanted.
+      const now = this.computeTarget();
+      if (now.kind !== 'replay' || now.day !== day) return;
+      if (!body) {
+        // A day the archive cannot serve (gap / 404 / 503): sky only, like any uncovered past.
+        if (this.loadedTarget.kind !== 'hidden') this.applyHidden();
+        this.missingKey = targetKey(now);
+        return;
+      }
+      const prev = this.loadedTarget.kind === 'replay' ? this.catalogData : undefined;
+      const built = buildReplayResult(body, prev);
+      this.applyCatalog(built.result, day, { replay: true });
+      useStore.getState().setReplayLoaded({ day, accuracy: built.accuracy, sgpCount: built.sgpCount });
+      this.reapplyFragments();
+      this.prefetchAround(day);
+    } finally {
+      if (!instant && !this.host.isDisposed()) useStore.getState().setHistoryLoading(false);
+    }
+  }
+
+  /** Warm the neighbouring replay day in the playback direction (no-op when cached). */
+  private prefetchAround(day: string): void {
+    const store = useStore.getState();
+    const next = prefetchNeighbour(day, store.simRate, store.replayRange);
+    if (next) this.replay.prefetch(next);
+  }
+
+  /**
+   * "Show fragments" survives day swaps: re-derive the pieces of the launch from the
+   * newly loaded catalog (later-catalogued pieces join). Cleared filter = mode off.
+   */
+  private reapplyFragments(): void {
+    const store = useStore.getState();
+    const f = store.replayFragments;
+    if (!f) return;
+    if (store.analyticFilter.mode === 'all') {
+      store.setReplayFragments(null);
+      return;
+    }
+    store.setAnalyticFilter(fragmentIds(this.catalogData, f.launches, f.parentNorads));
+  }
+
+  /** Leaving replay ends "show fragments" (its filter belongs to archive days). */
+  private dropFragments(): void {
+    const store = useStore.getState();
+    if (!store.replayFragments) return;
+    store.setReplayFragments(null);
+    store.setAnalyticFilter(null);
   }
 
   private async reseedToLive(): Promise<void> {
@@ -207,6 +289,8 @@ export class TimelineController {
 
     this.loadedTarget = { kind: 'hidden' };
     store.setHistoryDay(null);
+    store.setReplayLoaded({ day: null, accuracy: null, sgpCount: 0 });
+    this.dropFragments();
     store.setPlanetarium(true);
     this.host.refreshOrbitTrail();
   }
@@ -216,7 +300,7 @@ export class TimelineController {
    * primitives, re-resolves the selection by noradId so "follow" survives the swap,
    * DSOs are left alone (they follow their own ephemeris window).
    */
-  private applyCatalog(result: TleCatalogResult, day: string | null): void {
+  private applyCatalog(result: TleCatalogResult, day: string | null, opts: { replay?: boolean } = {}): void {
     const { catalogData, tles, categoryCounts, regimeCounts, facetCounts } = result;
     const store = useStore.getState();
 
@@ -234,7 +318,7 @@ export class TimelineController {
     this.catalogData = catalogData;
 
     // Render plane: renderer reinit (clears any ghost tail) + worker re-INIT (snaps).
-    this.host.satellitesReseed(catalogData, tles);
+    this.host.satellitesReseed(catalogData, tles, opts.replay ? REPLAY_MAX_TSINCE_MIN : undefined);
 
     // Input + picker: TLE index space resized (geometry is shared + stable).
     this.host.onCatalogSwapped(this.catalogData);
@@ -255,8 +339,13 @@ export class TimelineController {
       }
     }
 
-    this.loadedTarget = day !== null ? { kind: 'day', day } : { kind: 'live' };
+    this.loadedTarget = day === null ? { kind: 'live' } : opts.replay ? { kind: 'replay', day } : { kind: 'day', day };
+    this.missingKey = null;
     store.setHistoryDay(day);
+    if (!opts.replay) {
+      store.setReplayLoaded({ day: null, accuracy: null, sgpCount: 0 });
+      this.dropFragments();
+    }
     store.setPlanetarium(false);
 
     // Regenerate the orbit trail for the (re-resolved) selection at the new time.

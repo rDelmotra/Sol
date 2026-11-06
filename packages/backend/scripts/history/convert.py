@@ -306,9 +306,19 @@ def run_convert(a):
     con = connect()
     rng = {y: con.execute(f"SELECT epoch_us(min(epoch)), epoch_us(max(epoch)) FROM read_parquet({sql_str(files[y])})").fetchone() for y in files}
     con.close()
+    month_range = []
+    for part in (a.months or '').split(','):
+        if not part:
+            continue
+        mm = re.fullmatch(r'(\d{4})-(\d{2}):(\d{4})-(\d{2})', part)
+        if not mm:
+            sys.exit("--months must look like 2009-01:2009-03[,1998-10:1998-12]")
+        month_range.append(((int(mm[1]), int(mm[2])), (int(mm[3]), int(mm[4]))))
     tasks = []
     for y in years:
         for m in MONTHS:
+            if month_range and not any(r[0] <= (y, m) <= r[1] for r in month_range):
+                continue
             lo, hi = (int(datetime.fromisoformat(s.replace('+00', '+00:00')).timestamp() * 1_000_000) for s in month_bounds(y, m))
             fl = [files[fy] for fy in sorted(files) if rng[fy][0] is not None and rng[fy][0] < hi and rng[fy][1] >= lo]
             if fl:
@@ -441,6 +451,7 @@ def main():
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 8) // 4), help='month tasks in parallel (processes)')
     p.add_argument('--memory-limit', help="duckdb memory limit per process, e.g. '8GB'")
     p.add_argument('--force', action='store_true', help='redo months that have a marker and rewrite existing day files')
+    p.add_argument('--months', help="only these months, comma separated 'YYYY-MM:YYYY-MM' ranges (inclusive), e.g. '2009-01:2009-03,1998-10:1998-12' (local samples; objects.jsonl.gz still uses every yearly file)")
     p.add_argument('--no-objects', action='store_true', help='skip objects.jsonl.gz (written after the months)')
     p.add_argument('--verify', metavar='ST_JSON', help='compare a Space-Track gp_history JSON dump against the mirror rows for the same objects / epochs')
     a = p.parse_args()

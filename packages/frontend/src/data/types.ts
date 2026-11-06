@@ -17,6 +17,12 @@ import { TYPE_KEYS, STATUS_KEYS, SECTOR_KEYS, PURPOSE_KEYS, zeros } from './face
 export interface TLEInput {
     noradId: number
     omm: OMMJsonObject
+    /**
+     * Propagation model of `omm`. Absent = SGP4 (every live object). 'sgp' = the
+     * original SGP model (history replay: pre-1980 element sets without B*), which
+     * the worker runs through @orbitwatch/orbital-core's sgp.ts.
+     */
+    propagator?: 'sgp4' | 'sgp'
 }
 
 /** Observer position on the ground: degrees, degrees, km. (NOT the {latDeg, lonDeg, altKm} orbital-core shape.) */

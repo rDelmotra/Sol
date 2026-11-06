@@ -1,10 +1,11 @@
 import type { StateCreator } from 'zustand';
 import type { CatalogType, FacetCounts, GeodeticObserver } from '../data/types';
-import type { EncounterSummary, EnrichedTLEObject, ObjectCategory, OrbitalRegime, Purpose, OrbitalStatus, DsoSnapshot } from '@orbitwatch/contracts';
+import type { EncounterSummary, SsaEvent, EnrichedTLEObject, ObjectCategory, OrbitalRegime, Purpose, OrbitalStatus, DsoSnapshot } from '@orbitwatch/contracts';
 import type { SectorFilterKey } from '../data/metadata-types';
 import type { DsoObject } from '../data/dso-types';
 import type { VisualListSource, VisualListStatus } from '../data/visualList';
 import type { HistoryCoverage } from '../data/history-client';
+import type { HistoryAccuracy, HistoryRange } from '../data/replay-types';
 import type { AnalyticProgram, ExecuteOutcome, AnalyticResult } from '@orbitwatch/analytic';
 import type { Pass, PassStatus } from '../sky/passes';
 import type { TimeField } from '../time/time-fields';
@@ -300,6 +301,35 @@ export interface HistorySlice {
   setHistoryDay: (day: string | null) => void;
   setHistoryLoading: (loading: boolean) => void;
   setPlanetarium: (on: boolean) => void;
+
+  // ── History REPLAY (archive catalog per day; /api/history/*) ──
+  /** Archive span, or null when the archive is not configured (503) / not probed yet. */
+  replayRange: HistoryRange | null;
+  /** The replay day the render plane shows, or null (live / legacy day / planetarium). */
+  replayDay: string | null;
+  /** The era's position accuracy of the loaded replay day (null when unknown / not replaying). */
+  replayAccuracy: HistoryAccuracy | null;
+  /** Objects of the loaded replay day propagated with the original SGP model. */
+  replaySgpCount: number;
+  /** "Show fragments" of breakups: the launches whose pieces (+ parents) the analytic filter keeps (re-applied on each day swap). */
+  replayFragments: ReplayFragments | null;
+  /** Events per UTC day (/api/ssa/events), and their load state. */
+  replayEventsByDay: Record<string, SsaEvent[]>;
+  replayEventsStatus: Record<string, ReplayEventsStatus>;
+  setReplayRange: (range: HistoryRange | null) => void;
+  /** One write for the loaded replay day (null day = left replay). */
+  setReplayLoaded: (info: { day: string | null; accuracy: HistoryAccuracy | null; sgpCount: number }) => void;
+  setReplayFragments: (f: ReplayFragments | null) => void;
+  /** Fetch (cached) the events of one UTC day. Never throws. */
+  loadReplayEvents: (day: string) => Promise<void>;
+}
+
+export type ReplayEventsStatus = 'loading' | 'ready' | 'unavailable';
+
+/** Launch designators ('1993-036') and parent NORAD ids of the breakups being shown. */
+export interface ReplayFragments {
+  launches: string[];
+  parentNorads: number[];
 }
 
 export interface FlightSlice {

@@ -360,3 +360,39 @@ describe('getPromptVersion', () => {
     assert.equal(getPromptVersion(a), getPromptVersion(b));
   });
 });
+
+describe('buildCompilerSystemPrompt — history 1959-2026 and breakups', () => {
+  const prompt = buildCompilerSystemPrompt(FIXTURE);
+
+  it('documents history availability, universe choice, accuracy by era and the 90-day window', () => {
+    assert.ok(prompt.includes('HISTORY: passedOver also answers for windows in the past decades, from 1959-01-11'));
+    assert.ok(prompt.includes('2026-03-31'));
+    assert.ok(prompt.includes('Use universe "all" for such a window'));
+    assert.ok(/1959-1964 hundreds of km to thousands/.test(prompt) && /1980 on a few km/.test(prompt));
+    assert.ok(prompt.includes('(its sub-satellite point was inside it; PAST windows only, any time in the history 1959-01-11 .. now'));
+    assert.ok(prompt.includes('Longer than 90 days'));
+  });
+
+  it('documents the breakup fields and how a breakup is detected, with its limits', () => {
+    for (const f of ['breakupAt', 'breakupPieces', 'breakupParent']) {
+      const line = prompt.split('\n').find((l) => l.startsWith(`- ${f} (`));
+      assert.ok(line && line.includes(' — '), `${f} documented in the field catalog`);
+    }
+    assert.ok(prompt.includes('>= 10 newly catalogued debris pieces of one launch within 60 days'));
+    assert.ok(prompt.includes('breakupPieces >= 10'));
+    assert.ok(prompt.includes('not the instant of the event'));
+  });
+
+  it('few-shots: December 1998 over India (universe all), what broke up in 2009, launched in 1998 still in orbit', () => {
+    const blocks = prompt.split('Tool call input:\n').slice(1).map((b) => b.split('\n\nExample')[0]!.trim());
+    const find = (needle: string) => blocks.find((b) => b.includes(needle));
+    const dec98 = JSON.parse(find('1998-12-01T00:00:00.000Z')!) as { program: { universe: string; pipeline: Array<{ where: { fn: string; region: string } }> } };
+    assert.equal(dec98.program.universe, 'all');
+    assert.equal(dec98.program.pipeline[0]!.where.fn, 'passedOver');
+    const brk = JSON.parse(find('"breakupPieces"')!) as { program: { universe: string; output: { shape: string } } };
+    assert.equal(brk.program.universe, 'all'); assert.equal(brk.program.output.shape, 'table');
+    const l98 = JSON.parse(blocks.find((b) => b.includes('1998') && b.includes('launchYear'))!) as { program: { universe: string } };
+    assert.equal(l98.program.universe, 'live');
+    assert.ok(prompt.includes('Who passed over India in December 1998?') && prompt.includes('What broke up in 2009?') && prompt.includes('Which objects launched in 1998 are still in orbit?'));
+  });
+});

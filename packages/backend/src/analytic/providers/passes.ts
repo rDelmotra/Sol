@@ -12,6 +12,7 @@
 import type { Pool } from 'pg';
 import type { PassedOverExpr } from '@orbitwatch/analytic';
 import { GUARANTEE, passedOverSet, resolveRegion, type PassesOpts, type Region } from '../../ssa/passes/index.js';
+import { eraFor } from '../../ssa/history/era.js';
 import { PrepareError } from '../registry.js';
 import type { FieldProvider } from '../types.js';
 
@@ -77,6 +78,11 @@ export function createPassesProvider(deps: PassesProviderDeps): PassesProvider {
       const notes: string[] = [GUARANTEE];
       if (c.clipped) notes.push('The window ends in the future; it was cut at the current time.');
       if (r.missingDays.length) notes.push(`No coverage data for ${r.missingDays.length} day(s) of the window (${r.missingDays.slice(0, 5).join(', ')}${r.missingDays.length > 5 ? ', …' : ''}): objects that passed only on those days are not listed.`);
+      // History: element sets before 1980 are sparse and fitted for older models; say how far positions may be off
+      const acc = eraFor(new Date(c.fromMs).toISOString().slice(0, 10)).accuracy;
+      if (acc && c.fromMs < Date.parse('1980-01-01T00:00:00Z')) {
+        notes.push(`The window starts in ${new Date(c.fromMs).getUTCFullYear()}: element sets of that era are sparse and old (typical position error ${acc.medianKm} km, 95th percentile ${acc.p95Km} km), so objects near the region's edge may be wrongly in or out.`);
+      }
       if (c.region.approximate) notes.push(`The ${c.region.name} outline is approximate.`);
       const settled = c.toMs <= Math.floor(nowMs / DAY_MS) * DAY_MS && r.missingDays.length === 0;
       const m: Memo = { ids: r.ids, notes, expiresAt: nowMs + (settled ? TTL_PAST_MS : TTL_LIVE_MS) };

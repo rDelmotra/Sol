@@ -414,11 +414,13 @@ export class SatellitesLayer implements Layer {
    * worker. Visible counts + positions refresh when the post-reseed SNAP arrives
    * via `onPositions` (which reads the now-updated `this.catalog`). No-op before
    * `activate()`. The Engine owns the surrounding orchestration (selection
-   * re-resolve, picker resize, store sync).
+   * re-resolve, picker resize, store sync). `maxTsinceMin` widens the worker's
+   * propagation window (history replay catalogs); omitted = the live default.
    */
   reseedCatalog(
     catalog: EnrichedTLEObject[],
     tles: ConstructorParameters<typeof Sgp4WorkerClient>[0],
+    maxTsinceMin?: number,
   ): void {
     if (!this._renderer || !this.client) return;
     this.catalog = catalog;
@@ -434,7 +436,7 @@ export class SatellitesLayer implements Layer {
       this._renderer.setSatelliteSize(issIndex, 2.0);
     }
 
-    this.client.reseed(tles);
+    this.client.reseed(tles, maxTsinceMin);
   }
 
   /**

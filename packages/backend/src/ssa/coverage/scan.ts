@@ -11,6 +11,9 @@ import { contains, isNear, type Region } from './region.js';
 import { posAt, windowInCap, type Prop, type RunStats } from './runs.js';
 import { R_MIN_KM, R_MAX_KM } from './consts.js';
 
+/** "No pass" from firstInside / anyPassIn (history before 1970 has negative instants, so test with `!== NO_TIME`, never `>= 0`). */
+export const NO_TIME = -1;
+
 export interface Flags { inside: boolean; near: boolean }
 const NONE: Flags = { inside: false, near: false };
 
@@ -36,10 +39,11 @@ export function regionFlags(region: Region, st: RunStats): (p: Prop, tm: number)
 
 /** Pass intervals of one object inside window [a, b], appended to `out` as [start, end, start, end, ...]. */
 export function scanWindow(p: Prop, a: number, b: number, stepMs: number, nearStepMs: number, flags: (p: Prop, tm: number) => Flags, out: number[]): void {
-  let open = -1, last = -1;
+  // NaN = "no pass open": instants before 1970 (history) are negative numbers, so -1 / `< 0` cannot mean "none"
+  let open = NaN, last = NaN;
   const feed = (tm: number, f: Flags): void => {
-    if (f.inside) { if (open < 0) open = tm; last = tm; }
-    else if (open >= 0) { out.push(open, last); open = -1; }
+    if (f.inside) { if (Number.isNaN(open)) open = tm; last = tm; }
+    else if (!Number.isNaN(open)) { out.push(open, last); open = NaN; }
   };
   let t0 = a, f0 = flags(p, t0);
   feed(t0, f0);
@@ -51,7 +55,7 @@ export function scanWindow(p: Prop, a: number, b: number, stepMs: number, nearSt
     feed(t1, f1);
     t0 = t1; f0 = f1;
   }
-  if (open >= 0) out.push(open, last);
+  if (!Number.isNaN(open)) out.push(open, last);
 }
 
 /**
@@ -69,7 +73,7 @@ export function firstInside(p: Prop, a: number, b: number, stepMs: number, nearS
     if (f1.inside) return t1;
     t0 = t1; f0 = f1;
   }
-  return -1;
+  return NO_TIME;
 }
 
 export const REFINE_STEP_MS = 20_000;
@@ -93,7 +97,7 @@ export function anyPassIn(p: Prop, region: Region, windows: ArrayLike<number>, s
     const a = windows[w]!, b = windows[w + 1]!;
     if (!windowInCap(p, a, b)) continue;
     const t = firstInside(p, a, b, stepMs, nearStepMs, flags);
-    if (t >= 0) return t;
+    if (t !== NO_TIME) return t;
   }
-  return -1;
+  return NO_TIME;
 }

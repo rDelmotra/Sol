@@ -31,7 +31,12 @@ export interface ConjunctionFilter {
 
 export interface EventFilter {
   kind?: string;
+  /** several kinds (any of); combined with `kind` when both are given */
+  kinds?: string[];
   since?: Date;
+  /** event time (t_start, else the day) in [from, to] — both inclusive, either may be omitted */
+  from?: Date;
+  to?: Date;
   norad?: number;
   limit: number;
 }
@@ -169,7 +174,11 @@ export async function listEvents(db: Queryable, f: EventFilter): Promise<SsaEven
   const where: string[] = [];
   const vals: unknown[] = [];
   const add = (sql: string, v: unknown) => { vals.push(v); where.push(sql.replaceAll('?', () => `$${vals.length}`)); };
-  if (f.kind) add('kind = ?', f.kind);
+  const kinds = [...(f.kind ? [f.kind] : []), ...(f.kinds ?? [])];
+  if (kinds.length === 1) add('kind = ?', kinds[0]);
+  else if (kinds.length > 1) add('kind = ANY(?::text[])', kinds);
+  if (f.from) add('COALESCE(t_start, day::timestamptz) >= ?', f.from);
+  if (f.to) add('COALESCE(t_start, day::timestamptz) <= ?', f.to);
   if (f.since) add('COALESCE(t_start, day::timestamptz) >= ?', f.since);
   if (f.norad !== undefined) add('subjects @> ARRAY[?]::int[]', f.norad);
   vals.push(f.limit);

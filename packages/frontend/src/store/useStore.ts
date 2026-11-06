@@ -34,6 +34,8 @@ export type {
   AnalyticFilter,
   SatelliteFilterState,
   EncounterStatus,
+  ReplayEventsStatus,
+  ReplayFragments,
 } from './types';
 
 export const useStore = create<AppState>()((...a) => ({

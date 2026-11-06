@@ -47,6 +47,7 @@ const STATE_KEYS = [
   'historyCoverage',
   'historyDay',
   'historyLoading',
+  'loadReplayEvents',
   'jumpToSimTime',
   'launchFilter',
   'liveAltitudeKm',
@@ -62,6 +63,13 @@ const STATE_KEYS = [
   'ownerFilter',
   'passStatus',
   'planetarium',
+  'replayAccuracy',
+  'replayDay',
+  'replayEventsByDay',
+  'replayEventsStatus',
+  'replayFragments',
+  'replayRange',
+  'replaySgpCount',
   'programFilter',
   'purposeFilters',
   'regimeCounts',
@@ -105,6 +113,9 @@ const STATE_KEYS = [
   'setObserverPlaceName',
   'setPassPlan',
   'setPlanetarium',
+  'setReplayFragments',
+  'setReplayLoaded',
+  'setReplayRange',
   'setReticleCandidates',
   'setScrubField',
   'setScrubFocusOnReset',
@@ -232,6 +243,13 @@ const INITIAL_VALUES: Record<string, unknown> = {
   historyDay: null,
   historyLoading: false,
   planetarium: false,
+  replayRange: null,
+  replayDay: null,
+  replayAccuracy: null,
+  replaySgpCount: 0,
+  replayFragments: null,
+  replayEventsByDay: {},
+  replayEventsStatus: {},
   cameraGear: 5,
   cameraGearCount: 10,
   cameraSpeedMps: 1_000_000,
@@ -250,7 +268,7 @@ const INITIAL_VALUES: Record<string, unknown> = {
 
 test('store exposes exactly today\'s keys (state + actions)', () => {
   assert.deepEqual(Object.keys(initial).sort(), [...STATE_KEYS].sort());
-  assert.equal(STATE_KEYS.length, 145);
+  assert.equal(STATE_KEYS.length, 156);
 });
 
 test('initial values of every non-function key', () => {

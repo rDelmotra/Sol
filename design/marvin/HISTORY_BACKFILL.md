@@ -277,7 +277,7 @@ The jump thresholds (jumpDaKm) were fitted on the mirror and were not refitted o
 export W=/workspace/csProjects/orbw R=$W/Sol OUT=$W/out PATH=$HOME/bin:$PATH
 cd $R && git pull && npm run build:libs
 mkdir -p $W/data/mcdowell            # data only: no scripts in there; everything downloaded is untrusted text
-# 1. download: ONE request at a time, 1.5 s apart (never below 1 s), resumable (rerun the same command), gzip on disk.
+# 1. download: ONE request at a time, 1.5 s apart by default (--interval sets any value), resumable (rerun the same command), gzip on disk.
 #    Measured here: 117 folder listings -> 10,821 files / 3,216 MB listed for catalogue numbers 1..11651 (the GCAT cut: smallest number launched
 #    after 1979 = 11652; folder 09100/ does not exist) + 203 late-catalogued objects with mirror epochs <= 1979 = 11,024 files.
 #    At 1.5 s per request: 11,024 x 1.5 s = 4.6 h (estimate; locally 1,147 files at 1.2 s took 1,386 s, i.e. interval-bound). ~0.7 GB on disk gzipped
@@ -335,3 +335,32 @@ Cost of step 5: as section 8 (well under 1 h on 10 x 25 workers, estimate).
 >
 > With kind regards,
 > the Orbitwatch project
+
+
+## 10. Serving the history (backend)
+
+`SSA_HISTORY_DIR` = the root with `elsets/`, `objects.jsonl.gz`, `coverage/`, `events/` (what the lab produced, section 6 layout: copy `conv/elsets`
++ `conv/objects.jsonl.gz` (or the merged ones, section 9) next to `build/coverage` and `build/events`). Unset or missing: the history API answers 503.
+- `GET /api/history/range` -> first / last built day, number of days, events extent, `hasCoverage`.
+- `GET /api/history/catalog?day=D` -> the catalog as of the END of D (per object the latest set before then within the era's window, the era's
+  propagator `sgp4 | sgp`, `accuracy {medianKm,p95Km}` of the era, `objects[]` with the OMM set incl. MEAN_MOTION_DDOT / EPHEMERIS_TYPE). Built by
+  the same `FileCatalog` + `eraFor` + `assignPropagators` as the coverage build, so its objects / sets equal the day's coverage manifest (`norad`,
+  `propagators.sgp`); `Cache-Control: public, max-age=604800`, ETag, gzip. Cached per day in memory (24 days) and as `<root>/cache/catalog/<day>-<sig>.json.gz`.
+- `GET /api/history/timeline?from&to&bucket=day|month|year&kinds=a,b` -> event counts per bucket from `ssa_event` (empty buckets omitted).
+- Events: `/api/ssa/events` takes `kind=a,b` (dotted names), `from` + `to` (event time) besides `since`.
+- Coverage fallback: `/api/ssa/passes` (and Perceptor `passedOver`) read `<root>/coverage` for days `SSA_COVERAGE_DIR` does not have and refine them with
+  the element sets of `<root>/elsets` (the manifest's `propagators.sgp` picks SGP). The live directory wins. The window limit stays 90 days.
+  NOTE: instants before 1970 are negative; the pass scan used `-1` / `< 0` as "no pass" and silently found nothing for 1959-1969 days (fixed:
+  `coverage/scan.ts` NaN sentinel, `NO_TIME`).
+
+### object.breakup
+Derived kind (not per day): `src/ssa/history/breakup.ts` clusters the debris pieces (`objectType = debris`, designator `YYYY-NNN`, first appearance
+`newly_cataloged` or `new_launch`, not `returned`) of one launch: a new cluster starts after a gap of more than 60 days, a cluster with >= 10 pieces
+is a breakup. Parent = the launch's non-debris object whose tracking ended within 14 days of the cluster's first day, else the lowest NORAD id, else the
+earliest piece. Row: `day` = first day, `t_start`/`t_end` = first/last piece day, `subjects` = [parent, ...pieces], payload
+`{launch, parentNorad, parentName, pieces, firstDay, lastDay, names}`. Written to `events/breakups.jsonl.gz` by `build-range.ts --parts breakups` (not with
+`--shard`) or `scripts/history/derive-breakups.ts --in ROOT`, or over events already in the database with `derive-breakups.ts --db --objects FILE`;
+`import-events.ts` replaces the object.breakup rows of its `--from/--to` range with the file's. Limits: debris launched under another designator,
+breakups with < 10 pieces, launch-time debris of busy launches (false positives), piece counts only as far as the data goes, and the first
+`windowDays` of a build that starts without the preceding years (objects look new).
+Perceptor fields (backend SSA provider): `breakupAt`, `breakupPieces` (on the parent), `breakupParent` (on the pieces).

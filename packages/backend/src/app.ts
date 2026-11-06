@@ -17,6 +17,7 @@ import { createQueryRouter } from './routes/query.js';
 import { readVersion } from './cache/file-cache.js';
 import { historyRouter } from './history/index.js';
 import ssaRouter from './routes/ssa.js';
+import historyApiRouter from './routes/history.js';
 import { ssaPassesRouter, ssaRegionsRouter } from './routes/ssa-passes.js';
 import { frontendDistDir } from './utils/paths.js';
 import { IMMUTABLE_CACHE_CONTROL, isHashedAsset } from './utils/static-cache.js';
@@ -97,6 +98,8 @@ export function createApp(deps: AppDeps = {}): Express {
     ['/api/query', deps.queryRouter ?? createQueryRouter()],
     // Optional history routes — 503 cleanly when DATABASE_URL is unset, so mounting
     // unconditionally is safe.
+    // The day-by-day history (range, catalog of a day, event timeline) first; the router falls through for /coverage and /at.
+    ['/api/history', historyApiRouter],
     ['/api/history', historyRouter],
     // Encounter (close-approach) read API — 503s the same way when history is off.
     // Ground passes over time (who passed over a region in the last N days) and the region list. Before /api/ssa: more specific prefixes.

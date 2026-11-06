@@ -14,3 +14,4 @@ export * from './countries.js';
 export * from './programs.js';
 export * from './api.js';
 export * from './ssa.js';
+export * from './history.js';

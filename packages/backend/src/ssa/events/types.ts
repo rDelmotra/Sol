@@ -23,6 +23,12 @@ export interface ChangeObject {
 export const CHANGE_KINDS = ['object.appeared', 'object.disappeared', 'elements.jump', 'close.formation'] as const;
 export type ChangeKind = (typeof CHANGE_KINDS)[number];
 
+/**
+ * Kinds derived from the change events of many days (not per day, so not in CHANGE_KINDS and not part of a day's completion):
+ * object.breakup = a cluster of newly catalogued debris pieces of one launch (history/breakup.ts).
+ */
+export const BREAKUP_KIND = 'object.breakup' as const;
+
 /** A row of ssa_event (before insertion). Times are UTC ms. */
 export interface EventRow {
   kind: ChangeKind;

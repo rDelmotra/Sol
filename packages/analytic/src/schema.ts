@@ -213,6 +213,19 @@ export const FIELD_REGISTRY: Record<string, FieldSpec> = {
     kind: 'bool', plane: 'catalog',
     description: 'true if the object was detected flying in close formation with another object in the last 2 days',
   },
+  // Breakups (history backfill, 1959-2026): a cluster of >= 10 newly catalogued debris pieces of one launch (object.breakup events)
+  breakupAt: {
+    kind: 'date', plane: 'catalog', sparse: true,
+    description: 'start of the fragmentation it belongs to, as the broken-up object or as one of its debris pieces (first day the pieces were catalogued); null when none',
+  },
+  breakupPieces: {
+    kind: 'number', plane: 'catalog', sparse: true,
+    description: 'for the object that broke up: how many debris pieces were catalogued (as far as the data goes); null for every other object. Select "what broke up" with breakupPieces >= 10',
+  },
+  breakupParent: {
+    kind: 'id', plane: 'catalog', sparse: true,
+    description: 'for a debris piece of a detected fragmentation: the NORAD id of the object that broke up; null for every other object',
+  },
 };
 
 // ── Function specs (spec §5) ──────────────────────────────────────────────────

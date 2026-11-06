@@ -23,6 +23,7 @@ import type {
     Sgp4WorkerInMessage as WorkerInMessage,
     Sgp4WorkerOutMessage as WorkerOutMessage,
 } from './sgp4-protocol';
+import { buildSgpSlots, propagateSgpSlots, type SgpSlot } from './sgp-slots';
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,10 @@ let satrecs: satellite.SatRec[] = [];
 let startIndex = 0;
 let objectCount = 0;
 let isReady = false;
+/** Propagation-window cap for this catalog (INIT may widen it for history replay). */
+let maxTsinceMin = MAX_TSINCE_MIN;
+/** Slots propagated with the original SGP model (history replay, pre-1980); empty for live. */
+let sgpSlots: SgpSlot[] = [];
 
 // Double-buffered output arrays. After a Transferable transfer the buffer is
 // detached (length 0), so we keep two sets and alternate.
@@ -93,7 +98,7 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
 
     switch (msg.type) {
         case 'INIT':
-            void handleInit(msg.tles, msg.startIndex);
+            void handleInit(msg.tles, msg.startIndex, msg.maxTsinceMin);
             break;
         case 'PROPAGATE':
             // The client only sends PROPAGATE after READY; this guard covers
@@ -107,10 +112,14 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
 
-async function handleInit(tles: TLEInput[], start: number): Promise<void> {
+async function handleInit(tles: TLEInput[], start: number, maxTsince?: number): Promise<void> {
     isReady = false;
     startIndex = start;
     objectCount = tles.length;
+    maxTsinceMin = maxTsince !== undefined && maxTsince > 0 ? maxTsince : MAX_TSINCE_MIN;
+    // SGP slots are overwritten after the SGP4 batch each tick (the batch still
+    // carries them, so indices and buffer sizes are unchanged).
+    sgpSlots = buildSgpSlots(tles);
 
     try {
         await initWasmEngine(tles);
@@ -185,7 +194,7 @@ function handlePropagate(timestamp: number, seq: number): void {
         // Batch-propagate in WASM. MAX_TSINCE_MIN is passed in so the
         // propagation-window policy keeps its ONE home in @orbitwatch/orbital-core
         // (NaN timestamps are rejected by the same in-WASM check).
-        sim.propagate(timestamp, MAX_TSINCE_MIN);
+        sim.propagate(timestamp, maxTsinceMin);
 
         // Views into WASM linear memory — rebuilt every tick because memory
         // growth detaches old views.
@@ -198,6 +207,9 @@ function handlePropagate(timestamp: number, seq: number): void {
         validFlags.set(wasmValidFlags);
     } else {
         propagateJs(timestamp, positions, velocities, validFlags);
+    }
+    if (sgpSlots.length > 0) {
+        propagateSgpSlots(sgpSlots, timestamp, maxTsinceMin, positions, velocities, validFlags);
     }
 
     const reply: WorkerOutMessage = {
@@ -259,7 +271,7 @@ function propagateJs(
         // fixed 720-min increments — cost ∝ |tsince| — so an unbounded scrub would wedge
         // this worker in a synchronous loop. Symmetric (far future AND far past). See
         // @orbitwatch/orbital-core (propagation-window.ts).
-        if (!withinPropagationWindow(jdNow, rec.jdsatepoch)) {
+        if (!withinPropagationWindow(jdNow, rec.jdsatepoch, maxTsinceMin)) {
             markInvalid(i);
             continue;
         }

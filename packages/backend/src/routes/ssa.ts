@@ -25,7 +25,7 @@ import { logger } from '../utils/logger.js';
 //   GET /conjunctions       → current run's encounters (filters + sort + limit)
 //   GET /conjunctions/:id   → one encounter with its per-run update history
 //   GET /objects/:norad     → one object's current encounters + recent events
-//   GET /events             → derived event feed
+//   GET /events             → derived event feed (kind = one kind or a comma list; since; from + to = event time window)
 //
 // Data changes once per run, so responses carry `public, max-age=300` and an
 // ETag keyed by the latest run id + the request's canonical query. Parameters
@@ -122,19 +122,32 @@ function parseConjunctionQuery(q: Request['query']): Parsed<ConjunctionFilter> {
 }
 
 function parseEventQuery(q: Request['query']): Parsed<EventFilter> {
-  const kind = single(q.kind);
-  if (kind === null || (kind !== undefined && !/^[a-z][a-z0-9_]{0,31}$/i.test(kind))) {
-    return bad('Invalid `kind`.');
+  const kindRaw = single(q.kind);
+  let kinds: string[] | undefined;
+  if (kindRaw === null) return bad('Invalid `kind`.');
+  if (kindRaw !== undefined) {
+    // one kind or a comma separated list; kinds are dotted names (object.appeared, elements.jump, ...)
+    kinds = kindRaw.split(',');
+    if (kinds.length > 16 || kinds.some((k) => !/^[a-z][a-z0-9_.]{0,39}$/i.test(k))) return bad('Invalid `kind`.');
   }
   const since = parseDate('since', q.since);
   if (!since.ok) return since;
+  const from = parseDate('from', q.from);
+  if (!from.ok) return from;
+  const to = parseDate('to', q.to);
+  if (!to.ok) return to;
+  if (from.value && to.value && from.value > to.value) return bad('`from` must not be after `to`.');
   const norad = parseInteger('norad', q.norad, 1, MAX_NORAD);
   if (!norad.ok) return norad;
   const limit = parseInteger('limit', q.limit, 1, MAX_LIMIT);
   if (!limit.ok) return limit;
   return {
     ok: true,
-    value: { kind, since: since.value, norad: norad.value, limit: limit.value ?? DEFAULT_LIMIT },
+    value: {
+      ...(kinds?.length === 1 ? { kind: kinds[0] } : kinds ? { kinds } : {}),
+      since: since.value, ...(from.value ? { from: from.value } : {}), ...(to.value ? { to: to.value } : {}),
+      norad: norad.value, limit: limit.value ?? DEFAULT_LIMIT,
+    },
   };
 }
 

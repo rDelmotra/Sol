@@ -163,9 +163,9 @@ export class Engine {
           this.world.runLayerCommand(this.satellitesLayer, 'setHidden', () =>
             this.satellitesLayer.setHidden(hidden),
           ),
-        satellitesReseed: (catalog, tles) =>
+        satellitesReseed: (catalog, tles, maxTsinceMin) =>
           this.world.runLayerCommand(this.satellitesLayer, 'reseed', () =>
-            this.satellitesLayer.reseedCatalog(catalog, tles),
+            this.satellitesLayer.reseedCatalog(catalog, tles, maxTsinceMin),
           ),
         satellitesSnap: () =>
           this.world.runLayerCommand(this.satellitesLayer, 'requestImmediateSnap', () =>

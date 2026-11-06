@@ -214,8 +214,9 @@ export class Sgp4WorkerClient {
    * PROPAGATE + reschedule (the same path as construction, driven by the existing
    * onmessage handler). Interpolation/velocity state is reset and the next
    * POSITIONS is forced to SNAP so we never tween from the previous catalog.
+   * `maxTsinceMin` widens the propagation window (history replay); omitted = default.
    */
-  reseed(tles: TLEInput[]): void {
+  reseed(tles: TLEInput[], maxTsinceMin?: number): void {
     // Drop velocity history — object count may change, so updateVelocityBuffers
     // must reallocate against the new length.
     this.prevVelocitiesTeme = null;
@@ -227,7 +228,7 @@ export class Sgp4WorkerClient {
     // the worker's READY handler posts a PROPAGATE with a seq > this marker.
     this.snapAtOrAfterSeq = ++this.propagationSeq;
 
-    this.worker.postMessage({ type: 'INIT', tles, startIndex: 0 } satisfies Sgp4WorkerInMessage);
+    this.worker.postMessage({ type: 'INIT', tles, startIndex: 0, maxTsinceMin } satisfies Sgp4WorkerInMessage);
   }
 
   // ── Dispose ─────────────────────────────────────────────────────────────
